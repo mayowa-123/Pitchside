@@ -7247,16 +7247,23 @@ function clearAuthErrors() {
   });
 }
 function applyUserToApp(user) {
-  const displayName = user.displayName || (user.email ? user.email.split('@')[0] : 'Fan');
-  const initials = displayName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
-  profileData = { ...profileData, name: displayName, email: user.email || 'dev@pitchside.app', initials };
-  document.getElementById('profile-name').textContent     = displayName;
-  document.getElementById('profile-email').textContent    = user.email || 'dev@pitchside.app';
-  document.getElementById('profile-initials').textContent = initials;
-  if (user.photoURL) {
-    const img = document.getElementById('profile-avatar-img');
-    img.src = user.photoURL; img.style.display = 'block';
-    document.getElementById('profile-initials').style.display = 'none';
+  try {
+    const displayName = user.displayName || (user.email ? user.email.split('@')[0] : 'Fan');
+    const initials = displayName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+    profileData = { ...profileData, name: displayName, email: user.email || 'dev@pitchside.app', initials };
+    const pName = document.getElementById('profile-name');
+    const pEmail = document.getElementById('profile-email');
+    const pInitials = document.getElementById('profile-initials');
+    if (pName) pName.textContent = displayName;
+    if (pEmail) pEmail.textContent = user.email || 'dev@pitchside.app';
+    if (pInitials) pInitials.textContent = initials;
+    if (user.photoURL) {
+      const img = document.getElementById('profile-avatar-img');
+      if (img) { img.src = user.photoURL; img.style.display = 'block'; }
+      if (pInitials) pInitials.style.display = 'none';
+    }
+  } catch(e) {
+    console.warn('applyUserToApp error:', e);
   }
 }
 function enterApp(user) {
@@ -7362,10 +7369,25 @@ window._psFs          = { collection, query, where, orderBy, limit, getDocs,
 window._psCurrentUser = null;
 onAuthStateChanged(auth, user => {
   window._psCurrentUser = user || null;
-  // ── CHANGE 2: Activate Firebase listener once auth is confirmed ──
-  // Works whether user is logged in or not (Firestore rules permitting).
-  if (typeof activateFirebaseListener === 'function') {
-    activateFirebaseListener();
+  try {
+    if (typeof activateFirebaseListener === 'function') {
+      activateFirebaseListener();
+    }
+  } catch(e) {
+    console.warn('activateFirebaseListener error:', e);
+  }
+  // If user is signed in, hide auth screen and show app
+  try {
+    if (user) {
+      const authScreen = document.getElementById('auth-screen');
+      const appScreen  = document.getElementById('app-screen') ||
+                         document.getElementById('main-app')   ||
+                         document.getElementById('app');
+      if (authScreen) authScreen.style.display = 'none';
+      if (appScreen)  appScreen.style.display  = 'block';
+    }
+  } catch(e) {
+    console.warn('Screen switch error:', e);
   }
 });
 </script>
