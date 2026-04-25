@@ -2495,7 +2495,7 @@ body {
     <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
     <span>NPFL</span>
   </a>
-  <a href="#" class="nav-item" onclick="switchPage('players', this); _loadFeaturedPlayers(); return false;" style="min-width:52px;">
+  <a href="#" class="nav-item" onclick="switchPage('players', this); return false;" style="min-width:52px;">
     <svg fill="currentColor" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
     <span>Players</span>
   </a>
@@ -2969,10 +2969,9 @@ function refreshAllVideoGrids() {
     try { renderVideos('explore-grid', VIDEOS); } catch(e2){}
   }
   try { renderVideos('dash-grid', VIDEOS.slice(0, 4)); } catch(e){}
-  // Refresh highlights panel if it has been opened
+  // Refresh highlights panel whenever Firebase fires
   try {
-    const hlPanel = document.getElementById('hl-official-content');
-    if (hlPanel && !hlPanel.querySelector('.hl-loading')) {
+    if (typeof _renderHighlightsFromVideos === 'function') {
       _renderHighlightsFromVideos();
     }
   } catch(e){}
@@ -6611,124 +6610,68 @@ function _npflRenderMatch(f) {
 }
 
 /* ── Fetch fixtures for today + upcoming ── */
-/* ── NPFL Fixtures — reads from Firebase (written by bot) ── */
 async function _npflFetchFixtures() {
-  const el = document.getElementById('npfl-fixtures');
-  if (!el) return;
+  const today = new Date().toISOString().split('T')[0];
   try {
-    const fsApi = window._psFs;
-    const db    = window._psDb;
-    if (!fsApi || !db) throw new Error('Firebase not ready');
-    const { collection, query, where, orderBy, getDocs } = fsApi;
-    const q = query(
-      collection(db, 'npfl_fixtures'),
-      where('status', '==', 'upcoming'),
-      orderBy('date', 'asc')
+    const res = await fetch(
+      `https://v3.football.api-sports.io/fixtures?league=${NPFL_LEAGUE_ID}&season=${NPFL_SEASON}&from=${today}&to=${new Date(Date.now()+7*86400000).toISOString().split('T')[0]}`,
+      { headers: { 'x-apisports-key': APIFOOTBALL_KEY }, signal: AbortSignal.timeout(6000) }
     );
-    const snap = await getDocs(q);
-    const matches = snap.docs.map(d => d.data());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const matches = (data.response || []);
+    const el = document.getElementById('npfl-fixtures');
+    if (!el) return;
     if (!matches.length) {
-      el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">No upcoming fixtures yet — check back soon</div>`;
+      el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">No fixtures scheduled this week</div>`;
       return;
     }
-    el.innerHTML = matches.map(m => _npflRenderFirebaseMatch(m)).join('');
+    el.innerHTML = matches.map(_npflRenderMatch).join('');
   } catch(e) {
-    el.innerHTML = `<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Couldn't load fixtures — ${e.message}</div>`;
+    const el = document.getElementById('npfl-fixtures');
+    if (el) el.innerHTML = `<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Couldn't load fixtures — ${e.message}</div>`;
   }
 }
 
-/* ── NPFL Results — reads from Firebase ── */
+/* ── Fetch recent results ── */
 async function _npflFetchResults() {
-  const el = document.getElementById('npfl-results');
-  if (!el) return;
+  const today = new Date().toISOString().split('T')[0];
+  const from  = new Date(Date.now() - 14*86400000).toISOString().split('T')[0];
   try {
-    const fsApi = window._psFs;
-    const db    = window._psDb;
-    if (!fsApi || !db) throw new Error('Firebase not ready');
-    const { collection, query, where, orderBy, getDocs } = fsApi;
-    const q = query(
-      collection(db, 'npfl_fixtures'),
-      where('status', '==', 'result'),
-      orderBy('date', 'desc')
+    const res = await fetch(
+      `https://v3.football.api-sports.io/fixtures?league=${NPFL_LEAGUE_ID}&season=${NPFL_SEASON}&from=${from}&to=${today}&status=FT`,
+      { headers: { 'x-apisports-key': APIFOOTBALL_KEY }, signal: AbortSignal.timeout(6000) }
     );
-    const snap = await getDocs(q);
-    const matches = snap.docs.map(d => d.data());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const matches = (data.response || []).reverse(); // most recent first
+    const el = document.getElementById('npfl-results');
+    if (!el) return;
     if (!matches.length) {
-      el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">No results yet — check back after matches</div>`;
+      el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">No results in the last 14 days</div>`;
       return;
     }
-    el.innerHTML = matches.map(m => _npflRenderFirebaseMatch(m)).join('');
+    el.innerHTML = matches.map(_npflRenderMatch).join('');
   } catch(e) {
-    el.innerHTML = `<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Couldn't load results — ${e.message}</div>`;
+    const el = document.getElementById('npfl-results');
+    if (el) el.innerHTML = `<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Couldn't load results — ${e.message}</div>`;
   }
 }
 
-/* ── Render a Firebase NPFL match row ── */
-function _npflRenderFirebaseMatch(m) {
-  const isResult   = m.status === 'result';
-  const scoreHTML  = isResult
-    ? `<div class="npfl-score">${m.homeScore ?? '-'}</div><div class="npfl-score">${m.awayScore ?? '-'}</div>`
-    : `<div style="font-size:11px;color:var(--text3);">${m.time || 'TBC'}</div>`;
-  const badgeClass = isResult ? 'npfl-ft' : 'npfl-ns';
-  const badgeText  = isResult ? 'FT' : m.date || '';
-  return \`
-    <div class="npfl-match">
-      <div class="npfl-teams">
-        <div class="npfl-team-row"><span class="npfl-badge">🟢</span>\${m.homeTeam}</div>
-        <div class="npfl-team-row"><span class="npfl-badge">🔵</span>\${m.awayTeam}</div>
-      </div>
-      <div class="npfl-score-col">
-        \${scoreHTML}
-        <div class="npfl-status-badge \${badgeClass}">\${badgeText}</div>
-      </div>
-    </div>\`;
-}
-
-/* ── NPFL Standings — computed from Firebase results ── */
+/* ── Fetch league standings ── */
 async function _npflFetchStandings() {
-  const el = document.getElementById('npfl-standings');
-  if (!el) return;
-  el.innerHTML = _npflSpinner('Building standings…');
   try {
-    const fsApi = window._psFs;
-    const db    = window._psDb;
-    if (!fsApi || !db) throw new Error('Firebase not ready');
-    const { collection, query, where, getDocs } = fsApi;
-    const q    = query(collection(db, 'npfl_fixtures'), where('status', '==', 'result'));
-    const snap = await getDocs(q);
-    const results = snap.docs.map(d => d.data());
-    if (!results.length) {
-      el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">Standings will appear once results are recorded</div>`;
-      return;
-    }
-    // Build table from results
-    const table = {};
-    results.forEach(m => {
-      const hg = parseInt(m.homeScore) || 0;
-      const ag = parseInt(m.awayScore) || 0;
-      [m.homeTeam, m.awayTeam].forEach(t => { if (t && !table[t]) table[t] = {name:t,P:0,W:0,D:0,L:0,GF:0,GA:0,Pts:0}; });
-      if (!m.homeTeam || !m.awayTeam) return;
-      table[m.homeTeam].P++; table[m.awayTeam].P++;
-      table[m.homeTeam].GF += hg; table[m.homeTeam].GA += ag;
-      table[m.awayTeam].GF += ag; table[m.awayTeam].GA += hg;
-      if (hg > ag) { table[m.homeTeam].W++; table[m.homeTeam].Pts+=3; table[m.awayTeam].L++; }
-      else if (hg < ag) { table[m.awayTeam].W++; table[m.awayTeam].Pts+=3; table[m.homeTeam].L++; }
-      else { table[m.homeTeam].D++; table[m.homeTeam].Pts++; table[m.awayTeam].D++; table[m.awayTeam].Pts++; }
-    });
-    const sorted = Object.values(table).sort((a,b) => b.Pts-a.Pts || (b.GF-b.GA)-(a.GF-a.GA));
-    if (!sorted.length) {
-      el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">Standings not yet available for this season</div>`;
-      return;
-    }
-    // Fake old variable so the rest of the function works
-    const table_compat = sorted.map((r,i) => ({
-      rank: i+1, team:{name:r.name,logo:''}, all:{played:r.P,win:r.W,draw:r.D,lose:r.L},
-      goalsDiff: r.GF-r.GA, points:r.Pts, form:''
-    }));
-    const table = table_compat;
-    const el_compat = el;
+    const res = await fetch(
+      `https://v3.football.api-sports.io/standings?league=${NPFL_LEAGUE_ID}&season=${NPFL_SEASON}`,
+      { headers: { 'x-apisports-key': APIFOOTBALL_KEY }, signal: AbortSignal.timeout(6000) }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data  = await res.json();
+    const table = data.response?.[0]?.league?.standings?.[0] || [];
+    const el    = document.getElementById('npfl-standings');
+    if (!el) return;
     if (!table.length) {
-      el_compat.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">Standings not yet available for this season</div>`;
+      el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">Standings not yet available for this season</div>`;
       return;
     }
     const hdr = `
@@ -6770,11 +6713,33 @@ async function _npflFetchStandings() {
   }
 }
 
-/* ── NPFL Live — not available from free source, graceful no-op ── */
+/* ── Also fetch any live NPFL matches ── */
 async function _npflFetchLive() {
-  // TheSportsDB free tier does not support live scores
-  // Live NPFL data will show when bot writes matches with status 'live'
-  return;
+  try {
+    const res = await fetch(
+      `https://v3.football.api-sports.io/fixtures?league=${NPFL_LEAGUE_ID}&live=all`,
+      { headers: { 'x-apisports-key': APIFOOTBALL_KEY }, signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+    const live = data.response || [];
+    if (!live.length) return;
+    // Prepend live matches to fixtures tab
+    const el = document.getElementById('npfl-fixtures');
+    if (!el) return;
+    const liveHTML = `
+      <div style="background:rgba(244,63,94,0.08);border-bottom:1px solid rgba(244,63,94,0.2);padding:8px 14px;">
+        <span style="font-size:10px;font-weight:800;color:var(--red-live);letter-spacing:.06em;">🔴 LIVE NOW</span>
+      </div>
+      ${live.map(_npflRenderMatch).join('')}
+      <div style="background:var(--bg2);border-bottom:1px solid var(--border);padding:8px 14px;">
+        <span style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;">UPCOMING</span>
+      </div>`;
+    const existing = el.innerHTML;
+    if (!existing.includes('LIVE NOW')) {
+      el.innerHTML = liveHTML + existing;
+    }
+  } catch(_) {}
 }
 
 /* ── Main init — called when user taps NPFL nav ── */
@@ -6819,198 +6784,155 @@ function renderNpflMatch(m) { return ''; }
 ═══════════════════════════════════════════ */
 let _playerTimer       = null;
 let _playerCache       = {}; // query → results cache
-let _playerDetailCache = {}; // legacy — kept for compatibility
+let _playerDetailCache = {}; // playerId → detail cache
 
-/* ── Player Search — Wikipedia + Firebase ── */
-let _playerTimer = null;
-let _playerCache = {}; // query → results
-
+/* ── Search players by name ── */
 async function handlePlayerSearch(val) {
   clearTimeout(_playerTimer);
   const res = document.getElementById('player-results');
   if (!val || !val.trim()) {
-    // Show featured players from Firebase
-    _loadFeaturedPlayers();
+    res.innerHTML = `
+      <div class="player-empty">
+        <div class="player-empty-icon">⚽</div>
+        <div class="player-empty-text">Search for any football player</div>
+      </div>`;
     return;
   }
+
+  // API-Football requires at least 3 characters
   if (val.trim().length < 3) {
-    res.innerHTML = `<div class="player-empty"><div class="player-empty-icon">⌨️</div><div class="player-empty-text">Keep typing… (min. 3 characters)</div></div>`;
+    res.innerHTML = `
+      <div class="player-empty">
+        <div class="player-empty-icon">⌨️</div>
+        <div class="player-empty-text">Keep typing… (min. 3 characters)</div>
+      </div>`;
     return;
   }
+
+  // Show spinner immediately
   res.innerHTML = `<div class="player-loading"><div class="spinner"></div> Searching…</div>`;
-  _playerTimer = setTimeout(() => _searchPlayers(val.trim()), 500);
-}
 
-/* ── Search Firebase players collection first, then Wikipedia ── */
-async function _searchPlayers(query) {
-  const res = document.getElementById('player-results');
-  const q_lower = query.toLowerCase();
+  // Debounce — wait 500ms after user stops typing
+  _playerTimer = setTimeout(async () => {
+    const query = val.trim();
 
-  // Check cache
-  if (_playerCache[q_lower]) {
-    _renderWikiPlayers(_playerCache[q_lower], query);
-    return;
-  }
-
-  try {
-    // 1️⃣ Search Firebase players collection (pre-loaded by bot)
-    const fsApi = window._psFs;
-    const db    = window._psDb;
-    let firebasePlayers = [];
-    if (fsApi && db) {
-      const { collection, getDocs } = fsApi;
-      const snap = await getDocs(collection(db, 'players'));
-      firebasePlayers = snap.docs
-        .map(d => d.data())
-        .filter(p => (p.name||'').toLowerCase().includes(q_lower) || (p.searchName||'').toLowerCase().includes(q_lower));
-    }
-
-    if (firebasePlayers.length > 0) {
-      _playerCache[q_lower] = firebasePlayers;
-      _renderWikiPlayers(firebasePlayers, query);
+    // Return cached result if available
+    if (_playerCache[query]) {
+      _renderPlayerResults(_playerCache[query], query);
       return;
     }
 
-    // 2️⃣ Live Wikipedia search if not in Firebase
-    const searchRes = await fetch(
-      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query + ' footballer')}`,
-      { signal: AbortSignal.timeout(6000) }
-    );
-    if (!searchRes.ok) throw new Error('Not found');
-    const data = await searchRes.json();
-    if (!data.extract || data.extract.length < 50) throw new Error('Not a footballer');
+    try {
+      const response = await fetch(
+        `https://v3.football.api-sports.io/players?search=${encodeURIComponent(query)}&league=332&season=2024`,
+        { headers: { 'x-apisports-key': APIFOOTBALL_KEY }, signal: AbortSignal.timeout(7000) }
+      );
 
-    const positions = ['goalkeeper','defender','midfielder','forward','striker','winger'];
-    let position = '';
-    for (const p of positions) {
-      if ((data.extract||'').toLowerCase().includes(p)) { position = p.charAt(0).toUpperCase()+p.slice(1); break; }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      let data = await response.json();
+
+      // Detect API-level errors (quota exceeded, invalid key, etc.)
+      if (data.errors && (data.errors.requests || data.errors.token || Object.keys(data.errors).length)) {
+        const errMsg = data.errors.requests || data.errors.token || JSON.stringify(data.errors);
+        res.innerHTML = `
+          <div class="player-empty">
+            <div class="player-empty-icon">⚠️</div>
+            <div class="player-empty-text">API Error: ${errMsg}</div>
+          </div>`;
+        return;
+      }
+
+      let players = data.response || [];
+
+      // If no results in NPFL, widen search to all leagues
+      if (!players.length) {
+        const r2 = await fetch(
+          `https://v3.football.api-sports.io/players?search=${encodeURIComponent(query)}&season=2024`,
+          { headers: { 'x-apisports-key': APIFOOTBALL_KEY }, signal: AbortSignal.timeout(7000) }
+        );
+        if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
+        const d2 = await r2.json();
+        if (d2.errors && Object.keys(d2.errors).length) {
+          const errMsg = d2.errors.requests || d2.errors.token || JSON.stringify(d2.errors);
+          res.innerHTML = `
+            <div class="player-empty">
+              <div class="player-empty-icon">⚠️</div>
+              <div class="player-empty-text">API Error: ${errMsg}</div>
+            </div>`;
+          return;
+        }
+        players = d2.response || [];
+      }
+
+      _playerCache[query] = players;
+      _renderPlayerResults(players, query);
+
+    } catch(e) {
+      res.innerHTML = `
+        <div class="player-empty">
+          <div class="player-empty-icon">⚠️</div>
+          <div class="player-empty-text">Search failed: ${e.message || 'Check your connection'}</div>
+        </div>`;
     }
-    const sentences = (data.extract||'').split('. ');
-    const bio = sentences.slice(0,2).join('. ') + '.';
-    const player = {
-      name:        data.title || query,
-      description: data.description || '',
-      bio,
-      position,
-      image:       data.thumbnail?.source || '',
-      wikiUrl:     data.content_urls?.desktop?.page || '',
-      extract:     (data.extract||'').slice(0,1000),
-    };
-    _playerCache[q_lower] = [player];
-    _renderWikiPlayers([player], query);
+  }, 500);
+}
 
-  } catch(e) {
+/* ── Render search results list ── */
+function _renderPlayerResults(players, query) {
+  const res = document.getElementById('player-results');
+  if (!players.length) {
     res.innerHTML = `
       <div class="player-empty">
         <div class="player-empty-icon">🔍</div>
-        <div class="player-empty-text">No results for "<strong>${query}</strong>"<br>
-          <span style="font-size:12px;color:var(--text3);">Try the full name e.g. "Victor Osimhen"</span>
+        <div class="player-empty-text">No players found for "<strong>${query}</strong>"<br>
+          <span style="font-size:12px;color:var(--text3);">Try a different spelling or full name</span>
         </div>
       </div>`;
-  }
-}
-
-/* ── Load featured players from Firebase on page open ── */
-async function _loadFeaturedPlayers() {
-  const res = document.getElementById('player-results');
-  res.innerHTML = `<div class="player-loading"><div class="spinner"></div> Loading players…</div>`;
-  try {
-    const fsApi = window._psFs;
-    const db    = window._psDb;
-    if (!fsApi || !db) throw new Error('not ready');
-    const { collection, query, orderBy, limit, getDocs } = fsApi;
-    const q    = query(collection(db, 'players'), orderBy('name'), limit(20));
-    const snap = await getDocs(q);
-    const players = snap.docs.map(d => d.data());
-    if (players.length) {
-      _renderWikiPlayers(players, '');
-    } else {
-      res.innerHTML = `<div class="player-empty"><div class="player-empty-icon">⚽</div><div class="player-empty-text">Search for any football player</div></div>`;
-    }
-  } catch(e) {
-    res.innerHTML = `<div class="player-empty"><div class="player-empty-icon">⚽</div><div class="player-empty-text">Search for any football player</div></div>`;
-  }
-}
-
-/* ── Render Wikipedia player cards ── */
-function _renderWikiPlayers(players, query) {
-  const res = document.getElementById('player-results');
-  if (!players.length) {
-    res.innerHTML = `<div class="player-empty"><div class="player-empty-icon">🔍</div><div class="player-empty-text">No players found for "<strong>${query}</strong>"</div></div>`;
     return;
   }
-  res.innerHTML = players.slice(0, 12).map(p => {
-    const safeId = encodeURIComponent(p.name || '');
-    window._playerWikiCache = window._playerWikiCache || {};
-    window._playerWikiCache[p.name] = p;
+
+  res.innerHTML = players.slice(0, 10).map(entry => {
+    const p    = entry.player;
+    const stat = (entry.statistics || [])[0] || {};
+    const club = stat.team?.name   || 'Unknown Club';
+    const logo = stat.team?.logo   || '';
+    const pos  = stat.games?.position || p.position || '—';
+    const goals   = stat.goals?.total    || 0;
+    const assists = stat.goals?.assists  || 0;
+    const apps    = stat.games?.appearences || 0;
+    const rating  = stat.games?.rating
+      ? parseFloat(stat.games.rating).toFixed(1)
+      : '—';
+
     return `
-      <div class="player-card" onclick="openWikiPlayerProfile('${p.name.replace(/'/g,"\'")}')">
+      <div class="player-card" onclick="openPlayerProfile(${p.id})">
         <div class="player-card-top">
           <div class="player-avatar" style="overflow:hidden;padding:0;">
-            ${p.image
-              ? `<img src="${p.image}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='⚽'">`
+            ${p.photo
+              ? `<img src="${p.photo}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='⚽'">`
               : '⚽'}
           </div>
           <div class="player-info">
-            <div class="player-name">${p.name}</div>
-            <div class="player-club">${p.description || p.position || 'Footballer'}</div>
-            <div class="player-nation">${p.position || ''}</div>
+            <div class="player-name">${p.firstname} ${p.lastname}</div>
+            <div class="player-club" style="display:flex;align-items:center;gap:5px;">
+              ${logo ? `<img src="${logo}" style="width:14px;height:14px;object-fit:contain;" onerror="this.style.display='none'">` : '🏟'}
+              ${club}
+            </div>
+            <div class="player-nation">
+              ${p.nationality || '—'} · ${pos}
+              ${p.age ? ` · Age ${p.age}` : ''}
+            </div>
           </div>
         </div>
-        <div style="font-size:12px;color:var(--text2);line-height:1.5;margin-top:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">
-          ${p.bio || p.extract || ''}
+        <div class="player-stats-grid">
+          <div class="pstat-box"><div class="pstat-box-num">${goals}</div><div class="pstat-box-lbl">Goals</div></div>
+          <div class="pstat-box"><div class="pstat-box-num">${assists}</div><div class="pstat-box-lbl">Assists</div></div>
+          <div class="pstat-box"><div class="pstat-box-num">${apps}</div><div class="pstat-box-lbl">Apps</div></div>
+          <div class="pstat-box"><div class="pstat-box-num">${rating}</div><div class="pstat-box-lbl">Rating</div></div>
         </div>
-        ${p.wikiUrl ? `<div style="margin-top:8px;"><a href="${p.wikiUrl}" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none;font-weight:600;">📖 Full Wikipedia Profile →</a></div>` : ''}
       </div>`;
   }).join('');
 }
-
-/* ── Open full player profile ── */
-function openWikiPlayerProfile(name) {
-  const p = (window._playerWikiCache || {})[name];
-  if (!p) return;
-  let overlay = document.getElementById('player-profile-overlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'player-profile-overlay';
-    overlay.style.cssText = `position:fixed;inset:0;z-index:2000;background:var(--bg);display:flex;flex-direction:column;font-family:'DM Sans',sans-serif;animation:fadeIn .25s ease;`;
-    document.body.appendChild(overlay);
-  }
-  overlay.innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;padding:16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg2);">
-      <button onclick="closePlayerProfile()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;">‹</button>
-      <span style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;">PLAYER PROFILE</span>
-    </div>
-    <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;">
-      <!-- Hero -->
-      <div style="background:linear-gradient(135deg,#0f172a,#064e3b);padding:24px 20px;display:flex;align-items:center;gap:16px;">
-        <div style="width:80px;height:80px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.1);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:36px;">
-          ${p.image ? `<img src="${p.image}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='⚽'">` : '⚽'}
-        </div>
-        <div>
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:#fff;letter-spacing:.04em;line-height:1.1;">${p.name}</div>
-          <div style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:4px;">${p.description || ''}</div>
-          ${p.position ? `<div style="margin-top:6px;background:rgba(16,185,129,0.2);color:#10b981;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;display:inline-block;">${p.position}</div>` : ''}
-        </div>
-      </div>
-      <!-- Bio -->
-      <div style="padding:20px;">
-        <div style="font-size:13px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;">Biography</div>
-        <div style="font-size:14px;color:var(--text);line-height:1.7;">${p.extract || p.bio || 'No biography available.'}</div>
-        ${p.wikiUrl ? `
-          <a href="${p.wikiUrl}" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:20px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:14px;border-radius:12px;text-decoration:none;font-weight:700;font-size:14px;">
-            📖 Read Full Wikipedia Article
-          </a>` : ''}
-      </div>
-    </div>`;
-  overlay.style.display = 'flex';
-}
-
-/* ── Keep old openPlayerProfile as alias so nothing breaks ── */
-async function openPlayerProfile(id) { return; }
-
-/* ── Render search results list (legacy stub) ── */
-function _renderPlayerResults(players, query) { _renderWikiPlayers(players, query); }
 
 /* ── Open full player profile overlay ── */
 async function openPlayerProfile(playerId) {
@@ -7247,23 +7169,16 @@ function clearAuthErrors() {
   });
 }
 function applyUserToApp(user) {
-  try {
-    const displayName = user.displayName || (user.email ? user.email.split('@')[0] : 'Fan');
-    const initials = displayName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
-    profileData = { ...profileData, name: displayName, email: user.email || 'dev@pitchside.app', initials };
-    const pName = document.getElementById('profile-name');
-    const pEmail = document.getElementById('profile-email');
-    const pInitials = document.getElementById('profile-initials');
-    if (pName) pName.textContent = displayName;
-    if (pEmail) pEmail.textContent = user.email || 'dev@pitchside.app';
-    if (pInitials) pInitials.textContent = initials;
-    if (user.photoURL) {
-      const img = document.getElementById('profile-avatar-img');
-      if (img) { img.src = user.photoURL; img.style.display = 'block'; }
-      if (pInitials) pInitials.style.display = 'none';
-    }
-  } catch(e) {
-    console.warn('applyUserToApp error:', e);
+  const displayName = user.displayName || (user.email ? user.email.split('@')[0] : 'Fan');
+  const initials = displayName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+  profileData = { ...profileData, name: displayName, email: user.email || 'dev@pitchside.app', initials };
+  document.getElementById('profile-name').textContent     = displayName;
+  document.getElementById('profile-email').textContent    = user.email || 'dev@pitchside.app';
+  document.getElementById('profile-initials').textContent = initials;
+  if (user.photoURL) {
+    const img = document.getElementById('profile-avatar-img');
+    img.src = user.photoURL; img.style.display = 'block';
+    document.getElementById('profile-initials').style.display = 'none';
   }
 }
 function enterApp(user) {
@@ -7369,25 +7284,10 @@ window._psFs          = { collection, query, where, orderBy, limit, getDocs,
 window._psCurrentUser = null;
 onAuthStateChanged(auth, user => {
   window._psCurrentUser = user || null;
-  try {
-    if (typeof activateFirebaseListener === 'function') {
-      activateFirebaseListener();
-    }
-  } catch(e) {
-    console.warn('activateFirebaseListener error:', e);
-  }
-  // If user is signed in, hide auth screen and show app
-  try {
-    if (user) {
-      const authScreen = document.getElementById('auth-screen');
-      const appScreen  = document.getElementById('app-screen') ||
-                         document.getElementById('main-app')   ||
-                         document.getElementById('app');
-      if (authScreen) authScreen.style.display = 'none';
-      if (appScreen)  appScreen.style.display  = 'block';
-    }
-  } catch(e) {
-    console.warn('Screen switch error:', e);
+  // ── CHANGE 2: Activate Firebase listener once auth is confirmed ──
+  // Works whether user is logged in or not (Firestore rules permitting).
+  if (typeof activateFirebaseListener === 'function') {
+    activateFirebaseListener();
   }
 });
 </script>
