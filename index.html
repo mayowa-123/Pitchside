@@ -1027,8 +1027,10 @@ body {
   display: none;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   padding-bottom: var(--nav-h);
 }
+#page-ai.active { position: fixed; inset: 0; padding-bottom: var(--nav-h); }
 #page-ai.active { display: flex; }
 
 /* Header */
@@ -1112,6 +1114,7 @@ body {
   background: #0b0f14;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  overscroll-behavior: contain;
 }
 .ai-chat-body::-webkit-scrollbar { display: none; }
 
@@ -1272,11 +1275,15 @@ body {
 .ai-input-bar {
   background: #0e1318;
   border-top: 1px solid rgba(255,255,255,0.06);
-  padding: 10px 12px 14px;
+  padding: 10px 12px env(safe-area-inset-bottom, 14px);
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
 }
 .ai-input-row {
   display: flex;
@@ -2802,7 +2809,9 @@ function _firestoreDocToVideo(docSnap) {
   // Resolve media URL — try all known field names your robot may use
   const rawMediaUrl =
     d.mediaUrl   || d.video_url  || d.videoUrl  ||
-    d.url        || d.src        || d.embed_url  || '';
+    d.embedUrl   || d.embed_url  ||
+    (d.youtubeId ? 'https://www.youtube.com/embed/' + d.youtubeId : '') ||
+    d.url        || d.src        || '';
 
   // Apply Cloudinary auto-quality if applicable
   const mediaUrl = applyCloudinaryQuality(rawMediaUrl);
@@ -5731,7 +5740,11 @@ async function sendAiMessage(presetText) {
       aiMessages.push({ role: 'assistant', content: reply });
       if (aiMessages.length > 40) aiMessages = aiMessages.slice(-40);
     } else if (data.error) {
-      appendAiMessage('bot', `⚠️ ${data.error.message || 'Something went wrong. Please try again.'}`);
+      const errMsg = data.error.message || 'Something went wrong.';
+      const friendly = errMsg.includes('x-api-key') || errMsg.includes('api-key') || errMsg.includes('API key')
+        ? '⚠️ AI service is currently unavailable. The app owner needs to add an Anthropic API key to enable this feature.'
+        : `⚠️ ${errMsg}`;
+      appendAiMessage('bot', friendly);
     } else {
       appendAiMessage('bot', "Hmm, I didn't get a response. Please try again! ⚽");
     }
@@ -7525,6 +7538,24 @@ onAuthStateChanged(auth, user => {
 ═══════════════════════════════════════════ */
 let fanStreak = 0;
 let lastCheckIn = '';
+
+// Fix keyboard covering AI input on mobile
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    const aiPage = document.getElementById('page-ai');
+    if (!aiPage || aiPage.style.display === 'none') return;
+    const keyboardHeight = window.innerHeight - window.visualViewport.height;
+    const inputBar = aiPage.querySelector('.ai-input-bar');
+    if (inputBar) {
+      inputBar.style.paddingBottom = keyboardHeight > 50
+        ? (keyboardHeight + 8) + 'px'
+        : '14px';
+      // Scroll to bottom of chat
+      const messages = document.getElementById('ai-messages');
+      if (messages) messages.scrollTop = messages.scrollHeight;
+    }
+  });
+}
 
 // Poll for currentUser set by the module script's onAuthStateChanged
 (function initStreak() {
