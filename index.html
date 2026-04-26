@@ -6034,6 +6034,8 @@ function initHighlights() {
   // Always re-render so fresh Firebase data shows immediately
   _renderHighlightsFromVideos();
   _loadCommunityHighlights();
+  // Also fetch directly from Highlightly API for instant results
+  _fetchOfficialHighlights();
 }
 
 /* ── Render official highlights directly from the VIDEOS array (Firebase bot data) ── */
@@ -6051,23 +6053,8 @@ function _renderHighlightsFromVideos() {
     });
 
   if (official.length === 0) {
-    // Show loading if VIDEOS is still empty (Firebase not loaded yet), else empty state
-    if (VIDEOS.length === 0) {
-      container.innerHTML = `
-        <div class="hl-loading">
-          <div class="hl-dots"><span></span><span></span><span></span></div>
-          <div class="hl-loading-text">Loading highlights from Firebase…</div>
-        </div>`;
-      // Retry in 1.5s — Firebase may still be loading
-      setTimeout(_renderHighlightsFromVideos, 1500);
-    } else {
-      container.innerHTML = `
-        <div class="hl-empty">
-          <div class="hl-empty-icon">📡</div>
-          <div class="hl-empty-text">Your bot hasn't uploaded any highlights yet.<br>Check back after matches — they'll appear here automatically.</div>
-          <button onclick="_renderHighlightsFromVideos()" style="margin-top:16px;padding:10px 24px;background:var(--green);color:#fff;border:none;border-radius:20px;font-weight:700;font-size:13px;cursor:pointer;">🔄 Refresh</button>
-        </div>`;
-    }
+    // No Firebase videos yet — fetch from Highlightly API directly
+    _fetchOfficialHighlights();
     return;
   }
 
