@@ -8,16 +8,19 @@ exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
 
   try {
-    // Pass through the query string from the original request
-    const queryString = event.queryStringParameters
-      ? '?' + new URLSearchParams(event.queryStringParameters).toString()
+    const params = { ...(event.queryStringParameters || {}) };
+    const endpoint = params.endpoint || 'fixtures';
+    delete params.endpoint;
+
+    const queryString = Object.keys(params).length
+      ? '?' + new URLSearchParams(params).toString()
       : '';
 
-    const url = `https://v3.football.api-sports.io${event.path.replace('/.netlify/functions/football', '')}${queryString}`;
+    const url = `https://v3.football.api-sports.io/${endpoint}${queryString}`;
 
     const response = await fetch(url, {
       headers: {
-        'x-apisports-key': process.env.APIFOOTBALL_KEY, // 🔒 Stored in Netlify dashboard
+        'x-apisports-key': process.env.APIFOOTBALL_KEY,
       },
     });
 
