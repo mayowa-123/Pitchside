@@ -2450,16 +2450,60 @@ body {
     <h1>HIGHLIGHTS</h1>
     <p>Official match highlights · Updated automatically</p>
   </div>
-  <!-- Official Highlights only — bot fills this from Firebase -->
-  <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px;" id="hl-panel-official">
-    <div id="hl-official-content">
-      <div class="hl-loading">
-        <div class="hl-dots"><span></span><span></span><span></span></div>
-        <div class="hl-loading-text">Loading highlights…</div>
-      </div>
+
+  <!-- League Filter Tabs -->
+  <div style="display:flex;gap:8px;padding:10px 14px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-shrink:0;">
+    <button onclick="loadScorbatWidget('all')" id="sb-btn-all" style="flex-shrink:0;padding:6px 14px;border-radius:20px;border:none;background:var(--green);color:#fff;font-size:12px;font-weight:600;cursor:pointer;">All</button>
+    <button onclick="loadScorbatWidget('england-premier-league')" id="sb-btn-pl" style="flex-shrink:0;padding:6px 14px;border-radius:20px;border:none;background:var(--bg2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">Premier League</button>
+    <button onclick="loadScorbatWidget('spain-la-liga')" id="sb-btn-ll" style="flex-shrink:0;padding:6px 14px;border-radius:20px;border:none;background:var(--bg2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">La Liga</button>
+    <button onclick="loadScorbatWidget('italy-serie-a')" id="sb-btn-sa" style="flex-shrink:0;padding:6px 14px;border-radius:20px;border:none;background:var(--bg2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">Serie A</button>
+    <button onclick="loadScorbatWidget('germany-bundesliga')" id="sb-btn-bl" style="flex-shrink:0;padding:6px 14px;border-radius:20px;border:none;background:var(--bg2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">Bundesliga</button>
+    <button onclick="loadScorbatWidget('uefa-champions-league')" id="sb-btn-cl" style="flex-shrink:0;padding:6px 14px;border-radius:20px;border:none;background:var(--bg2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">UCL</button>
+  </div>
+
+  <!-- Scorebat Widget Container -->
+  <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;" id="hl-panel-official">
+    <div id="scorebat-container" style="width:100%;min-height:500px;">
+      <iframe id="scorebat-iframe"
+        src="https://www.scorebat.com/embed/competition/?token=NjY1MzlfMTc0NTgzNTYwMl8zMDQ4MWNkMzZlNmQyNmY4ZWM3MjQ1MDgzMjlmYzQ1ZTZjNjYyMGFhMzdhYzU5OGZiOWQ4OTkzYWFkN2I1NjI1"
+        frameborder="0"
+        width="100%"
+        height="100%"
+        style="min-height:80vh;border:none;display:block;"
+        allowfullscreen>
+      </iframe>
     </div>
   </div>
 </div>
+
+<script>
+function loadScorbatWidget(league) {
+  // Reset all buttons
+  document.querySelectorAll('[id^="sb-btn-"]').forEach(btn => {
+    btn.style.background = 'var(--bg2)';
+    btn.style.color = 'var(--text)';
+  });
+
+  // Highlight active button
+  const activeBtn = document.getElementById('sb-btn-' + (league === 'all' ? 'all' :
+    league === 'england-premier-league' ? 'pl' :
+    league === 'spain-la-liga' ? 'll' :
+    league === 'italy-serie-a' ? 'sa' :
+    league === 'germany-bundesliga' ? 'bl' :
+    league === 'uefa-champions-league' ? 'cl' : 'all'));
+  if (activeBtn) {
+    activeBtn.style.background = 'var(--green)';
+    activeBtn.style.color = '#fff';
+  }
+
+  const iframe = document.getElementById('scorebat-iframe');
+  if (league === 'all') {
+    iframe.src = 'https://www.scorebat.com/embed/competition/?token=NjY1MzlfMTc0NTgzNTYwMl8zMDQ4MWNkMzZlNmQyNmY4ZWM3MjQ1MDgzMjlmYzQ1ZTZjNjYyMGFhMzdhYzU5OGZiOWQ4OTkzYWFkN2I1NjI1';
+  } else {
+    iframe.src = `https://www.scorebat.com/embed/competition/${league}/?token=NjY1MzlfMTc0NTgzNTYwMl8zMDQ4MWNkMzZlNmQyNmY4ZWM3MjQ1MDgzMjlmYzQ1ZTZjNjYyMGFhMzdhYzU5OGZiOWQ4OTkzYWFkN2I1NjI1`;
+  }
+}
+</script>
 
 <!-- In-app Video Player Overlay (no YouTube branding) -->
 <div id="hl-player-overlay">
