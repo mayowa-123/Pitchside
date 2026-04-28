@@ -2605,7 +2605,7 @@ async function fetchLiveScores() {
 
     // Cache is old or missing — make API call
     console.log('[PitchSide] Fetching fresh live scores from API...');
-    const res = await fetch(`https://pitchsidefootballapp.netlify.app/.netlify/functions/football?endpoint=fixtures&date=${today}`, {
+    const res = await fetch(`https://pitchsidefootball.netlify.app/.netlify/functions/football?endpoint=fixtures&date=${today}`, {
       headers: {},
       signal: AbortSignal.timeout(4000)
     });
@@ -3302,7 +3302,7 @@ async function initTicker() {
 
   // Attempt live fetch
   try {
-    const res = await fetch('https://pitchsidefootballapp.netlify.app/.netlify/functions/football?endpoint=fixtures&live=all', {
+    const res = await fetch('https://pitchsidefootball.netlify.app/.netlify/functions/football?endpoint=fixtures&live=all', {
       headers: {},
       signal: AbortSignal.timeout(3000)
     });
@@ -3331,7 +3331,7 @@ function startTickerRefresh() {
   if (tickerRefreshInterval) clearInterval(tickerRefreshInterval);
   tickerRefreshInterval = setInterval(async () => {
     try {
-      const res = await fetch('https://pitchsidefootballapp.netlify.app/.netlify/functions/football?endpoint=fixtures&live=all', {
+      const res = await fetch('https://pitchsidefootball.netlify.app/.netlify/functions/football?endpoint=fixtures&live=all', {
         headers: {},
         signal: AbortSignal.timeout(3000)
       });
@@ -3566,7 +3566,7 @@ async function openAiInsight(videoId, description) {
       ? `You are a sharp football analyst. Given this highlight description: "${description}" — provide a 3-sentence tactical insight about this football moment. Be specific, mention tactics/formations/player roles. Keep it concise and punchy.`
       : `You are a sharp football analyst. Give 3 punchy sentences of tactical analysis for a football highlight. Mention pressing, space creation, or finishing. Be specific and exciting.`;
 
-    const res = await fetch('https://pitchsidefootballapp.netlify.app/.netlify/functions/ai', {
+    const res = await fetch('https://pitchsidefootball.netlify.app/.netlify/functions/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -4104,7 +4104,7 @@ async function openMatchDetail(matchId, title) {
 
   try {
     // Fetch Fixture Data (Overview, Timeline, Lineups, Stats)
-    const res = await fetch(`https://pitchsidefootballapp.netlify.app/.netlify/functions/football?endpoint=fixtures&id=${matchId}`, {
+    const res = await fetch(`https://pitchsidefootball.netlify.app/.netlify/functions/football?endpoint=fixtures&id=${matchId}`, {
       headers: {}
     });
     const data = await res.json();
@@ -4313,7 +4313,7 @@ async function loadLiveTable(leagueId, season) {
   container.innerHTML = `<div class="ov-loading"><div class="spinner"></div>Fetching table...</div>`;
   
   try {
-    const res = await fetch(`https://pitchsidefootballapp.netlify.app/.netlify/functions/football?endpoint=standings&league=${leagueId}&season=${season}`, {
+    const res = await fetch(`https://pitchsidefootball.netlify.app/.netlify/functions/football?endpoint=standings&league=${leagueId}&season=${season}`, {
       headers: {}
     });
     const data = await res.json();
@@ -5719,7 +5719,7 @@ async function sendAiMessage(presetText) {
   showAiTyping();
 
   try {
-    const res = await fetch('https://pitchsidefootballapp.netlify.app/.netlify/functions/ai', {
+    const res = await fetch('https://pitchsidefootball.netlify.app/.netlify/functions/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -6019,7 +6019,7 @@ function _renderNewsEmpty(msg) {
 ══════════════════════════════════════════════════════ */
 
 const HIGHLIGHTLY_KEY = ''; // Secured in Netlify
-const HIGHLIGHTLY_BASE = 'https://pitchsidefootballapp.netlify.app/.netlify/functions/highlights';
+const HIGHLIGHTLY_BASE = 'https://pitchsidefootball.netlify.app/.netlify/functions/highlights';
 
 let _hlInitDone    = false;
 let _hlCurrentTab  = 'official';
@@ -6625,7 +6625,7 @@ async function _npflFetchFixtures() {
   const today = new Date().toISOString().split('T')[0];
   try {
     const res = await fetch(
-      `https://pitchsidefootballapp.netlify.app/.netlify/functions/football?endpoint=fixtures&league=${NPFL_LEAGUE_ID}&season=${NPFL_SEASON}&from=${today}&to=${new Date(Date.now()+7*86400000).toISOString().split('T')[0]}`,
+      `https://pitchsidefootball.netlify.app/.netlify/functions/football?endpoint=fixtures&league=${NPFL_LEAGUE_ID}&season=${NPFL_SEASON}&from=${today}&to=${new Date(Date.now()+7*86400000).toISOString().split('T')[0]}`,
       { signal: AbortSignal.timeout(6000) }
     );
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -6650,7 +6650,7 @@ async function _npflFetchResults() {
   const from  = new Date(Date.now() - 14*86400000).toISOString().split('T')[0];
   try {
     const res = await fetch(
-      `https://pitchsidefootballapp.netlify.app/.netlify/functions/football?endpoint=fixtures&league=${NPFL_LEAGUE_ID}&season=${NPFL_SEASON}&from=${from}&to=${today}&status=FT`,
+      `https://pitchsidefootball.netlify.app/.netlify/functions/football?endpoint=fixtures&league=${NPFL_LEAGUE_ID}&season=${NPFL_SEASON}&from=${from}&to=${today}&status=FT`,
       { signal: AbortSignal.timeout(6000) }
     );
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -6673,7 +6673,7 @@ async function _npflFetchResults() {
 async function _npflFetchStandings() {
   try {
     const res = await fetch(
-      `https://pitchsidefootballapp.netlify.app/.netlify/functions/football?endpoint=standings&league=${NPFL_LEAGUE_ID}&season=${NPFL_SEASON}`,
+      `https://pitchsidefootball.netlify.app/.netlify/functions/football?endpoint=standings&league=${NPFL_LEAGUE_ID}&season=${NPFL_SEASON}`,
       { signal: AbortSignal.timeout(6000) }
     );
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -6728,7 +6728,7 @@ async function _npflFetchStandings() {
 async function _npflFetchLive() {
   try {
     const res = await fetch(
-      `https://pitchsidefootballapp.netlify.app/.netlify/functions/football?endpoint=fixtures&league=${NPFL_LEAGUE_ID}&live=all`,
+      `https://pitchsidefootball.netlify.app/.netlify/functions/football?endpoint=fixtures&league=${NPFL_LEAGUE_ID}&live=all`,
       { signal: AbortSignal.timeout(5000) }
     );
     if (!res.ok) return;
@@ -6835,7 +6835,7 @@ async function handlePlayerSearch(val) {
 
     try {
       const response = await fetch(
-        `https://pitchsidefootballapp.netlify.app/.netlify/functions/football?endpoint=players&search=${encodeURIComponent(query)}&league=332&season=2024`,
+        `https://pitchsidefootball.netlify.app/.netlify/functions/football?endpoint=players&search=${encodeURIComponent(query)}&league=332&season=2024`,
         { signal: AbortSignal.timeout(7000) }
       );
 
@@ -6858,7 +6858,7 @@ async function handlePlayerSearch(val) {
       // If no results in NPFL, widen search to all leagues
       if (!players.length) {
         const r2 = await fetch(
-          `https://pitchsidefootballapp.netlify.app/.netlify/functions/football?endpoint=players&search=${encodeURIComponent(query)}&season=2024`,
+          `https://pitchsidefootball.netlify.app/.netlify/functions/football?endpoint=players&search=${encodeURIComponent(query)}&season=2024`,
           { signal: AbortSignal.timeout(7000) }
         );
         if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
@@ -6978,7 +6978,7 @@ async function openPlayerProfile(playerId) {
   if (!_playerDetailCache[playerId]) {
     try {
       const res = await fetch(
-        `https://pitchsidefootballapp.netlify.app/.netlify/functions/football?endpoint=players&id=${playerId}&season=2024`,
+        `https://pitchsidefootball.netlify.app/.netlify/functions/football?endpoint=players&id=${playerId}&season=2024`,
         { signal: AbortSignal.timeout(8000) }
       );
       const data = await res.json();
@@ -7103,7 +7103,7 @@ async function _fetchPlayerAiBio(playerId, p) {
 
   const name = `${p.firstname} ${p.lastname}`;
   try {
-    const res = await fetch('https://pitchsidefootballapp.netlify.app/.netlify/functions/ai', {
+    const res = await fetch('https://pitchsidefootball.netlify.app/.netlify/functions/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
