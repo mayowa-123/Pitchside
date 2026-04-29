@@ -11,14 +11,14 @@ exports.handler = async function (event) {
   try {
     const body = JSON.parse(event.body);
 
-    const response = await fetch('https://api.x.ai/v1/chat/completions', {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.GROK_API_KEY}`, // 🔒 Stored in Netlify dashboard
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'grok-3-mini', // or grok-3 if you have access
+        model: 'llama-3.3-70b-versatile',
         max_tokens: body.max_tokens || 800,
         messages: body.messages,
         ...(body.system ? { system: body.system } : {}),
@@ -27,7 +27,7 @@ exports.handler = async function (event) {
 
     const data = await response.json();
 
-    // Normalize Grok response to match Anthropic format your app expects
+    // Normalize Groq response to match Anthropic format your app expects
     const text = data.choices?.[0]?.message?.content || '';
     return {
       statusCode: 200,
