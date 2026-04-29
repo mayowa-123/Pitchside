@@ -20,8 +20,10 @@ exports.handler = async function (event) {
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         max_tokens: body.max_tokens || 800,
-        messages: body.messages,
-        ...(body.system ? { system: body.system } : {}),
+        messages: [
+  ...(body.system ? [{ role: 'system', content: body.system }] : []),
+  ...body.messages,
+],
       }),
     });
 
