@@ -6893,19 +6893,28 @@ async function _npflAskAI() {
 }
 
 async function _npflGetOrFetchData() {
-  const { doc, getDoc, setDoc, db } = window._psFs;
   const today = new Date().toISOString().split('T')[0];
   try {
+    const { doc, getDoc, setDoc, db } = window._psFs;
     // Check Firebase for today's cached data
     const snap = await getDoc(doc(db, 'npfl_ai_cache', today));
     if (snap.exists()) {
-      return snap.data();
+      const d = snap.data();
+      // Validate data has content
+      if (d.fixtures && d.fixtures.length) return d;
     }
     // Not cached yet — ask AI and save to Firebase
     const aiData = await _npflAskAI();
-    await setDoc(doc(db, 'npfl_ai_cache', today), { ...aiData, generatedAt: new Date().toISOString() });
+    if (aiData && aiData.fixtures) {
+      try {
+        await setDoc(doc(db, 'npfl_ai_cache', today), { ...aiData, generatedAt: new Date().toISOString() });
+      } catch(writeErr) {
+        console.warn('Firebase write failed:', writeErr);
+      }
+    }
     return aiData;
   } catch(e) {
+    console.warn('NPFL data error:', e);
     // If Firebase fails, ask AI directly
     return await _npflAskAI();
   }
@@ -7262,11 +7271,15 @@ function _renderPlayerResults(players, query) {
       const aiStats = await _fetchPlayerStatsFromAI(fullName, p.nationality || '', p.position || '');
       const statsEl = document.getElementById(`pstats-${idx}`);
       const clubEl  = document.getElementById(`pclub-${idx}`);
+      const g = aiStats.goals ?? 0;
+      const a = aiStats.assists ?? 0;
+      const ap = aiStats.apps ?? 0;
+      const rt = aiStats.rating != null ? (typeof aiStats.rating === 'number' ? aiStats.rating.toFixed(1) : aiStats.rating) : '—';
       if (statsEl) statsEl.innerHTML = `
-        <div class="pstat-box"><div class="pstat-box-num">${aiStats.goals}</div><div class="pstat-box-lbl">Goals</div></div>
-        <div class="pstat-box"><div class="pstat-box-num">${aiStats.assists}</div><div class="pstat-box-lbl">Assists</div></div>
-        <div class="pstat-box"><div class="pstat-box-num">${aiStats.apps}</div><div class="pstat-box-lbl">Apps</div></div>
-        <div class="pstat-box"><div class="pstat-box-num">${typeof aiStats.rating === 'number' ? aiStats.rating.toFixed(1) : aiStats.rating}</div><div class="pstat-box-lbl">Rating</div></div>`;
+        <div class="pstat-box"><div class="pstat-box-num">${g}</div><div class="pstat-box-lbl">Goals</div></div>
+        <div class="pstat-box"><div class="pstat-box-num">${a}</div><div class="pstat-box-lbl">Assists</div></div>
+        <div class="pstat-box"><div class="pstat-box-num">${ap}</div><div class="pstat-box-lbl">Apps</div></div>
+        <div class="pstat-box"><div class="pstat-box-num">${rt}</div><div class="pstat-box-lbl">Rating</div></div>`;
       if (clubEl && aiStats.club && aiStats.club !== 'Unknown') clubEl.textContent = aiStats.club;
     }
   });
