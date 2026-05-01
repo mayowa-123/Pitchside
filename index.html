@@ -6889,7 +6889,7 @@ async function _npflAskAI() {
   });
   const data = await res.json();
   const text = data.content?.[0]?.text || '{}';
-  return JSON.parse(text.replace(/```json|```/g,'').trim());
+  return _safeParseJSON(text);
 }
 
 async function _npflGetOrFetchData() {
@@ -7188,6 +7188,17 @@ async function handlePlayerSearch(val) {
 }
 
 /* ── Render search results list ── */
+function _safeParseJSON(text) {
+  try {
+    // Remove markdown fences
+    let clean = text.replace(/```json|```/g, '').trim();
+    // Extract first JSON object found
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    return {};
+  } catch(_) { return {}; }
+}
+
 async function _fetchPlayerStatsFromAI(playerName, nationality, position) {
   try {
     const res = await fetch('/api/ai', {
@@ -7195,13 +7206,20 @@ async function _fetchPlayerStatsFromAI(playerName, nationality, position) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         max_tokens: 300,
-        system: 'You are a football stats expert. Respond with valid JSON only, no markdown.',
-        messages: [{ role: 'user', content: `Give me 2024/2025 season stats for ${playerName} (${nationality}, ${position}) as JSON: {"goals":12,"assists":8,"apps":25,"rating":8.1,"club":"Club Name"} Use real approximate stats. If unknown, use 0s.` }]
+        system: 'You are a football stats expert. Respond with a single JSON object only. No text before or after. No markdown.',
+        messages: [{ role: 'user', content: `2024/2025 season stats for ${playerName} (${nationality}, ${position}). Reply with ONLY this JSON: {"goals":12,"assists":8,"apps":25,"rating":8.1,"club":"Club Name"}` }]
       })
     });
     const data = await res.json();
     const text = data.content?.[0]?.text || '{}';
-    return JSON.parse(text.replace(/```json|```/g,'').trim());
+    const parsed = _safeParseJSON(text);
+    return {
+      goals:   parsed.goals   ?? 0,
+      assists: parsed.assists ?? 0,
+      apps:    parsed.apps    ?? 0,
+      rating:  parsed.rating  ?? '—',
+      club:    parsed.club    || 'Unknown'
+    };
   } catch(_) { return { goals:0, assists:0, apps:0, rating:'—', club:'Unknown' }; }
 }
 
