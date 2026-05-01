@@ -6243,17 +6243,18 @@ function _renderNewsEmpty(msg) {
 async function _npflAskAI(section) {
   const today = new Date().toLocaleDateString('en-GB', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
   const prompts = {
-    fixtures: `Today is ${today}. Give me 6 upcoming NPFL 2024/2025 fixtures. Reply ONLY with this JSON array, no other text: [{"home":"Enyimba","away":"Rivers United","date":"Sat 3 May","time":"16:00"}]`,
-    results:  `Today is ${today}. Give me 6 recent NPFL 2024/2025 results. Reply ONLY with this JSON array, no other text: [{"home":"Remo Stars","away":"Kano Pillars","homeScore":2,"awayScore":1,"date":"Wed 30 Apr"}]`,
-    standings:`Today is ${today}. Give me top 10 NPFL 2024/2025 standings. Reply ONLY with this JSON array, no other text: [{"pos":1,"team":"Remo Stars","p":30,"w":18,"d":6,"l":6,"gd":"+20","pts":60}]`
+    fixtures: `Today is ${today}. Search the web and give me 6 upcoming NPFL 2025/2026 season fixtures. Reply ONLY with this JSON array, no other text: [{"home":"Enyimba","away":"Rivers United","date":"Sat 3 May","time":"16:00"}]`,
+    results:  `Today is ${today}. Search the web and give me 6 recent NPFL 2025/2026 season results with real scores. Reply ONLY with this JSON array, no other text: [{"home":"Remo Stars","away":"Kano Pillars","homeScore":2,"awayScore":1,"date":"Wed 30 Apr"}]`,
+    standings:`Today is ${today}. Search the web and give me the current NPFL 2025/2026 season top 10 standings. Reply ONLY with this JSON array, no other text: [{"pos":1,"team":"Remo Stars","p":30,"w":18,"d":6,"l":6,"gd":"+20","pts":60}]`
   };
   try {
     const res = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        max_tokens: 600,
-        system: 'You are a Nigerian football expert. Reply with a JSON array only. No markdown, no explanation, no extra text.',
+        max_tokens: 1000,
+        system: 'You are a Nigerian football expert with web search access. Use the web_search tool to get current 2025/2026 NPFL data before responding. Reply with a JSON array only. No markdown, no explanation, no extra text.',
+        tools: [{ type: "web_search_20250305", name: "web_search" }],
         messages: [{ role: 'user', content: prompts[section] }]
       })
     });
@@ -6540,8 +6541,9 @@ async function _fetchPlayerStatsFromAI(playerName, nationality, position) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         max_tokens: 300,
-        system: 'You are a football stats expert. Respond with a single JSON object only. No text before or after. No markdown.',
-        messages: [{ role: 'user', content: `What are the REAL 2024/2025 season stats for ${playerName} the footballer (${nationality}, ${position})? Use your actual knowledge of this specific player - do NOT use example numbers. Reply with ONLY a JSON object: {"goals":REAL_NUMBER,"assists":REAL_NUMBER,"apps":REAL_NUMBER,"rating":REAL_NUMBER,"club":"REAL_CLUB_NAME"}` }]
+        system: 'You are a football stats expert with web search access. Use web_search to find current player stats before responding. Respond with a single JSON object only. No text before or after. No markdown.',
+        tools: [{ type: "web_search_20250305", name: "web_search" }],
+        messages: [{ role: 'user', content: `Search the web for the current 2025/2026 season stats for ${playerName} the footballer (${nationality}, ${position}). Get real up-to-date numbers. Reply with ONLY a JSON object: {"goals":REAL_NUMBER,"assists":REAL_NUMBER,"apps":REAL_NUMBER,"rating":REAL_NUMBER,"club":"REAL_CLUB_NAME"}` }]
       })
     });
     const data = await res.json();
