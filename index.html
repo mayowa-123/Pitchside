@@ -6236,758 +6236,95 @@ function _renderNewsEmpty(msg) {
     </div>`;
 }
 
-/* ══════════════════════════════════════════════════════
-   HIGHLIGHTS SYSTEM — Three layers:
-   1. Official  → Highlightly API (no YouTube player shown)
-   2. Fans      → User uploaded via Cloudinary / Firebase
-   3. Players   → Verified player uploads via Cloudinary / Firebase
-══════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════
+   NPFL — Direct AI calls, no caching
+═══════════════════════════════════════════════ */
 
-const HIGHLIGHTLY_KEY = ''; // Secured in Netlify
-const HIGHLIGHTLY_BASE = '/api/highlights';
-
-let _hlInitDone    = false;
-let _hlCurrentTab  = 'official';
-let _hlOfficialData = [];
-let _hlFanData      = [];
-let _hlPlayerData   = [];
-
-/* ── Init (called once when nav tab clicked) ── */
-function initHighlights() {
-  // Always re-render so fresh Firebase data shows immediately
-  _renderHighlightsFromVideos();
-  _loadCommunityHighlights();
-}
-
-/* ── Render official highlights directly from the VIDEOS array (Firebase bot data) ── */
-function _renderHighlightsFromVideos() {
-  const container = document.getElementById('hl-official-content');
-  if (!container) return;
-
-  // Filter to official/bot videos only (not user posts), newest first
-  const official = VIDEOS
-    .filter(v => !v.userPost && !v.playerPost)
-    .sort((a, b) => {
-      const ta = (a.createdAt && a.createdAt.seconds) ? a.createdAt.seconds : (a.createdAt || 0);
-      const tb = (b.createdAt && b.createdAt.seconds) ? b.createdAt.seconds : (b.createdAt || 0);
-      return tb - ta;
-    });
-
-  if (official.length === 0) {
-    // Show loading if VIDEOS is still empty (Firebase not loaded yet), else empty state
-    if (VIDEOS.length === 0) {
-      container.innerHTML = `
-        <div class="hl-loading">
-          <div class="hl-dots"><span></span><span></span><span></span></div>
-          <div class="hl-loading-text">Loading highlights from Firebase…</div>
-        </div>`;
-      // Retry in 1.5s — Firebase may still be loading
-      setTimeout(_renderHighlightsFromVideos, 1500);
-    } else {
-      container.innerHTML = `
-        <div class="hl-empty">
-          <div class="hl-empty-icon">📡</div>
-          <div class="hl-empty-text">Your bot hasn't uploaded any highlights yet.<br>Check back after matches — they'll appear here automatically.</div>
-          <button onclick="_renderHighlightsFromVideos()" style="margin-top:16px;padding:10px 24px;background:var(--green);color:#fff;border:none;border-radius:20px;font-weight:700;font-size:13px;cursor:pointer;">🔄 Refresh</button>
-        </div>`;
-    }
-    return;
-  }
-
-  // Store full video objects in a lookup map so openHlPlayer can retrieve them safely
-  window._hlVideoMap = {};
-  official.forEach(v => { window._hlVideoMap[String(v.id)] = v; });
-
-  container.innerHTML = official.map(v => {
-    const thumb   = v.thumbnail || '';
-    const title   = v.title     || 'Football Highlight';
-    const league  = v.competition || v.cat || 'Football';
-    const date    = v.date        || 'Today';
-    const safeId  = _esc(String(v.id));
-    return `
-    <div class="hlcard" onclick="openHlPlayerById('${safeId}')">
-      <div class="hlcard-thumb">
-        ${thumb
-          ? `<img src="${thumb}" alt="${_esc(title)}" loading="lazy" onerror="this.style.display='none'">`
-          : `<div style="width:100%;height:100%;background:linear-gradient(135deg,#0f172a,#1e293b);display:flex;align-items:center;justify-content:center;font-size:48px;">⚽</div>`
-        }
-        <div class="hlcard-play"><div class="hlcard-play-btn"><svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>
-        <div class="hlcard-league">${_esc(league).toUpperCase().slice(0,20)}</div>
-        <div class="hlcard-badge">
-          <span class="verified-badge">
-            <svg width="9" height="9" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
-            OFFICIAL
-          </span>
-        </div>
-      </div>
-      <div class="hlcard-info">
-        <div class="hlcard-title">${_esc(title)}</div>
-        <div class="hlcard-meta">
-          <span class="hlcard-date">📅 ${date}</span>
-          <span style="margin-left:auto;font-size:11px;color:var(--green);font-weight:700;">▶ Watch</span>
-        </div>
-      </div>
-    </div>`;
-  }).join('') + '<div style="height:80px;"></div>';
-}
-
-/* ── Open highlights player by looking up video from map (avoids onclick attr corruption) ── */
-function openHlPlayerById(id) {
-  // Try _hlVideoMap first, then fall back to VIDEOS array (for explore/dash cards)
-  let v = window._hlVideoMap && window._hlVideoMap[id];
-  if (!v) v = (typeof VIDEOS !== 'undefined') && VIDEOS.find(x => String(x.id) === String(id));
-  if (!v) { console.warn('[HL] Video not found:', id); return; }
-  // Also register in map for future lookups
-  if (!window._hlVideoMap) window._hlVideoMap = {};
-  window._hlVideoMap[String(v.id)] = v;
-  openHlPlayer(String(v.id), v.title || '', v.src || v.embedUrl || '', v.embed || '', v.thumbnail || '');
-}
-
-/* ── Tab switcher ── */
-function switchHlTab(tab, btn) {
-  _hlCurrentTab = tab;
-  document.querySelectorAll('.hl-tab').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  document.querySelectorAll('.hl-panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('hl-panel-' + tab).classList.add('active');
-}
-
-function _renderCurrentHlTab() {
-  // just re-render whichever tab is active
-  if (_hlCurrentTab === 'official') _renderOfficialHighlights();
-  else if (_hlCurrentTab === 'fans') _renderCommunityCards('fans');
-  else _renderCommunityCards('players');
-}
-
-/* ══════════════════════════════════════════════════════
-   LAYER 1 — OFFICIAL HIGHLIGHTS via Highlightly API
-══════════════════════════════════════════════════════ */
-async function _fetchOfficialHighlights() {
-  const container = document.getElementById('hl-official-content');
-  container.innerHTML = `
-    <div class="hl-loading">
-      <div class="hl-dots"><span></span><span></span><span></span></div>
-      <div class="hl-loading-text">Fetching latest highlights…</div>
-    </div>`;
-
-  try {
-    // Get today's date and yesterday for fresh results
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
-    const fmt = d => d.toISOString().split('T')[0];
-
-    const res = await fetch(
-      `${HIGHLIGHTLY_BASE}/highlights?limit=20`,
-      {
-        method: 'GET',
-        headers: {
-          'x-rapidapi-key': HIGHLIGHTLY_KEY,
-          'x-rapidapi-host': 'football-highlights-api.p.rapidapi.com'
-        }
-      }
-    );
-
-    if (!res.ok) throw new Error('API error ' + res.status);
-    const json = await res.json();
-
-    // Highlightly returns { data: [...] } or array directly
-    const items = json.data || json.highlights || json || [];
-    if (!Array.isArray(items) || items.length === 0) {
-      _hlOfficialData = [];
-      _renderOfficialHighlights();
-      return;
-    }
-
-    _hlOfficialData = items.map(h => ({
-      id:        h.id || h._id || Math.random().toString(36).slice(2),
-      title:     h.title || (h.homeTeam + ' vs ' + h.awayTeam) || 'Football Highlight',
-      league:    h.competition?.name || h.league || h.competition || 'Football',
-      thumbnail: h.thumbnail || h.thumbnailUrl || h.image || '',
-      videoUrl:  h.url || h.videoUrl || h.video || '',
-      embedHtml: h.embed || h.embedCode || '',
-      date:      h.date ? new Date(h.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'}) : 'Today',
-      homeTeam:  h.homeTeam || '',
-      awayTeam:  h.awayTeam || '',
-      score:     (h.homeScore != null && h.awayScore != null) ? `${h.homeScore} - ${h.awayScore}` : '',
-    }));
-
-    _renderOfficialHighlights();
-
-  } catch(err) {
-    console.error('[Highlights] API error:', err);
-    // Show empty state — only bot-fetched videos should appear here
-    _hlOfficialData = [];
-    _renderOfficialHighlights();
-  }
-}
-
-function _renderOfficialHighlights() {
-  const container = document.getElementById('hl-official-content');
-  if (!container) return;
-
-  if (!_hlOfficialData.length) {
-    container.innerHTML = `
-      <div class="hl-empty">
-        <div class="hl-empty-icon">📡</div>
-        <div class="hl-empty-text">Your bot hasn't uploaded any highlights yet.<br>Check back after matches — they'll appear here automatically.</div>
-        <button onclick="_fetchOfficialHighlights()" style="margin-top:16px;padding:10px 24px;background:var(--green);color:#fff;border:none;border-radius:20px;font-weight:700;font-size:13px;cursor:pointer;">🔄 Refresh</button>
-      </div>`;
-    return;
-  }
-
-  container.innerHTML = _hlOfficialData.map(h => {
-    const isFallback = !!h.ytSearch;
-    const tapAction  = isFallback
-      ? `onclick="openHlPlayer('${_esc(h.id)}','${_esc(h.title)}','','','','${_esc(h.ytSearch)}')"`
-      : `onclick="openHlPlayer('${_esc(h.id)}','${_esc(h.title)}','${_esc(h.videoUrl)}','${_esc(h.embedHtml)}','${_esc(h.thumbnail)}')"`; 
-    const gradA = h.gradA || '#0f172a';
-    const gradB = h.gradB || '#1e293b';
-    const thumbHtml = isFallback
-      ? `<div style="width:100%;height:100%;background:linear-gradient(135deg,${gradA},${gradB});display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
-           <div style="font-size:52px;filter:drop-shadow(0 2px 8px rgba(0,0,0,0.5));">${h.emoji || '⚽'}</div>
-           <div style="background:rgba(16,185,129,0.9);border-radius:50%;width:52px;height:52px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(16,185,129,0.5);">
-             <svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-           </div>
-           ${h.score ? `<div style="background:rgba(0,0,0,0.5);color:#10b981;font-size:13px;font-weight:800;padding:4px 12px;border-radius:20px;">${h.homeTeam || ''} ${h.score} ${h.awayTeam || ''}</div>` : ''}
-         </div>`
-      : h.thumbnail
-        ? `<img src="${h.thumbnail}" alt="${_esc(h.title)}" loading="lazy" onerror="this.style.display='none'">`
-        : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:40px;">⚽</div>`;
-
-    return `
-    <div class="hlcard" ${tapAction}>
-      <div class="hlcard-thumb">
-        ${thumbHtml}
-        ${!isFallback ? `<div class="hlcard-play"><div class="hlcard-play-btn"><svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>` : ''}
-        <div class="hlcard-league">${_esc(h.league).toUpperCase().slice(0,20)}</div>
-        <div class="hlcard-badge">
-          <span class="verified-badge">
-            <svg width="9" height="9" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
-            OFFICIAL
-          </span>
-        </div>
-        ${isFallback ? `<div style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.7);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;letter-spacing:.04em;">▶ WATCH NOW</div>` : ''}
-      </div>
-      <div class="hlcard-info">
-        <div class="hlcard-title">${_esc(h.title)}${h.score ? ' <span style="color:var(--green);font-size:12px;">'+h.score+'</span>' : ''}</div>
-        <div class="hlcard-meta">
-          <span class="hlcard-date">📅 ${h.date}</span>
-          <span style="margin-left:auto;font-size:11px;color:var(--green);font-weight:700;">▶ Watch</span>
-        </div>
-      </div>
-    </div>`;
-  }).join('') + '<div style="height:80px;"></div>';
-}
-
-/* ══════════════════════════════════════════════════════
-   IN-APP VIDEO PLAYER — plays MP4 directly, no YouTube UI
-══════════════════════════════════════════════════════ */
-function openHlPlayer(id, title, videoUrl, embedHtml, thumbnail, ytSearch) {
-  const overlay = document.getElementById('hl-player-overlay');
-  const wrap    = document.getElementById('hl-video-wrap');
-  const titleEl = document.getElementById('hl-player-title');
-
-  titleEl.textContent = (title || '').replace(/\u2019/g, "'");
-  wrap.innerHTML = '';
-  wrap.style.position = 'relative';
-
-  /* ── Build a clean URL: unmuted, controls visible, no autoplay force-mute ── */
-  function makeCleanUrl(src) {
-    try {
-      const u = new URL(src);
-      u.searchParams.set('mute',           '0');
-      u.searchParams.set('controls',       '1');
-      u.searchParams.set('rel',            '0');
-      u.searchParams.set('modestbranding', '1');
-      u.searchParams.set('iv_load_policy', '3');
-      u.searchParams.set('playsinline',    '1');
-      u.searchParams.delete('autoplay');
-      if (u.hostname.includes('youtube.com')) u.hostname = 'www.youtube-nocookie.com';
-      return u.toString();
-    } catch(e) { return src; }
-  }
-
-  /* ── Create & inject a fully-configured iframe ── */
-  function injectIframe(src) {
-    const iframe = document.createElement('iframe');
-    iframe.src = makeCleanUrl(src);
-    iframe.setAttribute('allowfullscreen', '');
-    iframe.setAttribute('allow', 'autoplay; fullscreen; picture-in-picture; encrypted-media');
-    iframe.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:none;background:#000;';
-    wrap.appendChild(iframe);
-    // Belt-and-suspenders: postMessage unmute after load
-    iframe.addEventListener('load', function() {
-      try {
-        iframe.contentWindow.postMessage(JSON.stringify({event:'command',func:'unMute',args:[]}), '*');
-        iframe.contentWindow.postMessage(JSON.stringify({method:'setMute',value:false}), '*');
-      } catch(e) {}
-    });
-  }
-
-  // Priority 1: Raw embed HTML with <iframe> inside
-  if (embedHtml && embedHtml.trim().includes('<iframe')) {
-    const tmp = document.createElement('div');
-    tmp.innerHTML = embedHtml;
-    const fr = tmp.querySelector('iframe');
-    if (fr && fr.src) {
-      injectIframe(fr.src);
-    } else if (fr) {
-      fr.removeAttribute('width'); fr.removeAttribute('height');
-      fr.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:none;background:#000;';
-      fr.setAttribute('allowfullscreen','');
-      fr.setAttribute('allow','autoplay; fullscreen; picture-in-picture; encrypted-media');
-      wrap.appendChild(fr);
-    }
-  }
-  // Priority 2: URL is a YouTube / embed link
-  else if (videoUrl && (
-    videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be') ||
-    videoUrl.includes('/embed/') || videoUrl.includes('streamable') ||
-    videoUrl.includes('vimeo') || videoUrl.includes('dailymotion') ||
-    videoUrl.includes('twitter') || videoUrl.includes('streamff')
-  )) {
-    injectIframe(videoUrl);
-  }
-  // Priority 3: Direct video file (mp4, webm, m3u8 etc.)
-  else if (videoUrl) {
-    const vid = document.createElement('video');
-    vid.controls    = true;
-    vid.playsInline = true;
-    vid.muted       = false;
-    vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;';
-    if (thumbnail) vid.poster = thumbnail;
-    const src = document.createElement('source');
-    src.src = videoUrl;
-    vid.appendChild(src);
-    wrap.appendChild(vid);
-    vid.muted = false;
-    vid.play().catch(() => { vid.muted = false; });
-  }
-  else if (ytSearch) {
-    const searchUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(ytSearch);
-    wrap.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#fff;gap:16px;padding:24px;text-align:center;background:linear-gradient(135deg,#0f172a,#1e293b);"><div style="font-size:56px;">🎬</div><div><div style="font-size:16px;font-weight:700;margin-bottom:8px;">' + title + '</div><div style="font-size:13px;opacity:0.8;line-height:1.5;margin-bottom:16px;">This highlight is available on YouTube.</div></div><a href="' + searchUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;padding:12px 28px;border-radius:24px;text-decoration:none;font-weight:700;font-size:14px;">▶ Watch on YouTube</a></div>';
-  } else {
-    wrap.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#fff;gap:12px;"><div style="font-size:48px;">⚽</div><div style="font-size:14px;opacity:.7;">Video not available</div></div>';
-  }
-
-  overlay.classList.add('open');
-  document.body.style.overflow = 'hidden';
-}
-
-
-function closeHlPlayer() {
-  const overlay = document.getElementById('hl-player-overlay');
-  const wrap    = document.getElementById('hl-video-wrap');
-  overlay.classList.remove('open');
-  wrap.innerHTML = ''; // stops video/audio
-  document.body.style.overflow = '';
-}
-
-
-/* ══════════════════════════════════════════════════════
-   LAYER 2 & 3 — COMMUNITY UPLOADS (Fans + Players)
-   Reads from Firebase 'posts' collection filtered by type
-══════════════════════════════════════════════════════ */
-function _loadCommunityHighlights() {
-  const fsApi = window._psFs;
-  const db    = window._psDb;
-  if (!fsApi || !db) {
-    setTimeout(_loadCommunityHighlights, 1200);
-    return;
-  }
-
-  const { collection, query, orderBy, limit, onSnapshot, where } = fsApi;
-
-  // Fan posts listener
-  const fanQ = query(
-    collection(db, 'posts'),
-    orderBy('createdAt','desc'),
-    limit(30)
-  );
-
-  onSnapshot(fanQ, snap => {
-    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    _hlFanData    = all.filter(p => !p.playerPost);
-    _hlPlayerData = all.filter(p => p.playerPost === true);
-    _renderCommunityCards('fans');
-    _renderCommunityCards('players');
-  }, err => console.warn('[Highlights] Community load error:', err));
-}
-
-function _renderCommunityCards(type) {
-  const data      = type === 'fans' ? _hlFanData : _hlPlayerData;
-  const container = document.getElementById('hl-' + type + '-content');
-  if (!container) return;
-
-  if (!data.length) {
-    const icon  = type === 'fans' ? '📱' : '⭐';
-    const label = type === 'fans'
-      ? 'No fan clips yet.\nBe the first to upload a moment!'
-      : 'No player content yet.\nPlayers — show us your world!';
-    container.innerHTML = `
-      <div class="hl-empty">
-        <div class="hl-empty-icon">${icon}</div>
-        <div class="hl-empty-text">${label}</div>
-        <button onclick="openQuickPost()" style="margin-top:16px;padding:10px 24px;background:var(--green);color:#fff;border:none;border-radius:20px;font-weight:700;font-size:13px;cursor:pointer;">
-          + Upload Now
-        </button>
-      </div>`;
-    return;
-  }
-
-  const badge = type === 'fans'
-    ? `<span class="user-post-badge">👥 FAN</span>`
-    : `<span class="player-badge">⭐ PLAYER</span>`;
-
-  // Store in lookup map so player can retrieve safely
-  if (!window._hlVideoMap) window._hlVideoMap = {};
-  data.forEach(p => { window._hlVideoMap[String(p.id)] = p; });
-
-  container.innerHTML = data.map(p => {
-    const thumb    = p.thumbnail || p.mediaUrl || '';
-    const mediaUrl = p.mediaUrl  || '';
-    const title    = p.title     || 'Football Moment';
-    const poster   = p.userName  || p.poster || 'PitchSide User';
-    const date     = p.createdAt ? new Date(p.createdAt.toDate ? p.createdAt.toDate() : p.createdAt)
-                       .toLocaleDateString('en-GB',{day:'numeric',month:'short'}) : 'Today';
-    const safeId   = _esc(String(p.id));
-    return `
-    <div class="hlcard" onclick="openHlPlayerById('${safeId}')">
-      <div class="hlcard-thumb">
-        ${thumb
-          ? `<img src="${thumb}" alt="${_esc(title)}" loading="lazy" onerror="this.style.display='none'">`
-          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:40px;">⚽</div>`
-        }
-        <div class="hlcard-play">
-          <div class="hlcard-play-btn">
-            <svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-          </div>
-        </div>
-        <div class="hlcard-badge">${badge}</div>
-      </div>
-      <div class="hlcard-info">
-        <div class="hlcard-title">${_esc(title)}</div>
-        <div class="hlcard-meta">
-          <span class="hlcard-poster">@${_esc(poster)}</span>
-          <span class="hlcard-date" style="margin-left:auto;">📅 ${date}</span>
-        </div>
-      </div>
-    </div>`;
-  }).join('') + '<div style="height:80px;"></div>';
-}
-
-/* ── Escape helper for inline onclick attrs ── */
-function _esc(str) {
-  return (str || '').toString()
-    .replace(/\\/g,'\\\\').replace(/'/g,'\\u0027')
-    .replace(/"/g,'&quot;').replace(/\n/g,' ').slice(0,300);
-}
-
-/* ══════════════════════════════════════════════════════
-   QUICK POST: Let user mark upload as "player" content
-   Adds a toggle in the post composer
-══════════════════════════════════════════════════════ */
-// Expose so pcPublish can read it
-window._hlIsPlayerPost = false;
-
-function setPostType(type) {
-  window._hlIsPlayerPost = (type === 'player');
-  const fanEl    = document.getElementById('post-type-fan');
-  const playerEl = document.getElementById('post-type-player');
-  if (!fanEl || !playerEl) return;
-  if (type === 'player') {
-    playerEl.style.border    = '2px solid #fbbf24';
-    playerEl.style.background= 'rgba(251,191,36,0.15)';
-    playerEl.querySelector('div:last-child').style.color = '#fbbf24';
-    fanEl.style.border    = '2px solid rgba(255,255,255,0.1)';
-    fanEl.style.background= 'rgba(255,255,255,0.04)';
-    fanEl.querySelector('div:last-child').style.color = 'rgba(255,255,255,0.4)';
-  } else {
-    fanEl.style.border    = '2px solid #10b981';
-    fanEl.style.background= 'rgba(16,185,129,0.15)';
-    fanEl.querySelector('div:last-child').style.color = '#10b981';
-    playerEl.style.border    = '2px solid rgba(255,255,255,0.1)';
-    playerEl.style.background= 'rgba(255,255,255,0.04)';
-    playerEl.querySelector('div:last-child').style.color = 'rgba(255,255,255,0.4)';
-  }
-}
-window.setPostType = setPostType;
-
-/* Public API */
-window.initHighlights   = initHighlights;
-window.switchHlTab      = switchHlTab;
-window.openHlPlayer     = openHlPlayer;
-window.closeHlPlayer    = closeHlPlayer;
-
-/* ── Public API (called by nav and filter pills) ── */
-function initNews() {
-  // If we already have news data, render it instantly — no blank screen
-  if (_newsAllDocs.length > 0) {
-    _renderNewsFiltered(_newsCurrentCat);
-    return;
-  }
-  // Show loader immediately, then wire the listener
-  _renderNewsLoader();
-  // Listener activates once window._psFs is ready
-  const _wait = setInterval(() => {
-    if (window._psFs && window._psFs.onSnapshot) {
-      clearInterval(_wait);
-      _activateNewsListener();
-    }
-  }, 200);
-  setTimeout(() => { clearInterval(_wait); if (_newsAllDocs.length === 0) _renderNewsEmpty('Firebase unavailable'); }, 10000);
-}
-
-function filterNews(el, cat) {
-  document.querySelectorAll('#page-news .pill').forEach(p => p.classList.remove('on'));
-  el.classList.add('on');
-  _newsCurrentCat = cat;
-  // If we already have data, filter instantly; otherwise listener will render when it arrives
-  if (_newsAllDocs.length > 0) {
-    _renderNewsFiltered(cat);
-  } else {
-    _renderNewsLoader();
-  }
-}
-
-// Legacy alias kept for any stray calls
-function renderNews(cat) { _renderNewsFiltered(cat); }
-
-// Expose for retry button
-window._activateNewsListener = _activateNewsListener;
-
-/* ═══════════════════════════════════════════
-   NPFL
-═══════════════════════════════════════════ */
-/* ═══════════════════════════════════════════
-   NPFL — Live data from API-Football
-   League ID 332 = Nigeria Professional Football League
-   Auto-refreshes every 60 seconds when page is open
-═══════════════════════════════════════════ */
-const NPFL_LEAGUE_ID  = 332;
-const NPFL_SEASON     = 2024;
-const APIFOOTBALL_KEY = ''; // Secured in Netlify
-let   _npflRefreshInterval = null;
-let   _npflCurrentTab      = 'npfl-fixtures';
-
-/* ── Spinner HTML ── */
-function _npflSpinner(msg) {
-  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px;gap:12px;">
-    <div style="position:relative;width:52px;height:52px;">
-      <div style="width:52px;height:52px;border-radius:50%;border:3px solid rgba(16,185,129,0.15);border-top-color:#10b981;animation:spin .9s linear infinite;position:absolute;inset:0;"></div>
-      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;">🇳🇬</div>
-    </div>
-    <div style="font-size:13px;color:var(--text2);font-weight:600;">${msg || 'Loading NPFL data…'}</div>
-  </div>`;
-}
-
-/* ── Show spinner in all three tabs ── */
-function _npflShowLoading() {
-  ['npfl-fixtures','npfl-standings','npfl-results'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = _npflSpinner();
-  });
-}
-
-/* ── Map API status to our badge classes ── */
-function _npflStatusClass(short) {
-  if (['1H','2H','ET','BT','P','INT','LIVE'].includes(short)) return 'npfl-live';
-  if (short === 'FT' || short === 'AET' || short === 'PEN')   return 'npfl-ft';
-  return 'npfl-ns';
-}
-function _npflStatusLabel(f) {
-  const s = f.fixture.status;
-  if (['1H','2H','ET','BT','P','INT'].includes(s.short)) return `${s.elapsed || ''}' LIVE`;
-  if (s.short === 'HT') return 'HT';
-  if (s.short === 'FT') return 'FT';
-  if (s.short === 'NS') {
-    const d = new Date(f.fixture.date);
-    return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-  }
-  return s.short || 'NS';
-}
-
-/* ── Render a single match row ── */
-function _npflRenderMatch(f) {
-  const isLive  = ['1H','2H','ET','HT','BT','P','INT'].includes(f.fixture.status.short);
-  const isFT    = ['FT','AET','PEN'].includes(f.fixture.status.short);
-  const hasScore = f.goals.home !== null;
-  const statusCls = _npflStatusClass(f.fixture.status.short);
-  const label     = _npflStatusLabel(f);
-
-  const scoreHTML = hasScore
-    ? `<div class="npfl-score">${f.goals.home}</div><div class="npfl-score">${f.goals.away}</div>`
-    : `<div style="font-size:11px;color:var(--text3);line-height:1.5;">${label}</div>`;
-
-  const homeWin = hasScore && f.goals.home > f.goals.away;
-  const awayWin = hasScore && f.goals.away > f.goals.home;
-
-  return `
-    <div class="npfl-match">
-      ${isLive ? `<div style="width:6px;height:6px;background:var(--red-live);border-radius:50%;animation:blink 1s infinite;flex-shrink:0;"></div>` : ''}
-      <div class="npfl-teams">
-        <div class="npfl-team-row" style="${homeWin ? 'font-weight:800;' : ''}">
-          <img src="${f.teams.home.logo}" style="width:22px;height:22px;object-fit:contain;border-radius:3px;"
-               onerror="this.style.display='none'">
-          ${f.teams.home.name}
-        </div>
-        <div class="npfl-team-row" style="${awayWin ? 'font-weight:800;' : ''}">
-          <img src="${f.teams.away.logo}" style="width:22px;height:22px;object-fit:contain;border-radius:3px;"
-               onerror="this.style.display='none'">
-          ${f.teams.away.name}
-        </div>
-      </div>
-      <div class="npfl-score-col">
-        ${scoreHTML}
-        ${hasScore ? `<span class="npfl-status-badge ${statusCls}">${label}</span>` : ''}
-      </div>
-    </div>`;
-}
-
-/* ── Fetch fixtures for today + upcoming ── */
-/* ── Convert a Firebase npfl_fixtures doc into the shape _npflRenderMatch() expects ── */
-function _fbFixtureToApiShape(d) {
-  const statusMap = { upcoming:'NS', live:'1H', halftime:'HT', finished:'FT', result:'FT', postponed:'PST' };
-  const short = statusMap[d.status] || d.status || 'NS';
-  return {
-    fixture: {
-      id:     d.eventId || d._dedup || '',
-      date:   d.date ? d.date + 'T' + (d.time || '14:00') + ':00' : null,
-      status: { short, elapsed: null },
-      venue:  { name: d.venue || '' }
-    },
-    league: { id: 332, name: d.league || 'NPFL', country: d.country || 'Nigeria', logo: '', flag: '' },
-    teams: {
-      home: { id: 0, name: d.homeTeam || '—', logo: '' },
-      away: { id: 0, name: d.awayTeam || '—', logo: '' }
-    },
-    goals: {
-      home: (d.homeScore !== undefined && d.homeScore !== null) ? d.homeScore : null,
-      away: (d.awayScore !== undefined && d.awayScore !== null) ? d.awayScore : null
-    }
-  };
-}
-
-/* ══════════════════════════════════════════════════════
-   NPFL AI DATA — 1 request per day shared across ALL users
-   AI generates data → saved to Firebase → everyone reads it
-════════════════════════════════════════════════════════ */
-
-async function _npflAskAI() {
+async function _npflAskAI(section) {
   const today = new Date().toLocaleDateString('en-GB', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
-  const res = await fetch('/api/ai', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      max_tokens: 1000,
-      system: 'You are a Nigerian football expert. Always respond with valid JSON only, no markdown, no explanation.',
-      messages: [{ role: 'user', content: `Today is ${today}. Give me 2024/2025 NPFL season data as JSON exactly like this:
-{"fixtures":[{"home":"Team","away":"Team","date":"Sat 3 May","time":"16:00"}],"results":[{"home":"Team","away":"Team","homeScore":2,"awayScore":1,"date":"Wed 30 Apr"}],"standings":[{"pos":1,"team":"Team","p":30,"w":18,"d":6,"l":6,"gd":"+20","pts":60}]}
-6 upcoming fixtures, 6 recent results, top 10 standings. Use real NPFL teams: Enyimba, Rivers United, Remo Stars, Shooting Stars, Kano Pillars, Plateau United, Kwara United, Bendel Insurance, Lobi Stars, Rangers International.` }]
-    })
-  });
-  const data = await res.json();
-  const text = data.content?.[0]?.text || '{}';
-  return _safeParseJSON(text);
-}
-
-async function _npflGetOrFetchData() {
-  const today = new Date().toISOString().split('T')[0];
+  const prompts = {
+    fixtures: `Today is ${today}. Give me 6 upcoming NPFL 2024/2025 fixtures. Reply ONLY with this JSON array, no other text: [{"home":"Enyimba","away":"Rivers United","date":"Sat 3 May","time":"16:00"}]`,
+    results:  `Today is ${today}. Give me 6 recent NPFL 2024/2025 results. Reply ONLY with this JSON array, no other text: [{"home":"Remo Stars","away":"Kano Pillars","homeScore":2,"awayScore":1,"date":"Wed 30 Apr"}]`,
+    standings:`Today is ${today}. Give me top 10 NPFL 2024/2025 standings. Reply ONLY with this JSON array, no other text: [{"pos":1,"team":"Remo Stars","p":30,"w":18,"d":6,"l":6,"gd":"+20","pts":60}]`
+  };
   try {
-    const { doc, getDoc, setDoc, db } = window._psFs;
-    // Check Firebase for today's cached data
-    const snap = await getDoc(doc(db, 'npfl_ai_cache', today));
-    if (snap.exists()) {
-      const d = snap.data();
-      // Validate data has content
-      if (d.fixtures && d.fixtures.length) return d;
-    }
-    // Not cached yet — ask AI and save to Firebase
-    const aiData = await _npflAskAI();
-    if (aiData && aiData.fixtures) {
-      try {
-        await setDoc(doc(db, 'npfl_ai_cache', today), { ...aiData, generatedAt: new Date().toISOString() });
-      } catch(writeErr) {
-        console.warn('Firebase write failed:', writeErr);
-      }
-    }
-    return aiData;
-  } catch(e) {
-    console.warn('NPFL data error:', e);
-    // If Firebase fails, ask AI directly
-    return await _npflAskAI();
-  }
+    const res = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        max_tokens: 600,
+        system: 'You are a Nigerian football expert. Reply with a JSON array only. No markdown, no explanation, no extra text.',
+        messages: [{ role: 'user', content: prompts[section] }]
+      })
+    });
+    const data = await res.json();
+    const text = data.content?.[0]?.text || '[]';
+    const match = text.match(/\[[\s\S]*\]/);
+    return match ? JSON.parse(match[0]) : [];
+  } catch(e) { return []; }
 }
 
 async function _npflFetchFixtures() {
   const el = document.getElementById('npfl-fixtures');
   if (!el) return;
   el.innerHTML = _npflSpinner('Loading NPFL fixtures…');
-  try {
-    const data = await _npflGetOrFetchData();
-    const fixtures = data.fixtures || [];
-    if (!fixtures.length) { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">No fixtures available</div>'; return; }
-    el.innerHTML = fixtures.map(f => `
-      <div class="npfl-match">
-        <div class="npfl-teams">
-          <div class="npfl-team-row">🏟 ${f.home}</div>
-          <div class="npfl-team-row">🏟 ${f.away}</div>
-        </div>
-        <div class="npfl-score-col">
-          <div style="font-size:11px;color:var(--text3);text-align:center;line-height:1.6;">${f.date}</div>
-          <div style="font-size:11px;color:var(--blue);font-weight:700;text-align:center;">${f.time}</div>
-        </div>
-      </div>`).join('');
-  } catch(e) { el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load fixtures</div>'; }
+  const fixtures = await _npflAskAI('fixtures');
+  if (!fixtures.length) { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">No fixtures available</div>'; return; }
+  el.innerHTML = fixtures.map(f => `
+    <div class="npfl-match">
+      <div class="npfl-teams">
+        <div class="npfl-team-row">🏟 ${f.home}</div>
+        <div class="npfl-team-row">🏟 ${f.away}</div>
+      </div>
+      <div class="npfl-score-col">
+        <div style="font-size:11px;color:var(--text3);text-align:center;line-height:1.6;">${f.date}</div>
+        <div style="font-size:11px;color:var(--blue);font-weight:700;text-align:center;">${f.time}</div>
+      </div>
+    </div>`).join('');
 }
 
 async function _npflFetchResults() {
   const el = document.getElementById('npfl-results');
   if (!el) return;
   el.innerHTML = _npflSpinner('Loading results…');
-  try {
-    const data = await _npflGetOrFetchData();
-    const results = data.results || [];
-    if (!results.length) { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">No results available</div>'; return; }
-    el.innerHTML = results.map(r => `
-      <div class="npfl-match">
-        <div class="npfl-teams">
-          <div class="npfl-team-row" style="${r.homeScore > r.awayScore ? 'font-weight:800;' : ''}">🏟 ${r.home}</div>
-          <div class="npfl-team-row" style="${r.awayScore > r.homeScore ? 'font-weight:800;' : ''}">🏟 ${r.away}</div>
-        </div>
-        <div class="npfl-score-col">
-          <div class="npfl-score">${r.homeScore}</div>
-          <div class="npfl-score">${r.awayScore}</div>
-          <span class="npfl-status-badge npfl-ft">FT</span>
-        </div>
-      </div>`).join('');
-  } catch(e) { el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load results</div>'; }
+  const results = await _npflAskAI('results');
+  if (!results.length) { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">No results available</div>'; return; }
+  el.innerHTML = results.map(r => `
+    <div class="npfl-match">
+      <div class="npfl-teams">
+        <div class="npfl-team-row" style="${r.homeScore > r.awayScore ? 'font-weight:800;' : ''}">🏟 ${r.home}</div>
+        <div class="npfl-team-row" style="${r.awayScore > r.homeScore ? 'font-weight:800;' : ''}">🏟 ${r.away}</div>
+      </div>
+      <div class="npfl-score-col">
+        <div class="npfl-score">${r.homeScore}</div>
+        <div class="npfl-score">${r.awayScore}</div>
+        <span class="npfl-status-badge npfl-ft">FT</span>
+      </div>
+    </div>`).join('');
 }
 
 async function _npflFetchStandings() {
   const el = document.getElementById('npfl-standings');
   if (!el) return;
   el.innerHTML = _npflSpinner('Loading standings…');
-  try {
-    const data = await _npflGetOrFetchData();
-    const standings = data.standings || [];
-    if (!standings.length) { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">Standings not available</div>'; return; }
-    const hdr = `<div class="stand-row stand-hdr"><div class="stand-pos">#</div><div class="stand-team">Club</div><div class="stand-stat">P</div><div class="stand-stat">W</div><div class="stand-stat">D</div><div class="stand-stat">L</div><div class="stand-stat">GD</div><div class="stand-pts">Pts</div></div>`;
-    const rows = standings.map(t => `
-      <div class="stand-row">
-        <div class="stand-pos" style="${t.pos<=3?'color:var(--blue);font-weight:800;':''}">${t.pos}</div>
-        <div class="stand-team">🏟 <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;">${t.team}</span></div>
-        <div class="stand-stat">${t.p}</div>
-        <div class="stand-stat">${t.w}</div>
-        <div class="stand-stat">${t.d}</div>
-        <div class="stand-stat">${t.l}</div>
-        <div class="stand-stat">${t.gd}</div>
-        <div class="stand-pts">${t.pts}</div>
-      </div>`).join('');
-    el.innerHTML = hdr + rows;
-  } catch(e) { el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load standings</div>'; }
+  const standings = await _npflAskAI('standings');
+  if (!standings.length) { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">Standings not available</div>'; return; }
+  const hdr = `<div class="stand-row stand-hdr"><div class="stand-pos">#</div><div class="stand-team">Club</div><div class="stand-stat">P</div><div class="stand-stat">W</div><div class="stand-stat">D</div><div class="stand-stat">L</div><div class="stand-stat">GD</div><div class="stand-pts">Pts</div></div>`;
+  const rows = standings.map(t => `
+    <div class="stand-row">
+      <div class="stand-pos" style="${t.pos<=3?'color:var(--blue);font-weight:800;':''}">${t.pos}</div>
+      <div class="stand-team">🏟 <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;">${t.team}</span></div>
+      <div class="stand-stat">${t.p}</div>
+      <div class="stand-stat">${t.w}</div>
+      <div class="stand-stat">${t.d}</div>
+      <div class="stand-stat">${t.l}</div>
+      <div class="stand-stat">${t.gd}</div>
+      <div class="stand-pts">${t.pts}</div>
+    </div>`).join('');
+  el.innerHTML = hdr + rows;
 }
+
+
 /* ── Also fetch any live NPFL matches ── */
 async function _npflFetchLive() {
   try {
@@ -7132,47 +6469,44 @@ async function handlePlayerSearch(val) {
         return;
       }
 
-      // ── Step 2: Not in Firebase — fall back to API ──
-      const response = await fetch(
-        `/api/football?endpoint=players&search=${encodeURIComponent(query)}&league=332&season=2024`,
-        { signal: AbortSignal.timeout(7000) }
-      );
+      // ── Step 2: Use AI directly for player stats ──
+      const aiRes = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          max_tokens: 500,
+          system: 'You are a football expert. Reply with a JSON array only. No markdown, no extra text.',
+          messages: [{ role: 'user', content: `Give me info about football player "${query}" as a JSON array: [{"name":"Full Name","nationality":"Country","position":"Forward","club":"Club Name","age":30,"goals":15,"assists":8,"apps":28,"rating":8.2,"photo":""}]. Use real data if you know the player.` }]
+        })
+      });
+      const aiData = await aiRes.json();
+      const aiText = aiData.content?.[0]?.text || '[]';
+      const aiMatch = aiText.match(/\[[\s\S]*\]/);
+      const aiPlayers = aiMatch ? JSON.parse(aiMatch[0]) : [];
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      let data = await response.json();
-
-      // Detect API-level errors (quota exceeded, invalid key, etc.)
-      if (data.errors && (data.errors.requests || data.errors.token || Object.keys(data.errors).length)) {
-        const errMsg = data.errors.requests || data.errors.token || JSON.stringify(data.errors);
-        res.innerHTML = `
-          <div class="player-empty">
-            <div class="player-empty-icon">⚠️</div>
-            <div class="player-empty-text">API Error: ${errMsg}</div>
-          </div>`;
+      if (!aiPlayers.length) {
+        res.innerHTML = `<div class="player-empty"><div class="player-empty-icon">🔍</div><div class="player-empty-text">No players found for "<strong>${query}</strong>"</div></div>`;
         return;
       }
 
-      let players = data.response || [];
-
-      // If no results in NPFL, widen search to all leagues
-      if (!players.length) {
-        const r2 = await fetch(
-          `/api/football?endpoint=players&search=${encodeURIComponent(query)}&season=2024`,
-          { signal: AbortSignal.timeout(7000) }
-        );
-        if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
-        const d2 = await r2.json();
-        if (d2.errors && Object.keys(d2.errors).length) {
-          const errMsg = d2.errors.requests || d2.errors.token || JSON.stringify(d2.errors);
-          res.innerHTML = `
-            <div class="player-empty">
-              <div class="player-empty-icon">⚠️</div>
-              <div class="player-empty-text">API Error: ${errMsg}</div>
-            </div>`;
-          return;
-        }
-        players = d2.response || [];
-      }
+      // Convert AI response to standard player shape
+      const players = aiPlayers.map(p => ({
+        player: {
+          id: 0,
+          _fbName: p.name || query,
+          firstname: (p.name || '').split(' ')[0] || '',
+          lastname: (p.name || '').split(' ').slice(1).join(' ') || '',
+          photo: p.photo || '',
+          nationality: p.nationality || '',
+          age: p.age || null,
+          position: p.position || '—'
+        },
+        statistics: [{
+          team: { name: p.club || 'Unknown Club', logo: '' },
+          games: { position: p.position || '—', appearences: p.apps || 0, rating: p.rating || null },
+          goals: { total: p.goals || 0, assists: p.assists || 0 }
+        }]
+      }));
 
       _playerCache[queryLower] = players;
       _renderPlayerResults(players, query);
@@ -7207,7 +6541,7 @@ async function _fetchPlayerStatsFromAI(playerName, nationality, position) {
       body: JSON.stringify({
         max_tokens: 300,
         system: 'You are a football stats expert. Respond with a single JSON object only. No text before or after. No markdown.',
-        messages: [{ role: 'user', content: `2024/2025 season stats for ${playerName} (${nationality}, ${position}). Reply with ONLY this JSON: {"goals":12,"assists":8,"apps":25,"rating":8.1,"club":"Club Name"}` }]
+        messages: [{ role: 'user', content: `What are the REAL 2024/2025 season stats for ${playerName} the footballer (${nationality}, ${position})? Use your actual knowledge of this specific player - do NOT use example numbers. Reply with ONLY a JSON object: {"goals":REAL_NUMBER,"assists":REAL_NUMBER,"apps":REAL_NUMBER,"rating":REAL_NUMBER,"club":"REAL_CLUB_NAME"}` }]
       })
     });
     const data = await res.json();
