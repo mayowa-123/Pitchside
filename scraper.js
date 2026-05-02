@@ -2,64 +2,77 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const admin = require('firebase-admin');
 
-// 1. Initialize Firebase Admin
+// 1. Initialize Firebase Admin securely
 if (!admin.apps.length) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-    });
+    try {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount)
+        });
+        console.log("Firebase Admin Initialized.");
+    } catch (e) {
+        console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT. Check your GitHub Secrets.");
+        process.exit(1);
+    }
 }
 const db = admin.firestore();
 
 async function scrapeNPFL() {
     try {
-        console.log('Fetching NPFL Table...');
-        // We use a custom User-Agent to make sure the website doesn't block the bot
-        const { data } = await axios.get('https://npfl.com.ng/stats/table', {
+        console.log('Bot is visiting NPFL.com.ng...');
+        
+        // We use the exact URL for the table
+        const url = 'https://npfl.com.ng/npfl-table/'; 
+        
+        const { data } = await axios.get(url, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
+            },
+            timeout: 10000 // 10 second timeout
         });
 
         const $ = cheerio.load(data);
         const standings = [];
 
-        // Scrape the table rows
+        // Selecting the table rows - targetting the official site structure
         $('table tbody tr').each((i, el) => {
-            const row = $(el).find('td');
-            if (row.length >= 10) {
+            const cols = $(el).find('td');
+            if (cols.length >= 8) {
                 standings.push({
-                    rank: parseInt($(row[0]).text().trim()),
-                    team: $(row[1]).text().trim(),
-                    played: parseInt($(row[2]).text().trim()),
-                    won: parseInt($(row[3]).text().trim()),
-                    drawn: parseInt($(row[4]).text().trim()),
-                    lost: parseInt($(row[5]).text().trim()),
-                    goalsFor: parseInt($(row[6]).text().trim()),
-                    goalsAgainst: parseInt($(row[7]).text().trim()),
-                    goalDifference: $(row[8]).text().trim(),
-                    points: parseInt($(row[9]).text().trim()),
-                    lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+                    rank: $(cols[0]).text().trim(),
+                    team: $(cols[1]).text().trim(),
+                    played: $(cols[2]).text().trim(),
+                    won: $(cols[3]).text().trim(),
+                    drawn: $(cols[4]).text().trim(),
+                    lost: $(cols[5]).text().trim(),
+                    goalsFor: $(cols[6]).text().trim(),
+                    goalsAgainst: $(cols[7]).text().trim(),
+                    points: $(cols[9]).text().trim() || $(cols[8]).text().trim(), // Handle table variations
+                    lastUpdated: new Date().toISOString()
                 });
             }
         });
 
-        console.log(`Found ${standings.length} teams. Updating Firebase...`);
+        if (standings.length === 0) {
+            throw new Error("Could not find any data in the table. The website structure might have changed.");
+        }
 
-        // 4. Update Firebase using a Batch (saves time/money)
+        console.log(`Successfully scraped ${standings.length} teams. Syncing to Firebase...`);
+
         const batch = db.batch();
         standings.forEach((team) => {
-            // This creates/updates a document for each team
-            const docId = team.team.toLowerCase().replace(/\s+/g, '_');
+            // Create a clean ID for each team (e.g., "enyimba_fc")
+            const docId = team.team.toLowerCase().replace(/[^a-z0-9]/g, '_');
             const docRef = db.collection('npfl_standings').doc(docId);
-            batch.set(docRef, team);
+            batch.set(docRef, team, { merge: true });
         });
-        
+
         await batch.commit();
-        console.log('✅ NPFL Table Updated Successfully!');
+        console.log('✅ DATABASE UPDATED: Your app is now showing live NPFL data!');
+
     } catch (error) {
-        console.error('❌ Error details:', error.message);
-        process.exit(1); // Tell GitHub it failed
+        console.error('❌ BOT ERROR:', error.message);
+        process.exit(1);
     }
 }
 
