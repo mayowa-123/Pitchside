@@ -4406,9 +4406,36 @@ async function _npflFetchStandings() {
   if (!el) return;
   el.innerHTML = _npflSpinner('Loading standings…');
   try {
-    const data = await _npflGetOrFetchData();
-    const standings = data.standings || [];
-    if (!standings.length) { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">Standings not available</div>'; return; }
+    // ── Fetch live standings from Firestore npfl_standings collection ──
+    const { collection, getDocs, query: fsQuery, orderBy, db } = window._psFs;
+    const q = fsQuery(
+      collection(db, 'npfl_standings'),
+      orderBy('points', 'desc')
+    );
+    const snap = await getDocs(q);
+
+    if (snap.empty) {
+      el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px;">Standings not available</div>';
+      return;
+    }
+
+    // Map Firestore docs → standings rows (sorted by points desc, position assigned here)
+    const standings = snap.docs.map((d, i) => {
+      const t = d.data();
+      const played  = t.played  ?? t.p  ?? t.mp ?? 0;
+      const wins    = t.wins    ?? t.w  ?? 0;
+      const draws   = t.draws   ?? t.d  ?? 0;
+      const losses  = t.losses  ?? t.l  ?? 0;
+      const points  = t.points  ?? t.pts ?? 0;
+      const gf      = t.goalsFor    ?? t.gf ?? 0;
+      const ga      = t.goalsAgainst ?? t.ga ?? 0;
+      const gd      = gf - ga;
+      const gdStr   = gd > 0 ? `+${gd}` : `${gd}`;
+      const team    = t.team ?? t.name ?? t.club ?? d.id ?? '—';
+      const pos     = t.position ?? t.pos ?? (i + 1);
+      return { pos, team, p: played, w: wins, d: draws, l: losses, gd: gdStr, pts: points };
+    });
+
     const hdr = `<div class="stand-row stand-hdr"><div class="stand-pos">#</div><div class="stand-team">Club</div><div class="stand-stat">P</div><div class="stand-stat">W</div><div class="stand-stat">D</div><div class="stand-stat">L</div><div class="stand-stat">GD</div><div class="stand-pts">Pts</div></div>`;
     const rows = standings.map(t => `
       <div class="stand-row">
@@ -4422,7 +4449,10 @@ async function _npflFetchStandings() {
         <div class="stand-pts">${t.pts}</div>
       </div>`).join('');
     el.innerHTML = hdr + rows;
-  } catch(e) { el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load standings</div>'; }
+  } catch(e) {
+    console.error('[NPFL] Standings fetch error:', e);
+    el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load standings</div>';
+  }
 }
 /* ── Also fetch any live NPFL matches ── */
 async function _npflFetchLive() {
