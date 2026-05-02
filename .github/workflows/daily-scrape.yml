@@ -1,9 +1,8 @@
 name: Daily NPFL Scrape
 on:
   schedule:
-    # This is the "Timer". 0 * * * * means "Every hour at minute 0"
     - cron: '0 * * * *' 
-  workflow_dispatch: # This adds a "Play" button so you can run it manually
+  workflow_dispatch: 
 
 jobs:
   build:
@@ -14,7 +13,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '20' # Changed from 18 to 20
 
       - name: Install Dependencies
         run: npm install axios cheerio firebase-admin
@@ -22,5 +21,4 @@ jobs:
       - name: Run Scraper
         run: node scraper.js
         env:
-          # This connects to the Secret Key you save in Settings
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
