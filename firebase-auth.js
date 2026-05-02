@@ -1,9 +1,13 @@
-// ══════════════════════════════════════════════
-//  FIREBASE AUTH
-//  DEV_MODE = true  → skips login screen entirely (for local design/testing)
-//  DEV_MODE = false → uses real Firebase auth (for production on Netlify)
-// ══════════════════════════════════════════════
-const DEV_MODE = true; // 👈 SET TO true WHEN DESIGNING LOCALLY
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import {
+  getAuth,
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+
+const DEV_MODE = true;  // ← keep true for now, change to false after testing
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import {
