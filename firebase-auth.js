@@ -3,7 +3,7 @@
 //  DEV_MODE = true  → skips login screen entirely (for local design/testing)
 //  DEV_MODE = false → uses real Firebase auth (for production on Netlify)
 // ══════════════════════════════════════════════
-const DEV_MODE = false; // 👈 SET TO true WHEN DESIGNING LOCALLY
+const DEV_MODE = true; // 👈 SET TO true WHEN DESIGNING LOCALLY
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import {
