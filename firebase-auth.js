@@ -1,3 +1,6 @@
+// ══════════════════════════════════════════════
+//  FIREBASE AUTH — all imports MUST come first
+// ══════════════════════════════════════════════
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import {
   getAuth,
@@ -6,17 +9,13 @@ import {
   signInWithEmailAndPassword,
   updateProfile
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, collection, query, where, orderBy, limit,
+         getDocs, startAfter, doc, getDoc, updateDoc, addDoc,
+         setDoc, serverTimestamp, onSnapshot
+       } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
-const DEV_MODE = true;  // ← keep true for now, change to false after testing
-
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import {
-  getAuth,
-  onAuthStateChanged,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  updateProfile
-} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+// ── Config (imports must come before any code) ──
+const DEV_MODE = false; // SET TO true TO SKIP LOGIN DURING TESTING
 
 const firebaseConfig = {
   apiKey:            "AIzaSyCvK_7_Z4-KI7PACIBl3ahAxw9Xiyh9P1Q",
@@ -30,8 +29,16 @@ const firebaseConfig = {
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db   = getFirestore(app);
 
-// ── Helpers ──────────────────────────────────
+// ── Expose Firestore to app.js ──────────────────
+window._psDb          = db;
+window._psFs          = { collection, query, where, orderBy, limit, getDocs,
+                          startAfter, doc, getDoc, updateDoc, addDoc,
+                          setDoc, serverTimestamp, onSnapshot, db };
+window._psCurrentUser = null;
+
+// ── Helpers ─────────────────────────────────────
 function showAuthError(id, msg) {
   const el = document.getElementById(id);
   el.textContent = msg; el.classList.add('show');
@@ -62,38 +69,38 @@ function enterApp(user) {
   if (!DEV_MODE) showToast(`Welcome back, ${user.displayName || 'fan'}! ⚽`);
 }
 
-// ── DEV MODE: skip login immediately ─────────
+// ── DEV MODE: skip login ─────────────────────────
 if (DEV_MODE) {
   document.getElementById('auth-loading').classList.add('hidden');
   enterApp({ displayName: 'Dev User', email: 'dev@pitchside.app', photoURL: null });
 } else {
-  // ── PRODUCTION: real Firebase auth ──────────
-  // Detect if running as a local file (not hosted) and warn
+  // ── PRODUCTION: real Firebase auth ──────────────
   const isLocalFile = location.protocol === 'content:' || location.protocol === 'file:';
 
   const authTimeout = setTimeout(() => {
     document.getElementById('auth-loading').classList.add('hidden');
     document.getElementById('auth-screen').classList.remove('hidden');
     if (isLocalFile) {
-      showAuthError('login-error', '⚠️ Firebase does not work on local files. Host on Netlify or set DEV_MODE=true to skip login.');
+      showAuthError('login-error', '⚠️ Firebase does not work on local files. Set DEV_MODE=true to skip login.');
     }
   }, 4000);
 
   onAuthStateChanged(auth, user => {
     clearTimeout(authTimeout);
+    window._psCurrentUser = user || null;
     if (user) {
       enterApp(user);
     } else {
       document.getElementById('auth-loading').classList.add('hidden');
       document.getElementById('auth-screen').classList.remove('hidden');
-      if (isLocalFile) {
-        showAuthError('login-error', '⚠️ Running as local file. Set DEV_MODE=true at top of code to skip login, or host on Netlify.');
-      }
+    }
+    if (typeof activateFirebaseListener === 'function') {
+      activateFirebaseListener();
     }
   });
 }
 
-// ── Auth tab switch ──────────────────────────
+// ── Auth tab switch ──────────────────────────────
 window.switchAuthTab = function(tab) {
   clearAuthErrors();
   document.querySelectorAll('.auth-tab').forEach((t, i) => {
@@ -103,7 +110,7 @@ window.switchAuthTab = function(tab) {
   document.getElementById('auth-register-form').style.display = tab === 'register' ? '' : 'none';
 };
 
-// ── Email / Password Login ───────────────────
+// ── Email / Password Login ───────────────────────
 window.doEmailLogin = async function() {
   clearAuthErrors();
   const email    = document.getElementById('login-email').value.trim();
@@ -121,7 +128,7 @@ window.doEmailLogin = async function() {
   }
 };
 
-// ── Register ─────────────────────────────────
+// ── Register ────────────────────────────────────
 window.doRegister = async function() {
   clearAuthErrors();
   const name     = document.getElementById('reg-name').value.trim();
@@ -141,25 +148,3 @@ window.doRegister = async function() {
     showAuthError('register-error', msg);
   }
 };
-
-// ── Firestore: import & expose to window so plain scripts can use them ──
-import { getFirestore, collection, query, where, orderBy, limit,
-         getDocs, startAfter, doc, getDoc, updateDoc, addDoc,
-         setDoc, serverTimestamp,
-         onSnapshot   // ← ADDED: real-time listener
-       } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-const db = getFirestore(app);
-window._psDb          = db;
-window._psFs          = { collection, query, where, orderBy, limit, getDocs,
-                          startAfter, doc, getDoc, updateDoc, addDoc,
-                          setDoc, serverTimestamp,
-                          onSnapshot,  // ← ADDED: exposed for activateFirebaseListener
-                          db };
-window._psCurrentUser = null;
-onAuthStateChanged(auth, user => {
-  window._psCurrentUser = user || null;
-  // ── CHANGE 2: Activate Firebase listener once auth is confirmed ──
-  // Works whether user is logged in or not (Firestore rules permitting).
-  if (typeof activateFirebaseListener === 'function') {
-    activateFirebaseListener();
-  }
