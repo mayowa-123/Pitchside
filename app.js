@@ -195,53 +195,77 @@ const LIVESCORE_REFRESH_INTERVAL = 15000; // 15 seconds
 async function fetchLiveScores() {
   // Never fetch global API data when the user is on the NPFL page
   if (currentPage === 'npfl') return;
-  // ── localStorage cache (5 min = 300,000ms) ──
-  const CACHE_KEY = 'pitchside_livescores';
-  const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-  const today     = new Date().toISOString().split('T')[0];
 
+  const CACHE_KEY = 'pitchside_livescores_v2';
+  const today     = new Date().toISOString().split('T')[0];
+  const now       = Date.now();
+
+  // ── Smart cache: 3 min when live games are on, 30 min when not ───────────
+  // Keeps daily API usage well under the 100-request free tier limit.
   try {
-    // Check cache first
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
-      const { timestamp, dateKey, data } = JSON.parse(cached);
-      const age = Date.now() - timestamp;
-      if (dateKey === today && age < CACHE_TTL) {
-        // ✅ Cache is fresh — use it, skip API call
-        console.log(`[PitchSide] Using cached live scores (${Math.round(age/1000)}s old)`);
+      const { timestamp, dateKey, data, hasLive } = JSON.parse(cached);
+      const age = now - timestamp;
+      const TTL = hasLive ? 3 * 60 * 1000 : 30 * 60 * 1000;
+      if (dateKey === today && age < TTL) {
         lsData = data;
         renderLiveScores(lsData, lsCurrentFilter);
         liveScoresLastUpdate = timestamp;
         return;
       }
     }
+  } catch(_) {}
 
-    // Cache is old or missing — make API call
-    console.log('[PitchSide] Fetching fresh live scores from API...');
+  // ── Fetch from API ────────────────────────────────────────────────────────
+  try {
+    console.log('[PitchSide] Fetching live scores from API...');
     const res = await fetch(`/api/football?endpoint=fixtures&date=${today}`, {
-      headers: {},
-      signal: AbortSignal.timeout(4000)
+      signal: AbortSignal.timeout(8000)
     });
-    if (!res.ok) return;
-    const data = await res.json();
-    if (!data.response || data.response.length < 3) return;
 
-    // Transform API data into our format
+    if (res.status === 429) {
+      console.warn('[PitchSide] Rate limit (429) — using cache.');
+      _lsUseStaleCache(); return;
+    }
+    if (!res.ok) {
+      console.warn('[PitchSide] API error', res.status, '— using cache.');
+      _lsUseStaleCache(); return;
+    }
+
+    const data = await res.json();
+
+    // api-sports returns errors inside the body even on 200
+    if (data.errors && Object.keys(data.errors).length > 0) {
+      console.warn('[PitchSide] API body error:', JSON.stringify(data.errors));
+      _lsUseStaleCache(); return;
+    }
+
+    if (!data.response || data.response.length === 0) {
+      lsData = [];
+      renderLiveScores(lsData, lsCurrentFilter);
+      _lsSaveCache([], false, today);
+      return;
+    }
+
+    // Transform into grouped league format
     const grouped = {};
+    let hasLive = false;
     data.response.forEach(f => {
       const key = f.league.id;
       if (!grouped[key]) grouped[key] = {
         league: f.league.name, country: f.league.country,
         flag: countryFlag(f.league.country), matches: []
       };
-      const st = f.fixture.status.short;
+      const st     = f.fixture.status.short;
       const isLive = ['1H','2H','ET','BT','P','INT'].includes(st);
+      if (isLive) hasLive = true;
       grouped[key].matches.push({
-        id: String(f.fixture.id),
-        time: f.fixture.date ? new Date(f.fixture.date).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '--:--',
-        status: st === 'FT' ? 'FT' : st === 'NS' ? 'NS' : isLive ? (f.fixture.status.elapsed + '\'') : st,
-        home: {name: f.teams.home.name, badge: '⚽'},
-        away: {name: f.teams.away.name, badge: '⚽'},
+        id:     String(f.fixture.id),
+        time:   f.fixture.date ? new Date(f.fixture.date).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '--:--',
+        status: st === 'FT' ? 'FT' : st === 'NS' ? 'NS' : isLive ? (f.fixture.status.elapsed + "'") : st,
+        home:   { name: f.teams.home.name, badge: '⚽' },
+        away:   { name: f.teams.away.name, badge: '⚽' },
         scoreH: f.goals.home,
         scoreA: f.goals.away,
         minute: f.fixture.status.elapsed,
@@ -251,32 +275,31 @@ async function fetchLiveScores() {
 
     lsData = Object.values(grouped);
     renderLiveScores(lsData, lsCurrentFilter);
-    liveScoresLastUpdate = Date.now();
-
-    // ✅ Save fresh data to localStorage with timestamp
-    try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({
-        timestamp: liveScoresLastUpdate,
-        dateKey:   today,
-        data:      lsData
-      }));
-      console.log('[PitchSide] Live scores cached to localStorage');
-    } catch(cacheErr) {
-      console.warn('[PitchSide] Could not cache to localStorage:', cacheErr);
-    }
+    liveScoresLastUpdate = now;
+    _lsSaveCache(lsData, hasLive, today);
 
   } catch(e) {
-    // API failed — try to use any cached data even if stale
-    try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const { data } = JSON.parse(cached);
-        lsData = data;
-        renderLiveScores(lsData, lsCurrentFilter);
-        console.log('[PitchSide] API failed, using stale cache as fallback');
-      }
-    } catch(_) { /* cache read failed — feed stays empty until API responds */ }
+    console.warn('[PitchSide] fetchLiveScores error:', e.message);
+    _lsUseStaleCache();
   }
+}
+
+function _lsSaveCache(data, hasLive, dateKey) {
+  try {
+    localStorage.setItem('pitchside_livescores_v2', JSON.stringify({
+      timestamp: Date.now(), dateKey, data, hasLive
+    }));
+  } catch(_) {}
+}
+
+function _lsUseStaleCache() {
+  try {
+    const raw = localStorage.getItem('pitchside_livescores_v2');
+    if (raw) {
+      const { data } = JSON.parse(raw);
+      if (data) { lsData = data; renderLiveScores(lsData, lsCurrentFilter); }
+    }
+  } catch(_) {}
 }
 
 function startLiveScoresRefresh() {
