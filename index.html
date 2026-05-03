@@ -883,6 +883,200 @@
 
 
 <!-- ═══════════════════════════════════════
+     POST CREATOR OVERLAY
+═══════════════════════════════════════ -->
+<div id="post-creator">
+  <!-- Step 1: Pick file -->
+  <div id="pc-step-pick" style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:20px;padding:32px 24px;">
+    <div style="font-size:48px;">🎬</div>
+    <div style="font-size:18px;font-weight:700;color:var(--text);">Share your football moment</div>
+    <div style="font-size:13px;color:var(--text2);text-align:center;">Upload a video or photo to post to PitchSide</div>
+
+    <!-- Post type toggle -->
+    <div style="display:flex;gap:12px;width:100%;max-width:320px;">
+      <div id="post-type-fan" onclick="setPostType('fan')" style="flex:1;border:2px solid #10b981;background:rgba(16,185,129,0.15);border-radius:12px;padding:14px 10px;text-align:center;cursor:pointer;">
+        <div style="font-size:22px;">⚽</div>
+        <div style="font-size:12px;font-weight:600;color:#10b981;margin-top:4px;">Fan Post</div>
+      </div>
+      <div id="post-type-player" onclick="setPostType('player')" style="flex:1;border:2px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);border-radius:12px;padding:14px 10px;text-align:center;cursor:pointer;">
+        <div style="font-size:22px;">🏅</div>
+        <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.4);margin-top:4px;">Player Post</div>
+      </div>
+    </div>
+
+    <button onclick="triggerFilePick('caption')" style="width:100%;max-width:320px;padding:14px;border-radius:14px;border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;">
+      📁 Choose Video or Photo
+    </button>
+    <button onclick="closeQuickPost()" style="background:none;border:none;color:var(--text2);font-size:13px;cursor:pointer;padding:8px;">Cancel</button>
+  </div>
+
+  <!-- Step 2: Edit & publish -->
+  <div id="pc-step-edit" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);">
+      <button onclick="pcBackToPick()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;">‹</button>
+      <div style="flex:1;font-size:15px;font-weight:700;color:var(--text);">Post Studio</div>
+      <button id="pc-pub-btn" onclick="pcPublish()" style="padding:8px 20px;border-radius:20px;border:none;background:var(--green);color:#fff;font-size:13px;font-weight:700;cursor:pointer;">Post ⚡</button>
+    </div>
+
+    <!-- Preview -->
+    <div style="position:relative;width:100%;max-height:220px;background:#000;overflow:hidden;flex-shrink:0;">
+      <video id="pc-preview-video" style="display:none;width:100%;max-height:220px;object-fit:contain;" playsinline muted autoplay loop></video>
+      <img id="pc-preview-img" style="display:none;width:100%;max-height:220px;object-fit:contain;" alt="Preview">
+      <div id="pc-preview-ph" style="height:160px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.3);font-size:40px;">🎬</div>
+    </div>
+
+    <!-- Filter strip -->
+    <div id="pc-filter-strip" style="display:flex;gap:10px;overflow-x:auto;padding:10px 14px;flex-shrink:0;scrollbar-width:none;"></div>
+
+    <!-- Tab bar -->
+    <div style="display:flex;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;">
+      <button id="pct-caption"  onclick="pcShowPanel('caption')"  class="pc-tab on">✏️ Caption</button>
+      <button id="pct-stickers" onclick="pcShowPanel('stickers')" class="pc-tab">😊 Stickers</button>
+      <button id="pct-speed"    onclick="pcShowPanel('speed')"    class="pc-tab">⚡ Speed</button>
+      <button id="pct-music"    onclick="pcShowPanel('music')"    class="pc-tab">🎵 Music</button>
+    </div>
+
+    <!-- Panels -->
+    <div style="flex:1;overflow-y:auto;padding:14px 16px;">
+
+      <!-- Caption panel -->
+      <div id="pcp-caption">
+        <textarea id="pc-caption-inp" placeholder="What's happening on the pitch? ⚽ #Football" maxlength="300"
+          style="width:100%;min-height:90px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:12px;color:var(--text);font-size:14px;resize:none;box-sizing:border-box;"></textarea>
+        <div id="pc-hashtags" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;"></div>
+        <div style="margin-top:14px;">
+          <button onclick="pcToggleMatchPicker()" style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px 14px;color:var(--text2);font-size:13px;cursor:pointer;width:100%;">
+            <span>📍 Tag a Match</span><span id="pc-match-tag-chevron" style="margin-left:auto;">▼</span>
+          </button>
+          <div id="pc-match-tag-list"></div>
+          <div id="pc-tagged-match-display" style="display:none;align-items:center;gap:8px;margin-top:8px;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.3);border-radius:10px;padding:8px 12px;">
+            <span id="pc-tagged-match-text" style="font-size:12px;color:#10b981;flex:1;"></span>
+            <button onclick="pcClearMatchTag()" style="background:none;border:none;color:rgba(255,255,255,.4);font-size:16px;cursor:pointer;line-height:1;">×</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stickers panel -->
+      <div id="pcp-stickers" style="display:none;">
+        <div id="pc-sticker-grid" style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;"></div>
+        <div id="pc-sticker-preview" style="margin-top:10px;font-size:12px;color:var(--text2);min-height:18px;"></div>
+      </div>
+
+      <!-- Speed panel -->
+      <div id="pcp-speed" style="display:none;">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:10px;">Playback Speed</div>
+        <div id="pc-speed-row" style="display:flex;gap:10px;flex-wrap:wrap;"></div>
+      </div>
+
+      <!-- Music panel -->
+      <div id="pcp-music" style="display:none;">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:10px;">Add Background Music</div>
+        <div id="pc-music-list"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Uploading overlay -->
+  <div id="pc-uploading" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,.85);z-index:10;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
+    <div style="width:36px;height:36px;border:3px solid rgba(255,255,255,.2);border-top-color:#10b981;border-radius:50%;animation:spin .8s linear infinite;"></div>
+    <div id="pc-up-progress" style="color:#fff;font-size:14px;font-weight:600;">Uploading…</div>
+  </div>
+
+  <!-- Close button -->
+  <button onclick="closeQuickPost()" style="position:absolute;top:14px;right:14px;background:rgba(255,255,255,.1);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:18px;line-height:1;cursor:pointer;z-index:5;">×</button>
+</div>
+
+<!-- ═══════════════════════════════════════
+     NEWS READER OVERLAY
+═══════════════════════════════════════ -->
+<div id="news-reader-overlay" style="display:none;position:fixed;inset:0;background:var(--bg1,#0f0f1a);z-index:9000;flex-direction:column;overflow:hidden;">
+  <div id="nr-hdr" style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;">
+    <button onclick="closeNewsReader()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;">‹</button>
+    <div id="nr-hdr-title" style="flex:1;font-size:15px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Article</div>
+    <button onclick="openNewsExternal()" style="background:none;border:none;color:var(--green,#10b981);font-size:13px;cursor:pointer;font-weight:600;">Open ↗</button>
+  </div>
+  <div id="nr-body" style="flex:1;overflow-y:auto;padding:16px;"></div>
+</div>
+<style>
+  #news-reader-overlay.open { display:flex !important; }
+  .nr-img { width:100%;border-radius:12px;margin-bottom:12px;max-height:200px;object-fit:cover; }
+  .nr-category { font-size:11px;font-weight:700;color:var(--green,#10b981);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px; }
+  .nr-title { font-size:18px;font-weight:800;color:var(--text);line-height:1.35;margin-bottom:10px; }
+  .nr-meta { display:flex;gap:14px;font-size:11px;color:var(--text2);margin-bottom:14px; }
+  .nr-desc { font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:20px; }
+  .nr-read-more { width:100%;padding:13px;border-radius:12px;border:none;background:var(--green,#10b981);color:#fff;font-size:14px;font-weight:700;cursor:pointer; }
+</style>
+
+<!-- ═══════════════════════════════════════
+     MY VIDEOS OVERLAY
+═══════════════════════════════════════ -->
+<div id="my-videos-overlay" style="display:none;position:fixed;inset:0;background:var(--bg1,#0f0f1a);z-index:9000;flex-direction:column;overflow:hidden;">
+  <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;">
+    <button onclick="closeMyVideos()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;">‹</button>
+    <div style="flex:1;font-size:15px;font-weight:700;color:var(--text);">My Videos</div>
+  </div>
+  <div id="mv-body" style="flex:1;overflow-y:auto;padding:14px;"></div>
+</div>
+<style>
+  #my-videos-overlay.open { display:flex !important; }
+  .mv-card { background:var(--bg2);border-radius:12px;overflow:hidden;cursor:pointer; }
+  .mv-thumb { width:100%;aspect-ratio:16/9;object-fit:cover;display:block; }
+  .mv-thumb-ph { width:100%;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;font-size:32px;background:rgba(255,255,255,.05); }
+  .mv-info { padding:8px 10px; }
+  .mv-vtitle { font-size:12px;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
+  .mv-vdate { font-size:11px;color:var(--text2);margin-top:3px; }
+  .mv-empty { display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;padding:40px; }
+  .mv-empty-icon { font-size:48px; }
+  .mv-empty-text { font-size:14px;color:var(--text2);text-align:center;line-height:1.5; }
+</style>
+
+<!-- ═══════════════════════════════════════
+     WAR ROOM OVERLAY
+═══════════════════════════════════════ -->
+<div id="war-room-overlay" style="display:none;position:fixed;inset:0;background:var(--bg1,#0f0f1a);z-index:9000;flex-direction:column;overflow:hidden;">
+  <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;">
+    <button onclick="closeWarRoom()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;">‹</button>
+    <div style="flex:1;font-size:15px;font-weight:700;color:var(--text);">⚔️ War Room</div>
+  </div>
+  <div id="wr-body" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;"></div>
+  <div style="padding:12px 16px;border-top:1px solid rgba(255,255,255,.08);display:flex;gap:10px;">
+    <input id="wr-input" type="text" placeholder="Say something…" maxlength="200"
+      style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:10px 14px;color:var(--text);font-size:14px;">
+    <button onclick="sendWarRoomMsg()" style="padding:10px 18px;border-radius:20px;border:none;background:var(--green,#10b981);color:#fff;font-size:13px;font-weight:700;cursor:pointer;">Send</button>
+  </div>
+</div>
+<style>
+  #war-room-overlay.open { display:flex !important; }
+  #post-creator { display:none; position:fixed; inset:0; background:var(--bg1,#0f0f1a); z-index:9500; flex-direction:column; overflow:hidden; }
+  #post-creator.open { display:flex !important; }
+  #pc-uploading.show { display:flex !important; }
+  #pc-match-tag-list.open { display:block !important; }
+  .pc-tab { flex:1; background:none; border:none; color:var(--text2); font-size:12px; font-weight:600; padding:10px 4px; cursor:pointer; border-bottom:2px solid transparent; }
+  .pc-tab.on { color:var(--green,#10b981); border-bottom-color:var(--green,#10b981); }
+  .pc-filter-chip { display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; flex-shrink:0; opacity:.6; transition:opacity .2s; }
+  .pc-filter-chip.on { opacity:1; }
+  .pc-filter-thumb { width:44px; height:44px; border-radius:10px; background:rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center; font-size:20px; }
+  .pc-filter-name { font-size:10px; color:var(--text2); }
+  .pc-sticker { width:42px; height:42px; display:flex; align-items:center; justify-content:center; font-size:24px; border-radius:10px; background:rgba(255,255,255,.06); cursor:pointer; border:2px solid transparent; }
+  .pc-sticker.picked { border-color:var(--green,#10b981); background:rgba(16,185,129,.15); }
+  .pc-speed-btn { padding:8px 16px; border-radius:20px; border:1px solid rgba(255,255,255,.15); background:none; color:var(--text2); font-size:13px; font-weight:600; cursor:pointer; }
+  .pc-speed-btn.on { background:var(--green,#10b981); color:#fff; border-color:transparent; }
+  .pc-hashtag { padding:6px 12px; border-radius:16px; background:rgba(255,255,255,.07); color:var(--green,#10b981); font-size:12px; font-weight:600; cursor:pointer; }
+  .match-tag-item { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px; background:rgba(255,255,255,.04); margin-bottom:6px; cursor:pointer; border:1px solid rgba(255,255,255,.07); }
+  .match-tag-item.selected { border-color:var(--green,#10b981); background:rgba(16,185,129,.1); }
+  .mti-teams { flex:1; display:flex; flex-direction:column; gap:2px; }
+  .mti-team { font-size:12px; color:var(--text); font-weight:600; }
+  .mti-score { font-size:14px; font-weight:800; color:var(--text); min-width:32px; text-align:center; }
+  .mti-status { font-size:10px; font-weight:700; padding:2px 6px; border-radius:8px; }
+  .mti-live { background:rgba(239,68,68,.2); color:#ef4444; }
+  .mti-ft { background:rgba(255,255,255,.08); color:var(--text2); }
+  .mti-ns { background:rgba(59,130,246,.15); color:#60a5fa; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+
+<!-- ═══════════════════════════════════════
      Firebase Auth (ES Module — must stay inline as type="module")
 ═══════════════════════════════════════ -->
 <script type="module" src="firebase-auth.js"></script>
@@ -890,7 +1084,7 @@
 <!-- ═══════════════════════════════════════
      PitchSide Application Logic
 ═══════════════════════════════════════ -->
-<script defer src="app.js"></script>
+<script src="app.js"></script>
 
 </body>
 </html>
