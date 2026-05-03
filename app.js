@@ -196,7 +196,7 @@ async function fetchLiveScores() {
   // Never fetch global API data when the user is on the NPFL page
   if (currentPage === 'npfl') return;
 
-  const CACHE_KEY = 'pitchside_livescores_v2';
+  const CACHE_KEY = 'pitchside_livescores_v3';
   const today     = new Date().toISOString().split('T')[0];
   const now       = Date.now();
 
@@ -286,7 +286,7 @@ async function fetchLiveScores() {
 
 function _lsSaveCache(data, hasLive, dateKey) {
   try {
-    localStorage.setItem('pitchside_livescores_v2', JSON.stringify({
+    localStorage.setItem('pitchside_livescores_v3', JSON.stringify({
       timestamp: Date.now(), dateKey, data, hasLive
     }));
   } catch(_) {}
@@ -294,7 +294,7 @@ function _lsSaveCache(data, hasLive, dateKey) {
 
 function _lsUseStaleCache() {
   try {
-    const raw = localStorage.getItem('pitchside_livescores_v2');
+    const raw = localStorage.getItem('pitchside_livescores_v3');
     if (raw) {
       const { data } = JSON.parse(raw);
       if (data) { lsData = data; renderLiveScores(lsData, lsCurrentFilter); }
@@ -305,11 +305,7 @@ function _lsUseStaleCache() {
 function startLiveScoresRefresh() {
   // Clear existing interval if any
   if (liveScoresRefreshInterval) clearInterval(liveScoresRefreshInterval);
-  
-  // Fetch immediately
-  fetchLiveScores();
-  
-  // Then set up periodic refresh
+  // NOTE: initLiveScores() already fetches immediately — don't double-fetch here
   liveScoresRefreshInterval = setInterval(() => {
     fetchLiveScores();
   }, LIVESCORE_REFRESH_INTERVAL);
