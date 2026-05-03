@@ -28,7 +28,6 @@ const HTTP = axios.create({
 });
 
 // ─── NPFL team whitelist ──────────────────────────────────────────────────────
-// Lowercase, partial-match — "el kanemi" matches "El-Kanemi Warriors FC" etc.
 const NPFL_TEAMS = [
     'enyimba', 'rivers united', 'remo stars', 'shooting stars', 'kano pillars',
     'plateau united', 'kwara united', 'bendel insurance', 'lobi stars',
@@ -36,13 +35,11 @@ const NPFL_TEAMS = [
     'akwa united', 'doma united', 'gombe united', 'sunshine stars',
     'wikki tourists', 'niger tornadoes', 'crown fc', 'abia warriors',
     'enugu rangers', 'warri wolves', 'ikorodu city', 'katsina united',
-    'el kanemi', 'el-kanemi', 'kanemi',          // catch all variants
-    'barau', 'kun khalifat', 'rivers united fc',
+    'el kanemi', 'el-kanemi', 'kanemi', 'barau', 'kun khalifat',
 ];
 
 function isNPFLTeam(name) {
     const lower = (name || '').toLowerCase();
-    // Also accept any name that ends with " fc" and is at least 5 chars (Nigerian clubs)
     if (lower.endsWith(' fc') && lower.length >= 5) return true;
     return NPFL_TEAMS.some(t => lower.includes(t));
 }
@@ -59,7 +56,7 @@ function makeDocId(name) {
 //  TASK 1 — STANDINGS  (npfl.com.ng/npfl-table/)
 // ══════════════════════════════════════════════════════════════════════════════
 async function scrapeStandings() {
-    console.log('\n📋 [1/2] Scraping STANDINGS from npfl.com.ng/npfl-table/...');
+    console.log('\n📋 [1/2] Scraping STANDINGS...');
     let html;
     try {
         const { data } = await HTTP.get('https://npfl.com.ng/npfl-table/');
@@ -70,7 +67,7 @@ async function scrapeStandings() {
     }
 
     if (!html.toLowerCase().includes('npfl')) {
-        console.error('❌ Standings page does not look like NPFL. Skipping.');
+        console.error('❌ Page does not look like NPFL. Skipping.');
         return;
     }
 
@@ -99,12 +96,8 @@ async function scrapeStandings() {
         });
     });
 
-    if (skipped.length) console.warn(`   ⚠️  Skipped rows: ${skipped.join(' | ')}`);
-
-    if (standings.length === 0) {
-        console.error('❌ No valid standings found. Nothing written.');
-        return;
-    }
+    if (skipped.length) console.warn(`   ⚠️  Skipped: ${skipped.join(' | ')}`);
+    if (standings.length === 0) { console.error('❌ No standings found.'); return; }
 
     const batch = db.batch();
     standings.forEach(t =>
@@ -115,45 +108,122 @@ async function scrapeStandings() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  TASK 2 — FIXTURES + RESULTS  (npfl.com.ng/fixtures/ and /results/)
+//  TASK 2 — FIXTURES + RESULTS  (npfl.com.ng/fixtures/)
 //
-//  Strategy:
-//  1. Fetch the page and dump the first table's column structure to the log
-//     so we can see exactly what we're working with.
-//  2. Try multiple selector strategies and use whichever finds NPFL teams.
+//  The fixtures page stores the ENTIRE season in one table.
+//  Column layout (confirmed from log):
+//    col[0] = Date+Time  e.g. "2024-08-31 16:00:30A"
+//    col[1] = Home Team  e.g. "Rangers International"
+//    col[2] = Score      e.g. "0 - 0"  (or empty if not played yet)
+//    col[3] = League     e.g. "Nigeria Premier Foot"
+//    col[4] = Ground
+//    col[5] = Matchday
+//
+//  Classification:
+//    - Has score + date is in the past  →  npfl_results  (last 10 only)
+//    - No score + date is today/future  →  npfl_fixtures (next 20 only)
 // ══════════════════════════════════════════════════════════════════════════════
 async function scrapeFixturesAndResults() {
-    console.log('\n⚽ [2/2] Scraping FIXTURES + RESULTS from npfl.com.ng...');
+    console.log('\n⚽ [2/2] Scraping FIXTURES + RESULTS from npfl.com.ng/fixtures/...');
 
-    const fixtures = [];
-    const results  = [];
+    let html;
+    try {
+        const { data } = await HTTP.get('https://npfl.com.ng/fixtures/');
+        html = data;
+    } catch (err) {
+        console.error('❌ Fixtures page failed:', err.message);
+        return;
+    }
 
-    // ── Fixtures page ─────────────────────────────────────────────────────────
-    await scrapePage(
-        'https://npfl.com.ng/fixtures/',
-        'fixtures',
-        fixtures,
-        results
-    );
+    const $       = cheerio.load(html);
+    const today   = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    // ── Results page ──────────────────────────────────────────────────────────
-    await scrapePage(
-        'https://npfl.com.ng/results/',
-        'results',
-        fixtures,
-        results
-    );
+    const allFixtures = [];
+    const allResults  = [];
 
-    console.log(`\n   📊 Total found: ${fixtures.length} fixtures, ${results.length} results`);
+    $('table tbody tr').each((i, el) => {
+        const cols     = $(el).find('td');
+        if (cols.length < 3) return;
 
-    // ── Always wipe npfl_fixtures first to kill any stale bad data ───────────
+        // ── Extract using confirmed column layout ─────────────────────────────
+        const rawDate  = $(cols[0]).text().trim();   // "2024-08-31 16:00:30A"
+        const home     = $(cols[1]).text().trim();   // "Rangers International"
+        const scoreRaw = $(cols[2]).text().trim();   // "0 - 0" or ""
+        // col[3] = league, col[4] = ground, col[5] = matchday (not needed)
+
+        // Skip if home team isn't a known NPFL team
+        if (!isNPFLTeam(home)) return;
+
+        // Away team: npfl.com.ng fixtures table only has Home in col[1]
+        // The away team is sometimes in a separate cell or embedded in the score cell.
+        // From the log "0 - 0" is in col[2], so we need to find away team.
+        // Check if there's a col after score that has a team name.
+        let away = '';
+        for (let c = 3; c < cols.length; c++) {
+            const cellText = $(cols[c]).text().trim();
+            if (isNPFLTeam(cellText)) { away = cellText; break; }
+        }
+        // If still no away team, skip — we can't render a match without both teams
+        if (!away) return;
+
+        // ── Parse date ────────────────────────────────────────────────────────
+        // Format: "2024-08-31 16:00:30A" — extract just the date part
+        const datePart = rawDate.split(' ')[0];           // "2024-08-31"
+        const timePart = rawDate.split(' ')[1]            // "16:00:30A"
+            ? rawDate.split(' ')[1].replace(/[A-Z]/gi, '').substring(0, 5)
+            : '16:00';
+        const matchDate = new Date(datePart);
+
+        // ── Score parsing ─────────────────────────────────────────────────────
+        const scoreMatch = scoreRaw.match(/(\d+)\s*[-:]\s*(\d+)/);
+        const hasScore   = !!scoreMatch;
+        const isPast     = matchDate < today;
+        const isFuture   = matchDate >= today;
+
+        const entry = {
+            homeTeam:    home,
+            awayTeam:    away,
+            date:        datePart,
+            time:        timePart,
+            lastUpdated: new Date().toISOString(),
+            source:      'npfl.com.ng',
+        };
+
+        if (hasScore && isPast) {
+            // Finished match with score → result
+            entry.homeScore = scoreMatch[1];
+            entry.awayScore = scoreMatch[2];
+            entry.status    = 'FT';
+            allResults.push({ ...entry, _matchDate: matchDate });
+        } else if (!hasScore && isFuture) {
+            // No score, future date → upcoming fixture
+            entry.status = 'NS';
+            allFixtures.push({ ...entry, _matchDate: matchDate });
+        }
+        // past matches with no score = postponed/cancelled — skip them
+    });
+
+    // ── Sort and trim ─────────────────────────────────────────────────────────
+    // Fixtures: soonest first, max 20
+    allFixtures.sort((a, b) => a._matchDate - b._matchDate);
+    const fixtures = allFixtures.slice(0, 20).map(({ _matchDate, ...f }) => f);
+
+    // Results: most recent first, max 15
+    allResults.sort((a, b) => b._matchDate - a._matchDate);
+    const results = allResults.slice(0, 15).map(({ _matchDate, ...r }) => r);
+
+    console.log(`   Found: ${allFixtures.length} upcoming, ${allResults.length} finished`);
+    console.log(`   Saving: ${fixtures.length} fixtures, ${results.length} results`);
+
+    // ── Always wipe npfl_fixtures first ──────────────────────────────────────
     try {
         const oldDocs = await db.collection('npfl_fixtures').listDocuments();
         if (oldDocs.length > 0) {
             const delBatch = db.batch();
             oldDocs.forEach(ref => delBatch.delete(ref));
             await delBatch.commit();
-            console.log(`   🗑️  Cleared ${oldDocs.length} stale fixture docs.`);
+            console.log(`   🗑️  Cleared ${oldDocs.length} old fixture docs.`);
         }
     } catch (err) {
         console.warn('   ⚠️  Could not clear old fixtures:', err.message);
@@ -167,9 +237,10 @@ async function scrapeFixturesAndResults() {
             batch.set(db.collection('npfl_fixtures').doc(id), f);
         });
         await batch.commit();
-        console.log(`✅ Fixtures: ${fixtures.length} matches saved to npfl_fixtures.`);
+        console.log(`✅ Fixtures: ${fixtures.length} matches → npfl_fixtures`);
+        fixtures.forEach(f => console.log(`   📅 ${f.date} ${f.time}  ${f.homeTeam} vs ${f.awayTeam}`));
     } else {
-        console.warn('   ⚠️  No fixtures written — collection cleared but left empty.');
+        console.warn('   ⚠️  No upcoming fixtures found.');
     }
 
     // ── Write results ─────────────────────────────────────────────────────────
@@ -180,161 +251,20 @@ async function scrapeFixturesAndResults() {
             batch.set(db.collection('npfl_results').doc(id), r, { merge: true });
         });
         await batch.commit();
-        console.log(`✅ Results: ${results.length} matches saved to npfl_results.`);
+        console.log(`✅ Results: ${results.length} matches → npfl_results`);
+        results.slice(0, 5).forEach(r =>
+            console.log(`   🏁 ${r.date}  ${r.homeTeam} ${r.homeScore}-${r.awayScore} ${r.awayTeam}`)
+        );
     } else {
-        console.warn('   ⚠️  No results written.');
+        console.warn('   ⚠️  No results found.');
     }
-}
-
-// ─── Generic page scraper with debug logging ──────────────────────────────────
-async function scrapePage(url, label, fixtures, results) {
-    console.log(`\n   Fetching ${label} page: ${url}`);
-    let html;
-    try {
-        const { data } = await HTTP.get(url);
-        html = data;
-    } catch (err) {
-        console.warn(`   ⚠️  ${label} page failed: ${err.message}`);
-        return;
-    }
-
-    const $ = cheerio.load(html);
-
-    // ── DEBUG: log the first table's column count and first 3 rows ───────────
-    const firstTable = $('table').first();
-    if (firstTable.length) {
-        const headerCols = firstTable.find('thead th, thead td');
-        const headers    = [];
-        headerCols.each((_, h) => headers.push($(h).text().trim()));
-        console.log(`   Table headers (${headers.length} cols): [${headers.join(' | ')}]`);
-
-        firstTable.find('tbody tr').slice(0, 3).each((i, row) => {
-            const cells = [];
-            $(row).find('td').each((_, td) => cells.push($(td).text().trim().substring(0, 20)));
-            console.log(`   Row ${i}: [${cells.join(' | ')}]`);
-        });
-    } else {
-        // No table — look for div-based match cards
-        console.log('   No <table> found. Looking for div-based match cards...');
-        const cardCount = $('[class*="match"], [class*="fixture"], [class*="game"]').length;
-        console.log(`   Found ${cardCount} div match cards.`);
-    }
-
-    // ── Strategy A: table rows ────────────────────────────────────────────────
-    let found = 0;
-    $('table tbody tr').each((i, el) => {
-        const cols    = $(el).find('td');
-        const colTexts = [];
-        cols.each((_, td) => colTexts.push($(td).text().trim()));
-
-        if (colTexts.length < 3) return;
-
-        // Find which columns contain NPFL team names
-        const npflCols = colTexts
-            .map((t, idx) => ({ idx, text: t }))
-            .filter(c => isNPFLTeam(c.text));
-
-        if (npflCols.length < 1) return;   // no NPFL team in this row at all
-
-        // home = first NPFL team col, away = last NPFL team col
-        // (handles both "Home | Score | Away" and "Date | Home | Away | Time" layouts)
-        const homeCol = npflCols[0];
-        const awayCol = npflCols.length > 1 ? npflCols[npflCols.length - 1] : null;
-
-        if (!awayCol || homeCol.idx === awayCol.idx) {
-            // Only one team found — try adjacent columns
-            const adj = colTexts[homeCol.idx + 1] || colTexts[homeCol.idx - 1] || '';
-            if (!adj || adj === homeCol.text) return;
-        }
-
-        const home = homeCol.text;
-        const away = awayCol ? awayCol.text : colTexts[homeCol.idx + 1] || '';
-
-        if (!home || !away || home === away) return;
-
-        // Score detection — look for "N-N" or "N:N" pattern in any column
-        let homeScore = null, awayScore = null, isFT = false;
-        for (const cell of colTexts) {
-            const m = cell.match(/^(\d+)\s*[-:]\s*(\d+)$/);
-            if (m) {
-                homeScore = m[1];
-                awayScore = m[2];
-                isFT      = label === 'results' || /ft/i.test(colTexts.join(' '));
-                break;
-            }
-        }
-
-        // Date/time detection
-        const dateCell = colTexts.find(t => /\d{4}[-/]\d{2}[-/]\d{2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/.test(t)) || '';
-        const timeCell = colTexts.find(t => /^\d{1,2}:\d{2}(:\d{2})?$/.test(t)) || '16:00';
-
-        const entry = {
-            homeTeam:    home,
-            awayTeam:    away,
-            date:        dateCell || new Date().toISOString().split('T')[0],
-            time:        timeCell,
-            status:      isFT ? 'FT' : 'NS',
-            lastUpdated: new Date().toISOString(),
-            source:      `npfl.com.ng/${label}`,
-        };
-
-        if (homeScore !== null) { entry.homeScore = homeScore; entry.awayScore = awayScore; }
-
-        if (isFT) {
-            results.push(entry);
-        } else {
-            fixtures.push(entry);
-        }
-        found++;
-    });
-
-    // ── Strategy B: div/article match cards (if table strategy found nothing) ─
-    if (found === 0) {
-        console.log(`   Table strategy found 0 rows. Trying div card strategy...`);
-        $('[class*="match"], [class*="fixture"], [class*="event"], article').each((i, el) => {
-            const text   = $(el).text();
-            const allNames = [];
-
-            // Extract all text nodes that look like team names
-            $(el).find('*').each((_, child) => {
-                if ($(child).children().length === 0) {  // leaf node
-                    const t = $(child).text().trim();
-                    if (t.length >= 4 && t.length <= 50 && isNPFLTeam(t)) {
-                        allNames.push(t);
-                    }
-                }
-            });
-
-            if (allNames.length < 2) return;
-            const [home, away] = [allNames[0], allNames[allNames.length - 1]];
-            if (home === away) return;
-
-            const scoreM = text.match(/(\d+)\s*[-:]\s*(\d+)/);
-            const isFT   = label === 'results' || /\bft\b/i.test(text);
-
-            const entry = {
-                homeTeam:    home,
-                awayTeam:    away,
-                date:        new Date().toISOString().split('T')[0],
-                time:        '16:00',
-                status:      isFT ? 'FT' : 'NS',
-                lastUpdated: new Date().toISOString(),
-                source:      `npfl.com.ng/${label}/divcard`,
-            };
-            if (scoreM) { entry.homeScore = scoreM[1]; entry.awayScore = scoreM[2]; }
-            isFT ? results.push(entry) : fixtures.push(entry);
-            found++;
-        });
-    }
-
-    console.log(`   ${label}: found ${found} valid NPFL rows.`);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  MAIN
 // ══════════════════════════════════════════════════════════════════════════════
 async function main() {
-    console.log('🚀 NPFL Scraper Bot —', new Date().toUTCString());
+    console.log('🚀 NPFL Scraper —', new Date().toUTCString());
 
     const jobs = await Promise.allSettled([
         scrapeStandings(),
@@ -343,7 +273,7 @@ async function main() {
 
     jobs.forEach((j, i) => {
         if (j.status === 'rejected')
-            console.error(`❌ Job ${i + 1} unhandled error:`, j.reason);
+            console.error(`❌ Job ${i + 1} error:`, j.reason);
     });
 
     console.log('\n🏁 Done.');
