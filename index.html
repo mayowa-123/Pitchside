@@ -882,199 +882,368 @@
 
 
 
-<!-- ═══════════════════════════════════════
-     POST CREATOR OVERLAY
-═══════════════════════════════════════ -->
-<div id="post-creator">
-  <!-- Step 1: Pick file -->
-  <div id="pc-step-pick" style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:20px;padding:32px 24px;">
-    <div style="font-size:48px;">🎬</div>
-    <div style="font-size:18px;font-weight:700;color:var(--text);">Share your football moment</div>
-    <div style="font-size:13px;color:var(--text2);text-align:center;">Upload a video or photo to post to PitchSide</div>
+<style>
+#post-creator { display:none; position:fixed; inset:0; z-index:3000; flex-direction:column; background:#0a0f1e; font-family:'DM Sans',sans-serif; }
+#post-creator.open { display:flex; animation:editorIn .22s ease; }
 
-    <!-- Post type toggle -->
-    <div style="display:flex;gap:12px;width:100%;max-width:320px;">
-      <div id="post-type-fan" onclick="setPostType('fan')" style="flex:1;border:2px solid #10b981;background:rgba(16,185,129,0.15);border-radius:12px;padding:14px 10px;text-align:center;cursor:pointer;">
-        <div style="font-size:22px;">⚽</div>
-        <div style="font-size:12px;font-weight:600;color:#10b981;margin-top:4px;">Fan Post</div>
+/* Step 1 — pick file */
+#pc-step-pick { display:flex; flex-direction:column; height:100%; }
+.pc-hdr { display:flex; align-items:center; justify-content:space-between; padding:16px 16px 12px; border-bottom:1px solid rgba(255,255,255,.08); flex-shrink:0; }
+.pc-hdr-title { font-family:'Bebas Neue',sans-serif; font-size:22px; letter-spacing:.06em; color:#fff; }
+.pc-close { background:rgba(255,255,255,.1); border:none; color:#fff; width:36px; height:36px; border-radius:50%; font-size:20px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+
+.pc-pick-area { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:24px; }
+.pc-pick-btn { display:flex; flex-direction:column; align-items:center; gap:10px; background:rgba(255,255,255,.06); border:2px dashed rgba(16,185,129,.5); border-radius:20px; padding:32px 40px; cursor:pointer; transition:.2s; width:100%; max-width:320px; }
+.pc-pick-btn:active { background:rgba(16,185,129,.12); border-color:#10b981; }
+.pc-pick-icon { font-size:40px; }
+.pc-pick-label { font-size:15px; font-weight:600; color:#fff; }
+.pc-pick-sub { font-size:12px; color:rgba(255,255,255,.4); text-align:center; }
+
+.pc-ext-row { display:flex; gap:12px; width:100%; max-width:320px; }
+.pc-ext-btn { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); border-radius:14px; padding:14px 8px; cursor:pointer; transition:.2s; text-decoration:none; }
+.pc-ext-btn:active { background:rgba(255,255,255,.12); }
+.pc-ext-icon { font-size:24px; }
+.pc-ext-name { font-size:11px; font-weight:700; color:rgba(255,255,255,.6); letter-spacing:.04em; }
+
+/* Step 2 — editor */
+#pc-step-edit { display:none; flex-direction:column; height:100%; }
+#pc-step-edit.active { display:flex; }
+
+.pc-preview-wrap { position:relative; width:100%; background:#000; flex-shrink:0; }
+#pc-preview-video { width:100%; max-height:42vh; object-fit:contain; display:block; }
+#pc-preview-img   { width:100%; max-height:42vh; object-fit:contain; display:none; }
+.pc-preview-placeholder { width:100%; height:200px; display:flex; align-items:center; justify-content:center; font-size:48px; background:linear-gradient(135deg,#0f2027,#203a43,#2c5364); }
+
+/* Filter strip */
+.pc-filters { display:flex; gap:8px; overflow-x:auto; scrollbar-width:none; padding:10px 14px; background:#0d1117; flex-shrink:0; }
+.pc-filters::-webkit-scrollbar{display:none}
+.pc-filter-chip { flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; }
+.pc-filter-thumb { width:52px; height:52px; border-radius:10px; border:2px solid transparent; transition:.2s; display:flex; align-items:center; justify-content:center; font-size:22px; background:rgba(255,255,255,.07); }
+.pc-filter-chip.on .pc-filter-thumb { border-color:#10b981; }
+.pc-filter-name { font-size:10px; color:rgba(255,255,255,.5); font-weight:600; }
+.pc-filter-chip.on .pc-filter-name { color:#10b981; }
+
+/* Tools row */
+.pc-tools { display:flex; gap:0; border-top:1px solid rgba(255,255,255,.06); border-bottom:1px solid rgba(255,255,255,.06); flex-shrink:0; }
+.pc-tool { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; padding:10px 4px; cursor:pointer; background:none; border:none; color:rgba(255,255,255,.5); font-family:'DM Sans',sans-serif; font-size:10px; font-weight:600; transition:.15s; }
+.pc-tool:active,.pc-tool.on { color:#10b981; }
+.pc-tool-icon { font-size:20px; }
+
+/* Panel area */
+.pc-panel { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px; min-height:80px; }
+
+/* Caption & hashtags */
+.pc-caption-inp { width:100%; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); border-radius:12px; padding:11px 14px; font-size:14px; color:#fff; font-family:'DM Sans',sans-serif; outline:none; resize:none; box-sizing:border-box; }
+.pc-caption-inp::placeholder { color:rgba(255,255,255,.3); }
+.pc-caption-inp:focus { border-color:#10b981; }
+.pc-hashtag-row { display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; }
+.pc-hashtag { background:rgba(16,185,129,.15); border:1px solid rgba(16,185,129,.3); color:#10b981; padding:5px 12px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; }
+.pc-hashtag:active { background:rgba(16,185,129,.3); }
+
+/* Sticker grid */
+.pc-sticker-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; }
+.pc-sticker { font-size:28px; text-align:center; cursor:pointer; padding:4px; border-radius:8px; transition:.15s; }
+.pc-sticker:active { background:rgba(255,255,255,.15); transform:scale(1.2); }
+.pc-sticker.picked { background:rgba(16,185,129,.2); border:1px solid #10b981; }
+
+/* Speed buttons */
+.pc-speed-row { display:flex; gap:8px; flex-wrap:wrap; }
+.pc-speed-btn { padding:8px 16px; border-radius:20px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12); color:rgba(255,255,255,.7); font-size:13px; font-weight:700; cursor:pointer; font-family:'DM Sans',sans-serif; transition:.15s; }
+.pc-speed-btn.on { background:#10b981; border-color:#10b981; color:#fff; }
+
+/* Bottom publish bar */
+.pc-pub-bar { display:flex; gap:10px; padding:12px 14px 28px; border-top:1px solid rgba(255,255,255,.08); flex-shrink:0; }
+.pc-pub-cancel { flex:1; padding:13px; background:rgba(255,255,255,.08); border:none; border-radius:12px; color:rgba(255,255,255,.7); font-size:14px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; }
+.pc-pub-btn { flex:2; padding:13px; background:linear-gradient(135deg,#10b981,#059669); border:none; border-radius:12px; color:#fff; font-size:15px; font-weight:700; cursor:pointer; font-family:'DM Sans',sans-serif; display:flex; align-items:center; justify-content:center; gap:8px; }
+.pc-pub-btn:disabled { opacity:.4; }
+.pc-uploading { display:none; position:fixed; inset:0; z-index:4000; background:rgba(10,15,30,.9); align-items:center; justify-content:center; flex-direction:column; gap:16px; }
+.pc-uploading.show { display:flex; }
+.pc-up-spinner { width:48px; height:48px; border:4px solid rgba(16,185,129,.2); border-top-color:#10b981; border-radius:50%; animation:spin .8s linear infinite; }
+.pc-up-label { color:#fff; font-size:15px; font-weight:600; }
+.pc-up-progress { color:rgba(255,255,255,.5); font-size:13px; }
+
+/* My Videos overlay */
+#my-videos-overlay { display:none; position:fixed; inset:0; z-index:2500; background:#0a0f1e; flex-direction:column; }
+#my-videos-overlay.open { display:flex; }
+.mv-hdr { display:flex; align-items:center; gap:12px; padding:16px; border-bottom:1px solid rgba(255,255,255,.08); flex-shrink:0; }
+.mv-title { font-family:'Bebas Neue',sans-serif; font-size:22px; color:#fff; flex:1; letter-spacing:.04em; }
+.mv-close { background:rgba(255,255,255,.1); border:none; color:#fff; width:36px; height:36px; border-radius:50%; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.mv-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; padding:14px; overflow-y:auto; flex:1; }
+.mv-card { background:#111827; border-radius:12px; overflow:hidden; cursor:pointer; border:1px solid rgba(255,255,255,.06); position:relative; }
+.mv-card:active { opacity:.85; }
+.mv-thumb { width:100%; aspect-ratio:16/9; object-fit:cover; display:block; background:#1e293b; }
+.mv-thumb-ph { width:100%; aspect-ratio:16/9; display:flex; align-items:center; justify-content:center; font-size:32px; background:linear-gradient(135deg,#0f2027,#2c5364); }
+.mv-info { padding:9px 10px; }
+.mv-vtitle { font-size:12px; font-weight:600; color:#fff; line-height:1.3; margin-bottom:3px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.mv-vdate { font-size:10px; color:rgba(255,255,255,.4); }
+.mv-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:rgba(255,255,255,.35); padding:40px; }
+.mv-empty-icon { font-size:48px; }
+.mv-empty-text { font-size:14px; text-align:center; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@keyframes editorIn { from { transform:translateY(30px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+</style>
+
+<!-- Post Creator overlay -->
+<div id="post-creator">
+
+  <!-- Step 1: Pick media -->
+  <div id="pc-step-pick">
+    <div class="pc-hdr">
+      <div class="pc-hdr-title">NEW POST</div>
+      <button class="pc-close" onclick="closeQuickPost()">✕</button>
+    </div>
+    <div class="pc-pick-area">
+      <div class="pc-pick-btn" onclick="triggerFilePick()">
+        <div class="pc-pick-icon">🎬</div>
+        <div class="pc-pick-label">Choose Video or Photo</div>
+        <div class="pc-pick-sub">From your gallery or camera<br>MP4 · MOV · JPG · PNG</div>
       </div>
-      <div id="post-type-player" onclick="setPostType('player')" style="flex:1;border:2px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);border-radius:12px;padding:14px 10px;text-align:center;cursor:pointer;">
-        <div style="font-size:22px;">🏅</div>
-        <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.4);margin-top:4px;">Player Post</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.35);font-weight:600;letter-spacing:.06em;">EDITING TOOLS INCLUDED</div>
+      <div class="pc-ext-row">
+        <div class="pc-ext-btn" onclick="triggerFilePick('stickers')">
+          <div class="pc-ext-icon">✂️</div>
+          <div class="pc-ext-name">STICKERS</div>
+        </div>
+        <div class="pc-ext-btn" onclick="triggerFilePick('filters')">
+          <div class="pc-ext-icon">🎨</div>
+          <div class="pc-ext-name">FILTERS</div>
+        </div>
+        <div class="pc-ext-btn" onclick="triggerFilePick('speed')">
+          <div class="pc-ext-icon">⚡</div>
+          <div class="pc-ext-name">SPEED</div>
+        </div>
       </div>
     </div>
-
-    <button onclick="triggerFilePick('caption')" style="width:100%;max-width:320px;padding:14px;border-radius:14px;border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;">
-      📁 Choose Video or Photo
-    </button>
-    <button onclick="closeQuickPost()" style="background:none;border:none;color:var(--text2);font-size:13px;cursor:pointer;padding:8px;">Cancel</button>
   </div>
 
   <!-- Step 2: Edit & publish -->
-  <div id="pc-step-edit" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
-    <!-- Header -->
-    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);">
-      <button onclick="pcBackToPick()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;">‹</button>
-      <div style="flex:1;font-size:15px;font-weight:700;color:var(--text);">Post Studio</div>
-      <button id="pc-pub-btn" onclick="pcPublish()" style="padding:8px 20px;border-radius:20px;border:none;background:var(--green);color:#fff;font-size:13px;font-weight:700;cursor:pointer;">Post ⚡</button>
+  <div id="pc-step-edit">
+    <div class="pc-hdr">
+      <button class="pc-close" onclick="pcBackToPick()" style="font-size:16px;">‹ Back</button>
+      <div class="pc-hdr-title">EDIT POST</div>
+      <div style="width:36px;"></div>
     </div>
 
     <!-- Preview -->
-    <div style="position:relative;width:100%;max-height:220px;background:#000;overflow:hidden;flex-shrink:0;">
-      <video id="pc-preview-video" style="display:none;width:100%;max-height:220px;object-fit:contain;" playsinline muted autoplay loop></video>
-      <img id="pc-preview-img" style="display:none;width:100%;max-height:220px;object-fit:contain;" alt="Preview">
-      <div id="pc-preview-ph" style="height:160px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.3);font-size:40px;">🎬</div>
+    <div class="pc-preview-wrap" id="pc-preview-wrap">
+      <video id="pc-preview-video" playsinline muted controls></video>
+      <img id="pc-preview-img" alt="preview">
+      <div class="pc-preview-placeholder" id="pc-preview-ph" style="display:none;">🎬</div>
     </div>
 
     <!-- Filter strip -->
-    <div id="pc-filter-strip" style="display:flex;gap:10px;overflow-x:auto;padding:10px 14px;flex-shrink:0;scrollbar-width:none;"></div>
+    <div class="pc-filters" id="pc-filter-strip"></div>
 
-    <!-- Tab bar -->
-    <div style="display:flex;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;">
-      <button id="pct-caption"  onclick="pcShowPanel('caption')"  class="pc-tab on">✏️ Caption</button>
-      <button id="pct-stickers" onclick="pcShowPanel('stickers')" class="pc-tab">😊 Stickers</button>
-      <button id="pct-speed"    onclick="pcShowPanel('speed')"    class="pc-tab">⚡ Speed</button>
-      <button id="pct-music"    onclick="pcShowPanel('music')"    class="pc-tab">🎵 Music</button>
+    <!-- Tool tabs -->
+    <div class="pc-tools">
+      <button class="pc-tool on" id="pct-caption"  onclick="pcShowPanel('caption')"><span class="pc-tool-icon">✏️</span>Caption</button>
+      <button class="pc-tool"    id="pct-stickers" onclick="pcShowPanel('stickers')"><span class="pc-tool-icon">😄</span>Stickers</button>
+      <button class="pc-tool"    id="pct-speed"    onclick="pcShowPanel('speed')"><span class="pc-tool-icon">⚡</span>Speed</button>
+      <button class="pc-tool"    id="pct-music"    onclick="pcShowPanel('music')"><span class="pc-tool-icon">🎵</span>Music</button>
     </div>
 
-    <!-- Panels -->
-    <div style="flex:1;overflow-y:auto;padding:14px 16px;">
-
-      <!-- Caption panel -->
+    <!-- Panel -->
+    <div class="pc-panel" id="pc-panel">
+      <!-- caption panel (default) -->
       <div id="pcp-caption">
-        <textarea id="pc-caption-inp" placeholder="What's happening on the pitch? ⚽ #Football" maxlength="300"
-          style="width:100%;min-height:90px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:12px;color:var(--text);font-size:14px;resize:none;box-sizing:border-box;"></textarea>
-        <div id="pc-hashtags" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;"></div>
-        <div style="margin-top:14px;">
-          <button onclick="pcToggleMatchPicker()" style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px 14px;color:var(--text2);font-size:13px;cursor:pointer;width:100%;">
-            <span>📍 Tag a Match</span><span id="pc-match-tag-chevron" style="margin-left:auto;">▼</span>
-          </button>
-          <div id="pc-match-tag-list"></div>
-          <div id="pc-tagged-match-display" style="display:none;align-items:center;gap:8px;margin-top:8px;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.3);border-radius:10px;padding:8px 12px;">
-            <span id="pc-tagged-match-text" style="font-size:12px;color:#10b981;flex:1;"></span>
-            <button onclick="pcClearMatchTag()" style="background:none;border:none;color:rgba(255,255,255,.4);font-size:16px;cursor:pointer;line-height:1;">×</button>
+        <textarea id="pc-caption-inp" class="pc-caption-inp" rows="3"
+          placeholder="Describe your football moment ⚽  e.g. What a goal! 🔥 #NPFL"
+          maxlength="300"></textarea>
+        <div class="pc-hashtag-row" id="pc-hashtags"></div>
+
+        <!-- Post Type: Fan or Player -->
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <div id="post-type-fan" onclick="setPostType('fan')"
+            style="flex:1;padding:10px 8px;border-radius:12px;border:2px solid #10b981;background:rgba(16,185,129,0.15);cursor:pointer;text-align:center;transition:.2s;">
+            <div style="font-size:18px;">👥</div>
+            <div style="font-size:10px;font-weight:700;color:#10b981;margin-top:3px;">FAN CLIP</div>
+          </div>
+          <div id="post-type-player" onclick="setPostType('player')"
+            style="flex:1;padding:10px 8px;border-radius:12px;border:2px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);cursor:pointer;text-align:center;transition:.2s;">
+            <div style="font-size:18px;">⭐</div>
+            <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.4);margin-top:3px;">PLAYER BTS</div>
           </div>
         </div>
-      </div>
 
-      <!-- Stickers panel -->
+        <!-- Tag a Match -->
+        <div class="match-tag-picker" style="margin-top:12px;">
+          <div class="match-tag-hdr" onclick="pcToggleMatchPicker()">
+            <span>⚽ Tag a Match</span>
+            <span id="pc-match-tag-chevron" style="color:rgba(255,255,255,.4);font-size:11px;">▼</span>
+          </div>
+          <div class="match-tag-list" id="pc-match-tag-list"></div>
+        </div>
+        <div class="match-tag-selected-display" id="pc-tagged-match-display" style="display:none;">
+          <span id="pc-tagged-match-text"></span>
+          <button class="match-tag-clear" onclick="pcClearMatchTag()">✕</button>
+        </div>
+      </div>
       <div id="pcp-stickers" style="display:none;">
-        <div id="pc-sticker-grid" style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;"></div>
-        <div id="pc-sticker-preview" style="margin-top:10px;font-size:12px;color:var(--text2);min-height:18px;"></div>
+        <div class="pc-sticker-grid" id="pc-sticker-grid"></div>
+        <div id="pc-sticker-preview" style="margin-top:12px;font-size:13px;color:rgba(255,255,255,.5);"></div>
       </div>
-
-      <!-- Speed panel -->
       <div id="pcp-speed" style="display:none;">
-        <div style="font-size:13px;color:var(--text2);margin-bottom:10px;">Playback Speed</div>
-        <div id="pc-speed-row" style="display:flex;gap:10px;flex-wrap:wrap;"></div>
+        <div style="font-size:12px;color:rgba(255,255,255,.4);margin-bottom:10px;">Video speed (applies on upload)</div>
+        <div class="pc-speed-row" id="pc-speed-row"></div>
       </div>
-
-      <!-- Music panel -->
       <div id="pcp-music" style="display:none;">
-        <div style="font-size:13px;color:var(--text2);margin-bottom:10px;">Add Background Music</div>
+        <div style="font-size:12px;color:rgba(255,255,255,.4);margin-bottom:10px;">Add a vibe to your post</div>
         <div id="pc-music-list"></div>
       </div>
+    </div>
 
+    <!-- Publish bar -->
+    <div class="pc-pub-bar">
+      <button class="pc-pub-cancel" onclick="closeQuickPost()">Cancel</button>
+      <button class="pc-pub-btn" id="pc-pub-btn" onclick="pcPublish()">
+        🚀 Post to PitchSide
+      </button>
     </div>
   </div>
+</div>
 
-  <!-- Uploading overlay -->
-  <div id="pc-uploading" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,.85);z-index:10;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
-    <div style="width:36px;height:36px;border:3px solid rgba(255,255,255,.2);border-top-color:#10b981;border-radius:50%;animation:spin .8s linear infinite;"></div>
-    <div id="pc-up-progress" style="color:#fff;font-size:14px;font-weight:600;">Uploading…</div>
+<!-- Upload progress -->
+<div class="pc-uploading" id="pc-uploading">
+  <div class="pc-up-spinner"></div>
+  <div class="pc-up-label">Uploading your post…</div>
+  <div class="pc-up-progress" id="pc-up-progress">Preparing…</div>
+</div>
+
+<!-- My Videos overlay -->
+<div id="my-videos-overlay">
+  <div class="mv-hdr">
+    <div class="mv-title">MY VIDEOS</div>
+    <button class="mv-close" onclick="closeMyVideos()">✕</button>
   </div>
-
-  <!-- Close button -->
-  <button onclick="closeQuickPost()" style="position:absolute;top:14px;right:14px;background:rgba(255,255,255,.1);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:18px;line-height:1;cursor:pointer;z-index:5;">×</button>
+  <div id="mv-body"></div>
 </div>
 
 <!-- ═══════════════════════════════════════
-     NEWS READER OVERLAY
-═══════════════════════════════════════ -->
-<div id="news-reader-overlay" style="display:none;position:fixed;inset:0;background:var(--bg1,#0f0f1a);z-index:9000;flex-direction:column;overflow:hidden;">
-  <div id="nr-hdr" style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;">
-    <button onclick="closeNewsReader()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;">‹</button>
-    <div id="nr-hdr-title" style="flex:1;font-size:15px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Article</div>
-    <button onclick="openNewsExternal()" style="background:none;border:none;color:var(--green,#10b981);font-size:13px;cursor:pointer;font-weight:600;">Open ↗</button>
-  </div>
-  <div id="nr-body" style="flex:1;overflow-y:auto;padding:16px;"></div>
-</div>
+     IN-APP NEWS ARTICLE READER
+════════════════════════════════════════ -->
 <style>
-  #news-reader-overlay.open { display:flex !important; }
-  .nr-img { width:100%;border-radius:12px;margin-bottom:12px;max-height:200px;object-fit:cover; }
-  .nr-category { font-size:11px;font-weight:700;color:var(--green,#10b981);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px; }
-  .nr-title { font-size:18px;font-weight:800;color:var(--text);line-height:1.35;margin-bottom:10px; }
-  .nr-meta { display:flex;gap:14px;font-size:11px;color:var(--text2);margin-bottom:14px; }
-  .nr-desc { font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:20px; }
-  .nr-read-more { width:100%;padding:13px;border-radius:12px;border:none;background:var(--green,#10b981);color:#fff;font-size:14px;font-weight:700;cursor:pointer; }
+#news-reader-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: var(--bg);
+  flex-direction: column;
+}
+#news-reader-overlay.open { display: flex; }
+.nr-hdr {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg2);
+}
+.nr-back {
+  background: var(--bg3);
+  border: none;
+  color: var(--text);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.nr-hdr-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text2);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nr-open-btn {
+  background: var(--green);
+  border: none;
+  color: #fff;
+  padding: 7px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: 'DM Sans', sans-serif;
+}
+.nr-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 20px 16px 40px;
+}
+.nr-img {
+  width: 100%;
+  border-radius: 12px;
+  max-height: 220px;
+  object-fit: cover;
+  margin-bottom: 16px;
+  display: block;
+}
+.nr-category {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.nr-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 26px;
+  letter-spacing: .03em;
+  line-height: 1.2;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.nr-meta {
+  font-size: 12px;
+  color: var(--text3);
+  margin-bottom: 16px;
+  display: flex;
+  gap: 10px;
+}
+.nr-desc {
+  font-size: 15px;
+  color: var(--text2);
+  line-height: 1.7;
+  margin-bottom: 20px;
+}
+.nr-read-more {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
 </style>
 
-<!-- ═══════════════════════════════════════
-     MY VIDEOS OVERLAY
-═══════════════════════════════════════ -->
-<div id="my-videos-overlay" style="display:none;position:fixed;inset:0;background:var(--bg1,#0f0f1a);z-index:9000;flex-direction:column;overflow:hidden;">
-  <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;">
-    <button onclick="closeMyVideos()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;">‹</button>
-    <div style="flex:1;font-size:15px;font-weight:700;color:var(--text);">My Videos</div>
+<div id="news-reader-overlay">
+  <div class="nr-hdr">
+    <button class="nr-back" onclick="closeNewsReader()">‹</button>
+    <div class="nr-hdr-title" id="nr-hdr-title">Article</div>
+    <button class="nr-open-btn" onclick="openNewsExternal()">Full Article</button>
   </div>
-  <div id="mv-body" style="flex:1;overflow-y:auto;padding:14px;"></div>
+  <div class="nr-body" id="nr-body"></div>
 </div>
-<style>
-  #my-videos-overlay.open { display:flex !important; }
-  .mv-card { background:var(--bg2);border-radius:12px;overflow:hidden;cursor:pointer; }
-  .mv-thumb { width:100%;aspect-ratio:16/9;object-fit:cover;display:block; }
-  .mv-thumb-ph { width:100%;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;font-size:32px;background:rgba(255,255,255,.05); }
-  .mv-info { padding:8px 10px; }
-  .mv-vtitle { font-size:12px;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
-  .mv-vdate { font-size:11px;color:var(--text2);margin-top:3px; }
-  .mv-empty { display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;padding:40px; }
-  .mv-empty-icon { font-size:48px; }
-  .mv-empty-text { font-size:14px;color:var(--text2);text-align:center;line-height:1.5; }
-</style>
-
-<!-- ═══════════════════════════════════════
-     WAR ROOM OVERLAY
-═══════════════════════════════════════ -->
-<div id="war-room-overlay" style="display:none;position:fixed;inset:0;background:var(--bg1,#0f0f1a);z-index:9000;flex-direction:column;overflow:hidden;">
-  <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;">
-    <button onclick="closeWarRoom()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;">‹</button>
-    <div style="flex:1;font-size:15px;font-weight:700;color:var(--text);">⚔️ War Room</div>
-  </div>
-  <div id="wr-body" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;"></div>
-  <div style="padding:12px 16px;border-top:1px solid rgba(255,255,255,.08);display:flex;gap:10px;">
-    <input id="wr-input" type="text" placeholder="Say something…" maxlength="200"
-      style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:10px 14px;color:var(--text);font-size:14px;">
-    <button onclick="sendWarRoomMsg()" style="padding:10px 18px;border-radius:20px;border:none;background:var(--green,#10b981);color:#fff;font-size:13px;font-weight:700;cursor:pointer;">Send</button>
-  </div>
-</div>
-<style>
-  #war-room-overlay.open { display:flex !important; }
-  #post-creator { display:none; position:fixed; inset:0; background:var(--bg1,#0f0f1a); z-index:9500; flex-direction:column; overflow:hidden; }
-  #post-creator.open { display:flex !important; }
-  #pc-uploading.show { display:flex !important; }
-  #pc-match-tag-list.open { display:block !important; }
-  .pc-tab { flex:1; background:none; border:none; color:var(--text2); font-size:12px; font-weight:600; padding:10px 4px; cursor:pointer; border-bottom:2px solid transparent; }
-  .pc-tab.on { color:var(--green,#10b981); border-bottom-color:var(--green,#10b981); }
-  .pc-filter-chip { display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; flex-shrink:0; opacity:.6; transition:opacity .2s; }
-  .pc-filter-chip.on { opacity:1; }
-  .pc-filter-thumb { width:44px; height:44px; border-radius:10px; background:rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center; font-size:20px; }
-  .pc-filter-name { font-size:10px; color:var(--text2); }
-  .pc-sticker { width:42px; height:42px; display:flex; align-items:center; justify-content:center; font-size:24px; border-radius:10px; background:rgba(255,255,255,.06); cursor:pointer; border:2px solid transparent; }
-  .pc-sticker.picked { border-color:var(--green,#10b981); background:rgba(16,185,129,.15); }
-  .pc-speed-btn { padding:8px 16px; border-radius:20px; border:1px solid rgba(255,255,255,.15); background:none; color:var(--text2); font-size:13px; font-weight:600; cursor:pointer; }
-  .pc-speed-btn.on { background:var(--green,#10b981); color:#fff; border-color:transparent; }
-  .pc-hashtag { padding:6px 12px; border-radius:16px; background:rgba(255,255,255,.07); color:var(--green,#10b981); font-size:12px; font-weight:600; cursor:pointer; }
-  .match-tag-item { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px; background:rgba(255,255,255,.04); margin-bottom:6px; cursor:pointer; border:1px solid rgba(255,255,255,.07); }
-  .match-tag-item.selected { border-color:var(--green,#10b981); background:rgba(16,185,129,.1); }
-  .mti-teams { flex:1; display:flex; flex-direction:column; gap:2px; }
-  .mti-team { font-size:12px; color:var(--text); font-weight:600; }
-  .mti-score { font-size:14px; font-weight:800; color:var(--text); min-width:32px; text-align:center; }
-  .mti-status { font-size:10px; font-weight:700; padding:2px 6px; border-radius:8px; }
-  .mti-live { background:rgba(239,68,68,.2); color:#ef4444; }
-  .mti-ft { background:rgba(255,255,255,.08); color:var(--text2); }
-  .mti-ns { background:rgba(59,130,246,.15); color:#60a5fa; }
-  @keyframes spin { to { transform:rotate(360deg); } }
-</style>
 
 <!-- ═══════════════════════════════════════
      Firebase Auth (ES Module — must stay inline as type="module")
