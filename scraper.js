@@ -168,12 +168,15 @@ async function scrapeFixturesAndResults() {
         if (!away) return;
 
         // ── Parse date ────────────────────────────────────────────────────────
-        // Format: "2024-08-31 16:00:30A" — extract just the date part
-        const datePart = rawDate.split(' ')[0];           // "2024-08-31"
-        const timePart = rawDate.split(' ')[1]            // "16:00:30A"
-            ? rawDate.split(' ')[1].replace(/[A-Z]/gi, '').substring(0, 5)
-            : '16:00';
-        const matchDate = new Date(datePart);
+        // Format: "2026-05-25 16:00:30A" — use regex to avoid suffix issues
+        // new Date('YYYY-MM-DD') parses as UTC and can shift by timezone;
+        // we construct with explicit local parts to stay in the correct day.
+        const datePart  = (rawDate.match(/(\d{4}-\d{2}-\d{2})/) || [])[1] || '';
+        const timeMatch = rawDate.match(/(\d{1,2}:\d{2})/);
+        const timePart  = timeMatch ? timeMatch[1] : '16:00';
+        if (!datePart) return;
+        const [yr, mo, dy] = datePart.split('-').map(Number);
+        const matchDate    = new Date(yr, mo - 1, dy);   // local midnight, no UTC shift
 
         // ── Score parsing ─────────────────────────────────────────────────────
         const scoreMatch = scoreRaw.match(/(\d+)\s*[-:]\s*(\d+)/);
@@ -196,12 +199,13 @@ async function scrapeFixturesAndResults() {
             entry.awayScore = scoreMatch[2];
             entry.status    = 'FT';
             allResults.push({ ...entry, _matchDate: matchDate });
-        } else if (!hasScore && isFuture) {
-            // No score, future date → upcoming fixture
+        } else if (!hasScore) {
+            // No score = upcoming or postponed — save as fixture regardless of date
+            // (catches today's matches + future matchdays)
             entry.status = 'NS';
             allFixtures.push({ ...entry, _matchDate: matchDate });
         }
-        // past matches with no score = postponed/cancelled — skip them
+        // scored past matches already handled above
     });
 
     // ── Sort and trim ─────────────────────────────────────────────────────────
