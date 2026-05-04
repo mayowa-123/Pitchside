@@ -3243,7 +3243,7 @@ RESPONSE RULES:
 4. Keep responses concise but complete — 3 to 6 sentences for simple questions, structured lists for comparisons
 5. Use football emojis naturally: ⚽ 🏆 🔥 ⭐ 🎯 🥅 🏃 💪
 6. If asked about very recent events (last few days), say you may not have the latest update but give the most recent info you have
-7. Never make up statistics. The current season is 2025/2026. If you do not have access to real-time data for a specific player's current season, state that clearly. For historical data, provide the most accurate figures available from your training data up to the 2025/2026 season. Always verify the player's current club (e.g., Osimhen is at Galatasaray, Messi is at Inter Miami).
+7. Never make up statistics. The current season is 2025/2026. If you do not have access to real-time data for a specific player's current season, state that clearly. DO NOT guess numbers. If you are unsure, say "Data not available for this season." Always prioritize the data provided in the prompt over your internal memory. Always verify the player's current club (e.g., Osimhen is at Galatasaray, Messi is at Inter Miami).
 8. For Nigerian users: always mention Nigerian players and NPFL when relevant
 
 EXAMPLE RESPONSES:
@@ -4800,7 +4800,7 @@ async function _fetchPlayerStatsFromAI(playerName, nationality, position) {
       body: JSON.stringify({
         max_tokens: 300,
         system: 'You are a football stats expert. Respond with a single JSON object only. No text before or after. No markdown.',
-        messages: [{ role: 'user', content: `Provide the 2025/2026 season statistics for the football player ${playerName} (${nationality}, ${position}). The current date is May 4, 2026. Ensure the "club" is their current club as of today (e.g., Osimhen is at Galatasaray, Messi is at Inter Miami). If you are unsure of the exact numbers, provide your best estimate based on available data up to May 2026. Reply with ONLY this JSON format: {"goals":number,"assists":number,"apps":number,"rating":number,"club":"string"}` }]
+        messages: [{ role: 'user', content: `Provide the 2025/2026 season statistics for the football player ${playerName} (${nationality}, ${position}). The current date is May 4, 2026. Ensure the "club" is their current club as of today (e.g., Osimhen is at Galatasaray, Messi is at Inter Miami). DO NOT guess or hallucinate numbers. If you do not have the exact data for the 2025/2026 season, return 0 for goals, assists, and apps, and "—" for rating. Reply with ONLY this JSON format: {"goals":number,"assists":number,"apps":number,"rating":number,"club":"string"}` }]
       })
     });
     const data = await res.json();
@@ -4831,14 +4831,24 @@ function _renderPlayerResults(players, query) {
 
   res.innerHTML = players.slice(0, 10).map((entry, idx) => {
     const p    = entry.player;
-    const stat = (entry.statistics || [])[0] || {};
-    const club = stat.team?.name || 'Unknown Club';
-    const logo = stat.team?.logo || '';
-    const pos  = stat.games?.position || p.position || '—';
-    const goals   = stat.goals?.total    || 0;
-    const assists = stat.goals?.assists  || 0;
-    const apps    = stat.games?.appearences || 0;
-    const rating  = stat.games?.rating ? parseFloat(stat.games.rating).toFixed(1) : '—';
+    const stats = entry.statistics || [];
+    const mainStat = stats[0] || {};
+    const club = mainStat.team?.name || 'Unknown Club';
+    const logo = mainStat.team?.logo || '';
+    const pos  = mainStat.games?.position || p.position || '—';
+    
+    // Sum up stats from all competitions
+    let goals = 0, assists = 0, apps = 0, totalRating = 0, ratingCount = 0;
+    stats.forEach(s => {
+      goals += (s.goals?.total || 0);
+      assists += (s.goals?.assists || 0);
+      apps += (s.games?.appearences || 0);
+      if (s.games?.rating) {
+        totalRating += parseFloat(s.games.rating);
+        ratingCount++;
+      }
+    });
+    const rating = ratingCount > 0 ? (totalRating / ratingCount).toFixed(1) : '—';
     const allZero = goals === 0 && assists === 0 && apps === 0;
     const fullName = `${p.firstname} ${p.lastname}`.trim();
 
@@ -4873,10 +4883,14 @@ function _renderPlayerResults(players, query) {
   // For any player with all zeros, fetch AI stats
   players.slice(0, 10).forEach(async (entry, idx) => {
     const p    = entry.player;
-    const stat = (entry.statistics || [])[0] || {};
-    const goals   = stat.goals?.total    || 0;
-    const assists = stat.goals?.assists  || 0;
-    const apps    = stat.games?.appearences || 0;
+    const stats = entry.statistics || [];
+    let goals = 0, assists = 0, apps = 0;
+    stats.forEach(s => {
+      goals += (s.goals?.total || 0);
+      assists += (s.goals?.assists || 0);
+      apps += (s.games?.appearences || 0);
+    });
+    
     if (goals === 0 && assists === 0 && apps === 0) {
       const fullName = `${p.firstname} ${p.lastname}`.trim();
       const aiStats = await _fetchPlayerStatsFromAI(fullName, p.nationality || '', p.position || '');
@@ -4953,6 +4967,19 @@ async function openPlayerProfile(playerId, fbName) {
   const p    = entry.player;
   const stats = entry.statistics || [];
   const main  = stats[0] || {};
+  
+  // Sum up stats from all competitions for the "This Season" section
+  let totalGoals = 0, totalAssists = 0, totalApps = 0, totalRating = 0, ratingCount = 0;
+  stats.forEach(s => {
+    totalGoals += (s.goals?.total || 0);
+    totalAssists += (s.goals?.assists || 0);
+    totalApps += (s.games?.appearences || 0);
+    if (s.games?.rating) {
+      totalRating += parseFloat(s.games.rating);
+      ratingCount++;
+    }
+  });
+  const avgRating = ratingCount > 0 ? (totalRating / ratingCount).toFixed(1) : '—';
 
   // Build career history from statistics array (one entry per club/season)
   const careerRows = stats.map(s => `
@@ -5010,10 +5037,10 @@ async function openPlayerProfile(playerId, fbName) {
         <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;">This Season</div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
           ${[
-            ['Apps',    main.games?.appearences||0],
-            ['Goals',   main.goals?.total||0],
-            ['Assists', main.goals?.assists||0],
-            ['Rating',  main.games?.rating ? parseFloat(main.games.rating).toFixed(1) : '—'],
+            ['Apps',    totalApps],
+            ['Goals',   totalGoals],
+            ['Assists', totalAssists],
+            ['Rating',  avgRating],
           ].map(([lbl,val]) => `
             <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;">
               <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--blue);">${val}</div>
