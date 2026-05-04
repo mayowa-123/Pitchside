@@ -18,10 +18,11 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         max_tokens: max_tokens || 800,
-        messages: [
-          ...(system ? [{ role: 'system', content: system }] : []),
-          ...messages,
-        ],
+messages: [
+	          { role: 'system', content: 'The current date is May 4, 2026. You are PitchSide AI. You must account for all major transfers up to this date (e.g., Messi at Inter Miami, Osimhen at Galatasaray, Mbappe at Real Madrid). Always provide the most up-to-date information available.' },
+	          ...(system ? [{ role: 'system', content: system }] : []),
+	          ...messages,
+	        ],
       }),
     });
 

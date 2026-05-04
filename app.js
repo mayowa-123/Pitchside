@@ -3221,7 +3221,7 @@ function switchEditorTab(el, tab) {
 /* ═══════════════════════════════════════════
    AI ASSISTANT — UPGRADED
 ═══════════════════════════════════════════ */
-const AI_SYSTEM_PROMPT = `You are PitchSide AI — the smartest football assistant in the world, built into the PitchSide app for passionate football fans.
+const AI_SYSTEM_PROMPT = `You are PitchSide AI — the smartest football assistant in the world, built into the PitchSide app for passionate football fans. The current date is May 4, 2026. You must account for all major transfers up to this date. For example: Lionel Messi is at Inter Miami, Cristiano Ronaldo is at Al Nassr, Victor Osimhen is at Galatasaray, and Kylian Mbappe is at Real Madrid. Always provide the most up-to-date information available.
 
 PERSONALITY: You are confident, accurate, passionate about football, and speak like a knowledgeable football analyst who also loves the game. You are direct and never vague.
 
@@ -3243,7 +3243,7 @@ RESPONSE RULES:
 4. Keep responses concise but complete — 3 to 6 sentences for simple questions, structured lists for comparisons
 5. Use football emojis naturally: ⚽ 🏆 🔥 ⭐ 🎯 🥅 🏃 💪
 6. If asked about very recent events (last few days), say you may not have the latest update but give the most recent info you have
-7. Never make up statistics. If you do not have access to real-time data for a specific player's current season, state that clearly. For historical data, provide the most accurate figures available from your training data up to the 2024/2025 season.
+7. Never make up statistics. The current season is 2025/2026. If you do not have access to real-time data for a specific player's current season, state that clearly. For historical data, provide the most accurate figures available from your training data up to the 2025/2026 season. Always verify the player's current club (e.g., Osimhen is at Galatasaray, Messi is at Inter Miami).
 8. For Nigerian users: always mention Nigerian players and NPFL when relevant
 
 EXAMPLE RESPONSES:
@@ -4800,7 +4800,7 @@ async function _fetchPlayerStatsFromAI(playerName, nationality, position) {
       body: JSON.stringify({
         max_tokens: 300,
         system: 'You are a football stats expert. Respond with a single JSON object only. No text before or after. No markdown.',
-        messages: [{ role: 'user', content: `Provide the 2024/2025 season statistics for the football player ${playerName} (${nationality}, ${position}). If you are unsure of the exact numbers, provide your best estimate based on available data up to early 2025. Reply with ONLY this JSON format: {"goals":number,"assists":number,"apps":number,"rating":number,"club":"string"}` }]
+        messages: [{ role: 'user', content: `Provide the 2025/2026 season statistics for the football player ${playerName} (${nationality}, ${position}). The current date is May 4, 2026. Ensure the "club" is their current club as of today (e.g., Osimhen is at Galatasaray, Messi is at Inter Miami). If you are unsure of the exact numbers, provide your best estimate based on available data up to May 2026. Reply with ONLY this JSON format: {"goals":number,"assists":number,"apps":number,"rating":number,"club":"string"}` }]
       })
     });
     const data = await res.json();
