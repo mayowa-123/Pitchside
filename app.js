@@ -219,17 +219,17 @@ async function fetchLiveScores() {
 
   // ── Fetch from API ────────────────────────────────────────────────────────
   try {
-    showToast('Fetching scores for ' + today + '...');
+    console.log('[PitchSide] Fetching live scores from API...');
     const res = await fetch(`/api/football?endpoint=fixtures&date=${today}`, {
       signal: AbortSignal.timeout(8000)
     });
 
     if (res.status === 429) {
-      showToast('API rate limit hit (429) - quota exhausted for today');
+      console.warn('[PitchSide] Rate limit (429) — using cache.');
       _lsUseStaleCache(); return;
     }
     if (!res.ok) {
-      showToast('API error: HTTP ' + res.status);
+      console.warn('[PitchSide] API error', res.status, '— using cache.');
       _lsUseStaleCache(); return;
     }
 
@@ -237,19 +237,16 @@ async function fetchLiveScores() {
 
     // api-sports returns errors inside the body even on 200
     if (data.errors && Object.keys(data.errors).length > 0) {
-      const errMsg = JSON.stringify(data.errors);
-      showToast('API key error: ' + errMsg);
+      console.warn('[PitchSide] API body error:', JSON.stringify(data.errors));
       _lsUseStaleCache(); return;
     }
 
     if (!data.response || data.response.length === 0) {
-      showToast('API returned 0 matches for ' + today + ' - no games today?');
       lsData = [];
       renderLiveScores(lsData, lsCurrentFilter);
       _lsSaveCache([], false, today);
       return;
     }
-    showToast('Got ' + data.response.length + ' matches from API');
 
     // Transform into grouped league format
     const grouped = {};
@@ -930,6 +927,10 @@ function switchPage(pageId, navEl) {
   // NPFL page: render its own isolated Firestore data — never touches the global API
   if (pageId === 'npfl') {
     initNpfl();
+  }
+  // Highlights lazy-load (was previously in a broken DOMContentLoaded override)
+  if (pageId === 'highlights' && _sbAllVideos.length === 0) {
+    loadSBHighlights('all');
   }
 }
 
