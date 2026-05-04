@@ -3243,7 +3243,7 @@ RESPONSE RULES:
 4. Keep responses concise but complete — 3 to 6 sentences for simple questions, structured lists for comparisons
 5. Use football emojis naturally: ⚽ 🏆 🔥 ⭐ 🎯 🥅 🏃 💪
 6. If asked about very recent events (last few days), say you may not have the latest update but give the most recent info you have
-7. Never make up statistics — if uncertain about a specific number, give a range or say approximately
+7. Never make up statistics. If you do not have access to real-time data for a specific player's current season, state that clearly. For historical data, provide the most accurate figures available from your training data up to the 2024/2025 season.
 8. For Nigerian users: always mention Nigerian players and NPFL when relevant
 
 EXAMPLE RESPONSES:
@@ -4727,7 +4727,7 @@ async function handlePlayerSearch(val) {
 
       // ── Step 2: Not in Firebase — fall back to API ──
       const response = await fetch(
-        `/api/football?endpoint=players&search=${encodeURIComponent(query)}&league=332&season=2024`,
+        `/api/football?endpoint=players&search=${encodeURIComponent(query)}&league=332&season=2025`,
         { signal: AbortSignal.timeout(7000) }
       );
 
@@ -4750,7 +4750,7 @@ async function handlePlayerSearch(val) {
       // If no results in NPFL, widen search to all leagues
       if (!players.length) {
         const r2 = await fetch(
-          `/api/football?endpoint=players&search=${encodeURIComponent(query)}&season=2024`,
+          `/api/football?endpoint=players&search=${encodeURIComponent(query)}&season=2025`,
           { signal: AbortSignal.timeout(7000) }
         );
         if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
@@ -4800,7 +4800,7 @@ async function _fetchPlayerStatsFromAI(playerName, nationality, position) {
       body: JSON.stringify({
         max_tokens: 300,
         system: 'You are a football stats expert. Respond with a single JSON object only. No text before or after. No markdown.',
-        messages: [{ role: 'user', content: `2024/2025 season stats for ${playerName} (${nationality}, ${position}). Reply with ONLY this JSON format: {"goals":number,"assists":number,"apps":number,"rating":number,"club":"string"}` }]
+        messages: [{ role: 'user', content: `Provide the 2024/2025 season statistics for the football player ${playerName} (${nationality}, ${position}). If you are unsure of the exact numbers, provide your best estimate based on available data up to early 2025. Reply with ONLY this JSON format: {"goals":number,"assists":number,"apps":number,"rating":number,"club":"string"}` }]
       })
     });
     const data = await res.json();
@@ -4930,9 +4930,9 @@ async function openPlayerProfile(playerId, fbName) {
     try {
       let url;
       if (playerId && playerId !== 0) {
-        url = `/api/football?endpoint=players&id=${playerId}&season=2024`;
+        url = `/api/football?endpoint=players&id=${playerId}&season=2025`;
       } else if (fbName) {
-        url = `/api/football?endpoint=players&search=${encodeURIComponent(fbName)}&season=2024`;
+        url = `/api/football?endpoint=players&search=${encodeURIComponent(fbName)}&season=2025`;
       }
       if (url) {
         const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
