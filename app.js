@@ -4854,6 +4854,7 @@ function _renderPlayerResults(players, query) {
     const rating = ratingCount > 0 ? (totalRating / ratingCount).toFixed(1) : '—';
     const allZero = goals === 0 && assists === 0 && apps === 0;
     const fullName = `${p.firstname} ${p.lastname}`.trim();
+    const isTheSportsDB = p._source === 'thesportsdb';
 
     return `
       <div class="player-card" onclick="openPlayerProfile(${p.id}, '${(p._fbName||'').replace(/'/g,"\'")}')">
@@ -4862,7 +4863,10 @@ function _renderPlayerResults(players, query) {
             ${p.photo ? `<img src="${p.photo}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='⚽'">` : '⚽'}
           </div>
           <div class="player-info">
-            <div class="player-name">${fullName}</div>
+            <div class="player-name" style="display:flex;align-items:center;gap:6px;justify-content:space-between;">
+              <span>${fullName}</span>
+              ${isTheSportsDB ? `<span style="font-size:9px;background:rgba(16,185,129,0.2);color:var(--green);padding:2px 6px;border-radius:4px;font-weight:600;white-space:nowrap;">SportsDB</span>` : ''}
+            </div>
             <div class="player-club" style="display:flex;align-items:center;gap:5px;">
               ${logo ? `<img src="${logo}" style="width:14px;height:14px;object-fit:contain;" onerror="this.style.display='none'">` : '🏟'}
               <span id="pclub-${idx}">${club}</span>
