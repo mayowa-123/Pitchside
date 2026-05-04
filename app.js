@@ -153,19 +153,7 @@ function openSBPlayer(title, embedHtml) {
 
 function closeSBPlayer() {
   document.getElementById('sb-player-overlay').style.display = 'none';
-  document.getElementById('sb-player-body').innerHTML = '';
-}
-
-// Auto load when highlights page opens
-document.addEventListener('DOMContentLoaded', () => {
-  const origSwitch = window.switchPage;
-  window.switchPage = function(page, el) {
-    if (origSwitch) origSwitch(page, el);
-    if (page === 'highlights' && _sbAllVideos.length === 0) {
-      loadSBHighlights('all');
-    }
-  };
-});
+  document.getElementById('sb-player-body').innerHTML = ''
 
 /* ═══════════════════════════════════════════
    LIVE SCORES ENGINE
