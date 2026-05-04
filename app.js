@@ -3243,7 +3243,7 @@ RESPONSE RULES:
 4. Keep responses concise but complete — 3 to 6 sentences for simple questions, structured lists for comparisons
 5. Use football emojis naturally: ⚽ 🏆 🔥 ⭐ 🎯 🥅 🏃 💪
 6. If asked about very recent events (last few days), say you may not have the latest update but give the most recent info you have
-7. Never make up statistics. The current season is 2025/2026. If you do not have access to real-time data for a specific player's current season, state that clearly. DO NOT guess numbers. If you are unsure, say "Data not available for this season." Always prioritize the data provided in the prompt over your internal memory. Always verify the player's current club (e.g., Osimhen is at Galatasaray, Messi is at Inter Miami).
+7. Never make up statistics. The current season is 2025/2026. If you do not have access to real-time data for a specific player's current season, provide the most recent confirmed statistics from the 2024/2025 season instead. Always prioritize the data provided in the prompt over your internal memory. Always verify the player's current club (e.g., Osimhen is at Galatasaray, Messi is at Inter Miami).
 8. For Nigerian users: always mention Nigerian players and NPFL when relevant
 
 EXAMPLE RESPONSES:
@@ -4755,16 +4755,19 @@ async function handlePlayerSearch(val) {
         );
         if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
         const d2 = await r2.json();
-        if (d2.errors && Object.keys(d2.errors).length) {
-          const errMsg = d2.errors.requests || d2.errors.token || JSON.stringify(d2.errors);
-          res.innerHTML = `
-            <div class="player-empty">
-              <div class="player-empty-icon">⚠️</div>
-              <div class="player-empty-text">API Error: ${errMsg}</div>
-            </div>`;
-          return;
-        }
         players = d2.response || [];
+        
+        // Fallback to 2024 if 2025 has no results
+        if (!players.length) {
+          const r3 = await fetch(
+            `/api/football?endpoint=players&search=${encodeURIComponent(query)}&season=2024`,
+            { signal: AbortSignal.timeout(7000) }
+          );
+          if (r3.ok) {
+            const d3 = await r3.json();
+            players = d3.response || [];
+          }
+        }
       }
 
       _playerCache[queryLower] = players;
@@ -4800,7 +4803,7 @@ async function _fetchPlayerStatsFromAI(playerName, nationality, position) {
       body: JSON.stringify({
         max_tokens: 300,
         system: 'You are a football stats expert. Respond with a single JSON object only. No text before or after. No markdown.',
-        messages: [{ role: 'user', content: `Provide the 2025/2026 season statistics for the football player ${playerName} (${nationality}, ${position}). The current date is May 4, 2026. Ensure the "club" is their current club as of today (e.g., Osimhen is at Galatasaray, Messi is at Inter Miami). DO NOT guess or hallucinate numbers. If you do not have the exact data for the 2025/2026 season, return 0 for goals, assists, and apps, and "—" for rating. Reply with ONLY this JSON format: {"goals":number,"assists":number,"apps":number,"rating":number,"club":"string"}` }]
+        messages: [{ role: 'user', content: `Provide the most recent statistics (2024/2025 or 2025/2026) for the football player ${playerName} (${nationality}, ${position}). The current date is May 4, 2026. Ensure the "club" is their current club as of today (e.g., Osimhen is at Galatasaray, Messi is at Inter Miami). If you do not have the exact data for the current season, provide the most recent confirmed numbers from the previous season. Reply with ONLY this JSON format: {"goals":number,"assists":number,"apps":number,"rating":number,"club":"string"}` }]
       })
     });
     const data = await res.json();
@@ -4951,7 +4954,16 @@ async function openPlayerProfile(playerId, fbName) {
       if (url) {
         const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
         const data = await res.json();
-        _playerDetailCache[playerId] = data.response?.[0] || null;
+        let result = data.response?.[0] || null;
+        
+        // Fallback to 2024 if 2025 has no data
+        if (!result) {
+          const fallbackUrl = url.replace('season=2025', 'season=2024');
+          const res2 = await fetch(fallbackUrl, { signal: AbortSignal.timeout(8000) });
+          const data2 = await res2.json();
+          result = data2.response?.[0] || null;
+        }
+        _playerDetailCache[playerId] = result;
       }
     } catch(e) {
       _playerDetailCache[playerId] = null;
