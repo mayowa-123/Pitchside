@@ -196,76 +196,50 @@ async function fetchLiveScores() {
   // Never fetch global API data when the user is on the NPFL page
   if (currentPage === 'npfl') return;
 
-  const CACHE_KEY = 'pitchside_livescores_v3';
+  const CACHE_KEY = 'pitchside_livescores';
+  const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   const today     = new Date().toISOString().split('T')[0];
-  const now       = Date.now();
 
-  // ── Smart cache: 3 min when live games are on, 30 min when not ───────────
-  // Keeps daily API usage well under the 100-request free tier limit.
   try {
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
-      const { timestamp, dateKey, data, hasLive } = JSON.parse(cached);
-      const age = now - timestamp;
-      const TTL = hasLive ? 3 * 60 * 1000 : 30 * 60 * 1000;
-      if (dateKey === today && age < TTL) {
+      const { timestamp, dateKey, data } = JSON.parse(cached);
+      const age = Date.now() - timestamp;
+      if (dateKey === today && age < CACHE_TTL) {
         lsData = data;
         renderLiveScores(lsData, lsCurrentFilter);
         liveScoresLastUpdate = timestamp;
         return;
       }
     }
-  } catch(_) {}
 
-  // ── Fetch from API ────────────────────────────────────────────────────────
-  try {
-    console.log('[PitchSide] Fetching live scores from API...');
     const res = await fetch(`/api/football?endpoint=fixtures&date=${today}`, {
-      signal: AbortSignal.timeout(8000)
+      headers: {},
+      signal: AbortSignal.timeout(4000)
     });
-
-    if (res.status === 429) {
-      console.warn('[PitchSide] Rate limit (429) — using cache.');
-      _lsUseStaleCache(); return;
-    }
-    if (!res.ok) {
-      console.warn('[PitchSide] API error', res.status, '— using cache.');
-      _lsUseStaleCache(); return;
-    }
-
+    if (!res.ok) return;
     const data = await res.json();
-
-    // api-sports returns errors inside the body even on 200
-    if (data.errors && Object.keys(data.errors).length > 0) {
-      console.warn('[PitchSide] API body error:', JSON.stringify(data.errors));
-      _lsUseStaleCache(); return;
-    }
-
     if (!data.response || data.response.length === 0) {
       lsData = [];
       renderLiveScores(lsData, lsCurrentFilter);
-      _lsSaveCache([], false, today);
       return;
     }
 
-    // Transform into grouped league format
     const grouped = {};
-    let hasLive = false;
     data.response.forEach(f => {
       const key = f.league.id;
       if (!grouped[key]) grouped[key] = {
         league: f.league.name, country: f.league.country,
         flag: countryFlag(f.league.country), matches: []
       };
-      const st     = f.fixture.status.short;
+      const st = f.fixture.status.short;
       const isLive = ['1H','2H','ET','BT','P','INT'].includes(st);
-      if (isLive) hasLive = true;
       grouped[key].matches.push({
-        id:     String(f.fixture.id),
-        time:   f.fixture.date ? new Date(f.fixture.date).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '--:--',
+        id: String(f.fixture.id),
+        time: f.fixture.date ? new Date(f.fixture.date).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '--:--',
         status: st === 'FT' ? 'FT' : st === 'NS' ? 'NS' : isLive ? (f.fixture.status.elapsed + "'") : st,
-        home:   { name: f.teams.home.name, badge: '⚽' },
-        away:   { name: f.teams.away.name, badge: '⚽' },
+        home: {name: f.teams.home.name, badge: '⚽'},
+        away: {name: f.teams.away.name, badge: '⚽'},
         scoreH: f.goals.home,
         scoreA: f.goals.away,
         minute: f.fixture.status.elapsed,
@@ -275,37 +249,31 @@ async function fetchLiveScores() {
 
     lsData = Object.values(grouped);
     renderLiveScores(lsData, lsCurrentFilter);
-    liveScoresLastUpdate = now;
-    _lsSaveCache(lsData, hasLive, today);
+    liveScoresLastUpdate = Date.now();
+
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({
+        timestamp: liveScoresLastUpdate,
+        dateKey:   today,
+        data:      lsData
+      }));
+    } catch(cacheErr) {}
 
   } catch(e) {
-    console.warn('[PitchSide] fetchLiveScores error:', e.message);
-    _lsUseStaleCache();
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { data } = JSON.parse(cached);
+        lsData = data;
+        renderLiveScores(lsData, lsCurrentFilter);
+      }
+    } catch(_) {}
   }
 }
 
-function _lsSaveCache(data, hasLive, dateKey) {
-  try {
-    localStorage.setItem('pitchside_livescores_v3', JSON.stringify({
-      timestamp: Date.now(), dateKey, data, hasLive
-    }));
-  } catch(_) {}
-}
-
-function _lsUseStaleCache() {
-  try {
-    const raw = localStorage.getItem('pitchside_livescores_v3');
-    if (raw) {
-      const { data } = JSON.parse(raw);
-      if (data) { lsData = data; renderLiveScores(lsData, lsCurrentFilter); }
-    }
-  } catch(_) {}
-}
-
 function startLiveScoresRefresh() {
-  // Clear existing interval if any
   if (liveScoresRefreshInterval) clearInterval(liveScoresRefreshInterval);
-  // NOTE: initLiveScores() already fetches immediately — don't double-fetch here
+  fetchLiveScores();
   liveScoresRefreshInterval = setInterval(() => {
     fetchLiveScores();
   }, LIVESCORE_REFRESH_INTERVAL);
@@ -6459,3 +6427,32 @@ function closeNewsReader() {
 function openNewsExternal() {
   if (_currentNewsUrl) window.open(_currentNewsUrl, '_blank');
 }
+
+/* ═══════════════════════════════════════════
+   GLOBAL EXPORTS — expose all HTML onclick functions to window
+═══════════════════════════════════════════ */
+window.switchPage        = switchPage;
+window.filterLive        = filterLive;
+window.filterNews        = filterNews;
+window.initNews          = initNews;
+window.initNpfl          = initNpfl;
+window.switchNpflTab     = switchNpflTab;
+window.closeNewsReader   = closeNewsReader;
+window.openNewsExternal  = openNewsExternal;
+window.closeMatchDetail  = closeMatchDetail;
+window.closeSBPlayer     = closeSBPlayer;
+window.loadSBHighlights  = loadSBHighlights;
+window.dashAction        = typeof dashAction === 'function' ? dashAction : function(){};
+window.confirmSignOut    = typeof confirmSignOut === 'function' ? confirmSignOut : function(){};
+window.openEditProfile   = typeof openEditProfile === 'function' ? openEditProfile : function(){};
+window.closeEditProfile  = typeof closeEditProfile === 'function' ? closeEditProfile : function(){};
+window.saveProfile       = typeof saveProfile === 'function' ? saveProfile : function(){};
+window.triggerAvatarUpload = typeof triggerAvatarUpload === 'function' ? triggerAvatarUpload : function(){};
+window.switchAuthTab     = typeof switchAuthTab === 'function' ? switchAuthTab : function(){};
+window.doEmailLogin      = typeof doEmailLogin === 'function' ? doEmailLogin : function(){};
+window.doRegister        = typeof doRegister === 'function' ? doRegister : function(){};
+window.closeComments     = typeof closeComments === 'function' ? closeComments : function(){};
+window.submitComment     = typeof submitComment === 'function' ? submitComment : function(){};
+window.showToast         = showToast;
+window.toggleMute        = typeof toggleMute === 'function' ? toggleMute : function(){};
+window.toggleNotif       = typeof toggleNotif === 'function' ? toggleNotif : function(){};
