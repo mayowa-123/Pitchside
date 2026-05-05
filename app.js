@@ -4839,83 +4839,34 @@ function _renderPlayerResults(players, query) {
     const club = mainStat.team?.name || 'Unknown Club';
     const logo = mainStat.team?.logo || '';
     const pos  = mainStat.games?.position || p.position || '—';
-    
-    // Sum up stats from all competitions
-    let goals = 0, assists = 0, apps = 0, totalRating = 0, ratingCount = 0;
-    stats.forEach(s => {
-      goals += (s.goals?.total || 0);
-      assists += (s.goals?.assists || 0);
-      apps += (s.games?.appearences || 0);
-      if (s.games?.rating) {
-        totalRating += parseFloat(s.games.rating);
-        ratingCount++;
-      }
-    });
-    const rating = ratingCount > 0 ? (totalRating / ratingCount).toFixed(1) : '—';
-    const allZero = goals === 0 && assists === 0 && apps === 0;
     const fullName = `${p.firstname} ${p.lastname}`.trim();
     const isTheSportsDB = p._source === 'thesportsdb';
 
     return `
-      <div class="player-card" onclick="openPlayerProfile(${p.id}, '${(p._fbName||'').replace(/'/g,"\'")}')">
+      <div class="player-card" onclick="openPlayerProfile(${p.id}, '${(p._fbName||'').replace(/'/g,"\\'")}')">
         <div class="player-card-top">
           <div class="player-avatar" style="overflow:hidden;padding:0;">
-            ${p.photo ? `<img src="${p.photo}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='⚽'">` : '⚽'}
+            ${p.photo ? \`<img src="\${p.photo}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='⚽'">\` : '⚽'}
           </div>
           <div class="player-info">
             <div class="player-name" style="display:flex;align-items:center;gap:6px;justify-content:space-between;">
-              <span>${fullName}</span>
-              ${isTheSportsDB ? `<span style="font-size:9px;background:rgba(16,185,129,0.2);color:var(--green);padding:2px 6px;border-radius:4px;font-weight:600;white-space:nowrap;">SportsDB</span>` : ''}
+              <span>\${fullName}</span>
+              \${isTheSportsDB ? \`<span style="font-size:9px;background:rgba(16,185,129,0.2);color:var(--green);padding:2px 6px;border-radius:4px;font-weight:600;white-space:nowrap;">SportsDB</span>\` : ''}
             </div>
             <div class="player-club" style="display:flex;align-items:center;gap:5px;">
-              ${logo ? `<img src="${logo}" style="width:14px;height:14px;object-fit:contain;" onerror="this.style.display='none'">` : '🏟'}
-              <span id="pclub-${idx}">${club}</span>
+              \${logo ? \`<img src="\${logo}" style="width:14px;height:14px;object-fit:contain;" onerror="this.style.display='none'">\` : '🏟'}
+              <span id="pclub-\${idx}">\${club}</span>
             </div>
             <div class="player-nation">
-              ${p.nationality || '—'} · ${pos}
-              ${p.age ? ` · Age ${p.age}` : ''}
+              \${p.nationality || '—'} · \${pos}
+              \${p.age ? \` · Age \${p.age}\` : ''}
             </div>
           </div>
         </div>
-        <div class="player-stats-grid" id="pstats-${idx}">
-          ${allZero ? `<div style="grid-column:1/-1;text-align:center;color:var(--text3);font-size:11px;padding:8px;">Loading stats…</div>` : `
-          <div class="pstat-box"><div class="pstat-box-num">${goals}</div><div class="pstat-box-lbl">Goals</div></div>
-          <div class="pstat-box"><div class="pstat-box-num">${assists}</div><div class="pstat-box-lbl">Assists</div></div>
-          <div class="pstat-box"><div class="pstat-box-num">${apps}</div><div class="pstat-box-lbl">Apps</div></div>
-          <div class="pstat-box"><div class="pstat-box-num">${rating}</div><div class="pstat-box-lbl">Rating</div></div>`}
-        </div>
-      </div>`;
+      </div>\`;
   }).join('');
-
-  // For any player with all zeros, fetch AI stats
-  players.slice(0, 10).forEach(async (entry, idx) => {
-    const p    = entry.player;
-    const stats = entry.statistics || [];
-    let goals = 0, assists = 0, apps = 0;
-    stats.forEach(s => {
-      goals += (s.goals?.total || 0);
-      assists += (s.goals?.assists || 0);
-      apps += (s.games?.appearences || 0);
-    });
-    
-    if (goals === 0 && assists === 0 && apps === 0) {
-      const fullName = `${p.firstname} ${p.lastname}`.trim();
-      const aiStats = await _fetchPlayerStatsFromAI(fullName, p.nationality || '', p.position || '');
-      const statsEl = document.getElementById(`pstats-${idx}`);
-      const clubEl  = document.getElementById(`pclub-${idx}`);
-      const g = aiStats.goals ?? 0;
-      const a = aiStats.assists ?? 0;
-      const ap = aiStats.apps ?? 0;
-      const rt = aiStats.rating != null ? (typeof aiStats.rating === 'number' ? aiStats.rating.toFixed(1) : aiStats.rating) : '—';
-      if (statsEl) statsEl.innerHTML = `
-        <div class="pstat-box"><div class="pstat-box-num">${g}</div><div class="pstat-box-lbl">Goals</div></div>
-        <div class="pstat-box"><div class="pstat-box-num">${a}</div><div class="pstat-box-lbl">Assists</div></div>
-        <div class="pstat-box"><div class="pstat-box-num">${ap}</div><div class="pstat-box-lbl">Apps</div></div>
-        <div class="pstat-box"><div class="pstat-box-num">${rt}</div><div class="pstat-box-lbl">Rating</div></div>`;
-      if (clubEl && aiStats.club && aiStats.club !== 'Unknown') clubEl.textContent = aiStats.club;
-    }
-  });
 }
+
 
 /* ── Open full player profile overlay ── */
 async function openPlayerProfile(playerId, fbName) {
