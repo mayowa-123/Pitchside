@@ -3,91 +3,77 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
- 
+
   if (req.method === 'OPTIONS') return res.status(200).end();
- 
+
   // ── API Key Validation ────────────────────────────────────────────────────
   const apiKey = process.env.APIFOOTBALL_KEY;
   if (!apiKey) {
     console.error('[football.js] APIFOOTBALL_KEY env var is not set!');
     return res.status(500).json({ error: 'API key not configured in environment variables' });
   }
- 
+
   try {
-    const params    = { ...req.query };
-    const endpoint  = params.endpoint || 'fixtures';
+    const params   = { ...req.query };
+    const endpoint = params.endpoint || 'fixtures';
     delete params.endpoint;
- 
+
     // ── Build Query String ──────────────────────────────────────────────────
     const queryString = Object.keys(params).length
       ? '?' + new URLSearchParams(params).toString()
       : '';
- 
-    // ── API Selection ───────────────────────────────────────────────────────
-    // The user's key "ba3f1918..." is a standard API-Sports / API-Football key.
-    // Base URL: v3.football.api-sports.io
+
+    // ── Call API-Football ───────────────────────────────────────────────────
     const url = `https://v3.football.api-sports.io/${endpoint}${queryString}`;
     console.log('[football.js] Calling:', url);
- 
+
     const response = await fetch(url, {
       method: 'GET',
-      headers: {
-        'x-apisports-key': apiKey,
-      },
+      headers: { 'x-apisports-key': apiKey },
     });
- 
+
     // ── Rate Limit Monitoring ───────────────────────────────────────────────
     const remaining = response.headers.get('x-ratelimit-requests-remaining');
     const limit     = response.headers.get('x-ratelimit-requests-limit');
     if (remaining !== null) {
       console.log(`[football.js] API quota: ${remaining}/${limit} remaining`);
     }
- 
+
     // ── Handle HTTP Errors ──────────────────────────────────────────────────
     if (response.status === 429) {
-      console.error('[football.js] Rate limit exceeded (429) — attempting TheSportsDB fallback');
-      
-      // For player searches, try TheSportsDB as fallback
+      console.error('[football.js] Rate limit exceeded (429) — attempting ESPN fallback');
       if (endpoint === 'players' && params.search) {
-        return await fallbackToTheSportsDB(params.search, res);
+        return await fallbackToESPN(params.search, res);
       }
-      
-      return res.status(429).json({ 
-        error: 'Rate limit exceeded', 
-        message: 'The API-Football free tier allows 10 requests per minute.' 
+      return res.status(429).json({
+        error: 'Rate limit exceeded',
+        message: 'The API-Football free tier allows 10 requests per minute.'
       });
     }
- 
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`[football.js] API returned ${response.status}: ${errorText}`);
-      
-      // For player searches, try TheSportsDB as fallback
       if (endpoint === 'players' && params.search) {
-        return await fallbackToTheSportsDB(params.search, res);
+        return await fallbackToESPN(params.search, res);
       }
-      
       return res.status(response.status).json({ error: `API error ${response.status}`, detail: errorText });
     }
- 
+
     const data = await response.json();
- 
-    // ── Handle API-Level Errors (Returned in 200 OK body) ────────────────────
+
+    // ── Handle API-Level Errors (Returned in 200 OK body) ───────────────────
     if (data.errors && Object.keys(data.errors).length > 0) {
       console.error('[football.js] API body errors:', JSON.stringify(data.errors));
-      
-      // For player searches with errors, try TheSportsDB as fallback
       if (endpoint === 'players' && params.search) {
-        return await fallbackToTheSportsDB(params.search, res);
+        return await fallbackToESPN(params.search, res);
       }
-      
-      // Return 200 but include the errors so the frontend can handle them
       return res.status(200).json(data);
     }
- 
+
     // ── Success ─────────────────────────────────────────────────────────────
     return res.status(200).json(data);
- 
+
   } catch (err) {
     console.error('[football.js] Handler error:', err.message);
     return res.status(500).json({ error: 'Football API error', detail: err.message });
@@ -95,76 +81,82 @@ export default async function handler(req, res) {
 }
 
 /**
- * Fallback to TheSportsDB for player searches
- * Converts TheSportsDB response format to API-Football format for frontend compatibility
+ * Fallback to ESPN unofficial API for player searches
+ * Converts ESPN response format to API-Football format for frontend compatibility
  */
-async function fallbackToTheSportsDB(searchQuery, res) {
+async function fallbackToESPN(searchQuery, res) {
   try {
-    console.log(`[football.js] Falling back to TheSportsDB for player search: "${searchQuery}"`);
-    
-    // TheSportsDB free API key (public key)
-    const theSportsDbKey = '123456';
-    const encodedQuery = encodeURIComponent(searchQuery.replace(/\s+/g, '_'));
-    const url = `https://www.thesportsdb.com/api/v1/json/${theSportsDbKey}/searchplayers.php?p=${encodedQuery}`;
-    
-    console.log('[football.js] TheSportsDB URL:', url);
-    
+    console.log(`[football.js] Falling back to ESPN for player search: "${searchQuery}"`);
+
+    const encodedQuery = encodeURIComponent(searchQuery);
+    const url = `https://site.api.espn.com/apis/common/v3/search?query=${encodedQuery}&sport=soccer&limit=5`;
+
+    console.log('[football.js] ESPN URL:', url);
+
     const response = await fetch(url, {
       signal: AbortSignal.timeout(5000)
     });
-    
+
     if (!response.ok) {
-      console.warn(`[football.js] TheSportsDB returned ${response.status}`);
+      console.warn(`[football.js] ESPN returned ${response.status}`);
       return res.status(200).json({ response: [] });
     }
-    
+
     const data = await response.json();
-    
-    if (!data.results || data.results.length === 0) {
-      console.log('[football.js] TheSportsDB returned no results');
+
+    // ESPN search results are under data.athletes or data.results
+    const athletes = data?.athletes || data?.results || [];
+
+    if (!athletes || athletes.length === 0) {
+      console.log('[football.js] ESPN returned no results');
       return res.status(200).json({ response: [] });
     }
-    
-    // Convert TheSportsDB format to API-Football format
-    const converted = data.results.map(player => ({
-      player: {
-        id: parseInt(player.idPlayer) || 0,
-        name: player.strPlayer || '',
-        firstname: (player.strPlayer || '').split(' ')[0] || '',
-        lastname: (player.strPlayer || '').split(' ').slice(1).join(' ') || '',
-        age: player.intBirthYear ? new Date().getFullYear() - parseInt(player.intBirthYear) : null,
-        nationality: player.strNationality || '',
-        position: player.strPosition || '—',
-        photo: player.strCutout || player.strThumb || '',
-        height: player.strHeight || null,
-        weight: player.strWeight || null,
-        _source: 'thesportsdb' // Mark as TheSportsDB result
-      },
-      statistics: [{
-        team: {
-          id: 0,
-          name: player.strTeam || '—',
-          logo: player.strTeamBadge || ''
+
+    // Convert ESPN format to API-Football format
+    const converted = athletes.map(item => {
+      const athlete = item.athlete || item;
+      const team    = athlete.team || {};
+      const stats   = athlete.statistics || {};
+
+      return {
+        player: {
+          id: parseInt(athlete.id) || 0,
+          name: athlete.displayName || athlete.fullName || '',
+          firstname: athlete.firstName || '',
+          lastname: athlete.lastName || '',
+          age: athlete.age || null,
+          nationality: athlete.citizenship || athlete.nationality || '',
+          position: athlete.position?.displayName || athlete.position?.abbreviation || '—',
+          photo: athlete.headshot?.href || athlete.flag?.href || '',
+          height: athlete.displayHeight || null,
+          weight: athlete.displayWeight || null,
+          _source: 'espn'
         },
-        games: {
-          position: player.strPosition || '—',
-          appearences: null,
-          rating: null
-        },
-        goals: {
-          total: null,
-          assists: null
-        }
-      }]
-    }));
-    
-    console.log(`[football.js] Converted ${converted.length} players from TheSportsDB`);
-    
+        statistics: [{
+          team: {
+            id: parseInt(team.id) || 0,
+            name: team.displayName || team.name || '—',
+            logo: team.logos?.[0]?.href || ''
+          },
+          games: {
+            position: athlete.position?.displayName || '—',
+            appearences: stats.appearances || null,
+            rating: null
+          },
+          goals: {
+            total: stats.goals || null,
+            assists: stats.assists || null
+          }
+        }]
+      };
+    });
+
+    console.log(`[football.js] Converted ${converted.length} players from ESPN`);
+
     return res.status(200).json({ response: converted });
-    
+
   } catch (err) {
-    console.error('[football.js] TheSportsDB fallback error:', err.message);
-    // Return empty response instead of error to allow frontend to handle gracefully
+    console.error('[football.js] ESPN fallback error:', err.message);
     return res.status(200).json({ response: [] });
   }
 }
