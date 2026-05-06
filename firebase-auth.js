@@ -94,7 +94,9 @@ if (DEV_MODE) {
       document.getElementById('auth-loading').classList.add('hidden');
       document.getElementById('auth-screen').classList.remove('hidden');
     }
-    if (typeof activateFirebaseListener === 'function') {
+    if (typeof initExplore === 'function') {
+      initExplore();
+    } else if (typeof activateFirebaseListener === 'function') {
       activateFirebaseListener();
     }
   });

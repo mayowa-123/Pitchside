@@ -968,6 +968,24 @@ function switchPage(pageId, navEl) {
   if (pageId === 'highlights' && _sbAllVideos.length === 0) {
     loadSBHighlights('all');
   }
+  if (pageId === 'explore') {
+    initExplore();
+  }
+}
+
+function initExplore() {
+  // Ensure video listener is active
+  if (typeof activateFirebaseListener === 'function') {
+    activateFirebaseListener();
+  }
+  // Ensure news listener is active (Explore mixed feed needs news)
+  if (typeof initNews === 'function') {
+    initNews();
+  }
+  // Trigger initial render if data exists
+  if (typeof _renderExploreAll === 'function') {
+    _renderExploreAll();
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -6490,4 +6508,9 @@ function closeNewsReader() {
 
 function openNewsExternal() {
   if (_currentNewsUrl) window.open(_currentNewsUrl, '_blank');
+}
+
+// Initial page load check
+if (typeof currentPage !== 'undefined' && currentPage === 'explore') {
+  initExplore();
 }
