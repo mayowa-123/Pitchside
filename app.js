@@ -29,7 +29,7 @@ async function loadSBHighlights(filter) {
   grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);"><div style="font-size:28px;">⚽</div><div style="margin-top:8px;font-size:14px;">Loading highlights...</div></div>';
 
   try {
-    const res = await fetch('https://www.scorebat.com/video-api/v3/');
+    const res = await fetch('https://www.scorebat.com/video-api/v3/free-feed/');
     const data = await res.json();
     _sbAllVideos = data.response || data || [];
 
@@ -110,7 +110,7 @@ async function sbLoadMore() {
 
   try {
     _sbApiPage++;
-    const res = await fetch(`https://www.scorebat.com/video-api/v3/?page=${_sbApiPage}`);
+    const res = await fetch(`https://www.scorebat.com/video-api/v3/free-feed/?page=${_sbApiPage}`);
     const data = await res.json();
     const newVideos = data.response || data || [];
 
