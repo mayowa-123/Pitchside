@@ -3903,16 +3903,7 @@ async function _fetchOfficialHighlights() {
     yesterday.setDate(today.getDate() - 1);
     const fmt = d => d.toISOString().split('T')[0];
 
-    const res = await fetch(
-      `${HIGHLIGHTLY_BASE}/highlights?limit=20`,
-      {
-        method: 'GET',
-        headers: {
-          'x-rapidapi-key': HIGHLIGHTLY_KEY,
-          'x-rapidapi-host': 'football-highlights-api.p.rapidapi.com'
-        }
-      }
-    );
+    const res = await fetch(`${HIGHLIGHTLY_BASE}?endpoint=highlights&limit=20`);
 
     if (!res.ok) throw new Error('API error ' + res.status);
     const json = await res.json();
