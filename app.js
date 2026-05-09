@@ -4878,7 +4878,7 @@ function _renderPlayerResults(players, query) {
 
 
 
-/* ── Open full player profile overlay (Wikipedia-style) ── */
+/* ── Open full player profile overlay ── */
 async function openPlayerProfile(playerId, fbName) {
   // Inject overlay into page if not already there
   let overlay = document.getElementById('player-profile-overlay');
@@ -4907,43 +4907,52 @@ async function openPlayerProfile(playerId, fbName) {
 
   overlay.style.display = 'flex';
 
-  // Fetch full stats — use id if available, otherwise search by name
+  // Fetch player data from Wikipedia
   if (!_playerDetailCache[playerId]) {
     try {
-      let url;
-      if (playerId && playerId !== 0) {
-        url = `/api/football?endpoint=players&id=${playerId}&season=2025`;
-      } else if (fbName) {
-        url = `/api/football?endpoint=players&search=${encodeURIComponent(fbName)}&season=2025`;
-      }
-      if (url) {
-        const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-        const data = await res.json();
-        let result = data.response?.[0] || null;
+      const playerName = fbName || '';
+      if (!playerName) {
+        _playerDetailCache[playerId] = null;
+      } else {
+        // Fetch from Wikipedia API
+        const wikiRes = await fetch(
+          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(playerName)}`,
+          { signal: AbortSignal.timeout(8000) }
+        );
         
-        // Fallback to 2024 if 2025 has no data
-        if (!result) {
-          const fallbackUrl = url.replace('season=2025', 'season=2024');
-          const res2 = await fetch(fallbackUrl, { signal: AbortSignal.timeout(8000) });
-          const data2 = await res2.json();
-          result = data2.response?.[0] || null;
+        if (wikiRes.ok) {
+          const wikiData = await wikiRes.json();
+          _playerDetailCache[playerId] = wikiData;
+        } else {
+          _playerDetailCache[playerId] = null;
         }
-        _playerDetailCache[playerId] = result;
       }
     } catch(e) {
       _playerDetailCache[playerId] = null;
     }
   }
 
-  const entry = _playerDetailCache[playerId];
-  if (!entry) {
-    overlay.innerHTML += `<div style="padding:24px;color:var(--text3);">Could not load player data.</div>`;
+  const wikiData = _playerDetailCache[playerId];
+  if (!wikiData) {
+    overlay.innerHTML += `<div style="padding:24px;color:var(--text3);">Could not load player data from Wikipedia.</div>`;
     return;
   }
 
-  const p    = entry.player;
-  const stats = entry.statistics || [];
-  const main  = stats[0] || {};
+  // Extract player info from Wikipedia data
+  const playerName = fbName || 'Unknown Player';
+  const [firstName, ...lastNameParts] = playerName.split(' ');
+  const lastName = lastNameParts.join(' ');
+  const imageUrl = wikiData.thumbnail?.source || '';
+  const description = wikiData.description || '';
+  const extract = wikiData.extract || '';
+  
+  // Mock stats for Wikipedia data (since Wikipedia doesn't have detailed stats)
+  const stats = [];
+  const main = {};
+  const totalGoals = 0;
+  const totalAssists = 0;
+  const totalApps = 0;
+  const avgRating = '—';
   
   // Sum up stats from all competitions for the "This Season" section
   let totalGoals = 0, totalAssists = 0, totalApps = 0, totalRating = 0, ratingCount = 0;
@@ -4959,21 +4968,19 @@ async function openPlayerProfile(playerId, fbName) {
   const avgRating = ratingCount > 0 ? (totalRating / ratingCount).toFixed(1) : '—';
 
   // Build career history from statistics array (one entry per club/season)
-  const careerRows = stats.map((s, idx) => `
-    <div style="display:grid;grid-template-columns:40px 1fr 100px;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);">
-      <img src="${s.team?.logo||""}" style="width:32px;height:32px;object-fit:contain;" onerror="this.style.display='none'">
-      <div>
+  const careerRows = stats.map(s => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
+      <img src="${s.team?.logo||''}" style="width:28px;height:28px;object-fit:contain;" onerror="this.style.display='none'">
+      <div style="flex:1;">
         <div style="font-size:13px;font-weight:600;color:var(--text);">${s.team?.name||'—'}</div>
         <div style="font-size:11px;color:var(--text3);">${s.league?.name||''} · ${s.league?.season||''}</div>
       </div>
       <div style="text-align:right;">
-        <div style="font-size:12px;font-weight:700;color:var(--text);">${s.games?.appearences||0}</div>
-        <div style="font-size:10px;color:var(--text3);">Apps</div>
-        <div style="font-size:11px;color:var(--green);font-weight:600;margin-top:2px;">${s.goals?.total||0}⚽ ${s.goals?.assists||0}🎯</div>
+        <div style="font-size:12px;font-weight:700;color:var(--text);">${s.games?.appearences||0} apps</div>
+        <div style="font-size:11px;color:var(--text3);">${s.goals?.total||0}⚽ ${s.goals?.assists||0}🎯</div>
       </div>
     </div>`).join('');
 
-  // Wikipedia-style layout: Hero section + Sidebar infobox
   overlay.innerHTML = `
     <!-- Header -->
     <div style="display:flex;align-items:center;gap:12px;padding:16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg2);">
@@ -4983,70 +4990,55 @@ async function openPlayerProfile(playerId, fbName) {
 
     <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;">
 
-      <!-- Hero Section: Asymmetric Layout (Image + Main Info) -->
-      <div style="background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(5,150,105,0.05));padding:24px;display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;border-bottom:2px solid var(--border);">
-        
-        <!-- Left: Large Player Image -->
-        <div style="display:flex;flex-direction:column;gap:12px;">
-          <div style="width:100%;aspect-ratio:3/4;border-radius:12px;overflow:hidden;border:2px solid rgba(16,185,129,0.3);background:#1e293b;display:flex;align-items:center;justify-content:center;">
-            ${p.photo
-              ? `<img src="${p.photo}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='<span style=\"font-size:48px;\">⚽</span>'">`
-              : `<span style="font-size:48px;">⚽</span>`}
-          </div>
+      <!-- Hero card -->
+      <div style="background:linear-gradient(135deg,#0a0f1e,#0d1f16);padding:24px 20px;display:flex;gap:18px;align-items:center;">
+        <div style="width:80px;height:80px;border-radius:50%;overflow:hidden;border:3px solid #10b981;flex-shrink:0;background:#1e293b;display:flex;align-items:center;justify-content:center;">
+          ${p.photo
+            ? `<img src="${p.photo}" style="width:100%;height:100%;object-fit:cover;" onerror="this.innerHTML='⚽'">`
+            : `<span style="font-size:32px;">⚽</span>`}
         </div>
-
-        <!-- Right: Player Name & Quick Info -->
-        <div style="display:flex;flex-direction:column;gap:16px;">
-          <div>
-            <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;color:#fff;letter-spacing:.04em;line-height:1.1;margin-bottom:8px;">${p.firstname} ${p.lastname}</div>
-            <div style="font-size:14px;color:var(--green);font-weight:600;margin-bottom:4px;">${main.team?.name||'Free Agent'}</div>
-            <div style="font-size:12px;color:var(--text2);">${main.games?.position||p.position||'—'} · ${p.nationality||'—'}</div>
-          </div>
-
-          <!-- Quick Stats Box -->
-          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-              <div style="text-align:center;">
-                <div style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--green);">${totalGoals}</div>
-                <div style="font-size:10px;color:var(--text3);font-weight:600;">GOALS</div>
-              </div>
-              <div style="text-align:center;">
-                <div style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--green);">${totalAssists}</div>
-                <div style="font-size:10px;color:var(--text3);font-weight:600;">ASSISTS</div>
-              </div>
-              <div style="text-align:center;">
-                <div style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--green);">${totalApps}</div>
-                <div style="font-size:10px;color:var(--text3);font-weight:600;">APPS</div>
-              </div>
-              <div style="text-align:center;">
-                <div style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--green);">${avgRating}</div>
-                <div style="font-size:10px;color:var(--text3);font-weight:600;">RATING</div>
-              </div>
-            </div>
-          </div>
+        <div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:#fff;letter-spacing:.04em;line-height:1.1;">${p.firstname}<br>${p.lastname}</div>
+          <div style="font-size:12px;color:#10b981;margin-top:4px;font-weight:600;">${main.team?.name||'Free Agent'} · ${main.games?.position||p.position||'—'}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:2px;">${p.nationality||''} · Age ${p.age||'—'}</div>
         </div>
       </div>
 
-      <!-- Infobox: Player Details -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);margin:20px;border-radius:10px;overflow:hidden;">
+      <!-- Bio stats row -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-bottom:1px solid var(--border);">
         ${[
-          ['Position', main.games?.position||p.position||'—'],
-          ['Age', p.age||'—'],
-          ['Nationality', p.nationality||'—'],
-          ['Jersey #', main.games?.number||'—'],
           ['Height', p.height||'—'],
           ['Weight', p.weight||'—'],
+          ['Foot',   p.birth?.country||p.nationality?.slice(0,3)||'—'],
+          ['Jersey', main.games?.number||'—'],
         ].map(([lbl,val]) => `
-          <div style="background:var(--bg2);padding:12px;text-align:center;border-right:1px solid var(--border);">
-            <div style="font-size:12px;color:var(--text3);font-weight:600;margin-bottom:4px;text-transform:uppercase;">${lbl}</div>
+          <div style="background:var(--bg2);padding:12px 8px;text-align:center;">
             <div style="font-size:14px;font-weight:700;color:var(--text);">${val}</div>
+            <div style="font-size:10px;color:var(--text3);font-weight:600;margin-top:2px;">${lbl}</div>
           </div>`).join('')}
       </div>
 
+      <!-- This season stats -->
+      <div style="padding:16px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;">This Season</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+          ${[
+            ['Apps',    totalApps],
+            ['Goals',   totalGoals],
+            ['Assists', totalAssists],
+            ['Rating',  avgRating],
+          ].map(([lbl,val]) => `
+            <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;">
+              <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--blue);">${val}</div>
+              <div style="font-size:10px;color:var(--text3);font-weight:600;margin-top:2px;">${lbl}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+
       <!-- AI Career Biography -->
-      <div style="margin:0 20px 20px;background:linear-gradient(135deg,rgba(16,185,129,0.08),rgba(5,150,105,0.05));border:1px solid rgba(16,185,129,0.25);border-radius:12px;overflow:hidden;">
-        <div style="display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid rgba(16,185,129,0.15);background:rgba(16,185,129,0.1);">
-          <div style="width:28px;height:28px;background:linear-gradient(135deg,#10b981,#059669);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;flex-shrink:0;">⚡</div>
+      <div style="margin:0 16px 16px;background:linear-gradient(135deg,rgba(16,185,129,0.08),rgba(5,150,105,0.05));border:1px solid rgba(16,185,129,0.25);border-radius:12px;overflow:hidden;">
+        <div style="display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid rgba(16,185,129,0.15);">
+          <div style="width:28px;height:28px;background:linear-gradient(135deg,#10b981,#059669);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;flex-shrink:0;">AI</div>
           <span style="font-size:12px;font-weight:700;color:#10b981;letter-spacing:.04em;">AI CAREER SUMMARY</span>
         </div>
         <div id="player-ai-bio-${playerId}" style="padding:14px;font-size:13px;color:var(--text2);line-height:1.6;">
@@ -5061,12 +5053,10 @@ async function openPlayerProfile(playerId, fbName) {
         </div>
       </div>
 
-      <!-- Career History Timeline -->
-      <div style="padding:0 20px 32px;">
-        <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:14px;border-bottom:2px solid var(--green);padding-bottom:8px;">Career History</div>
-        <div style="display:flex;flex-direction:column;gap:0;">
-          ${careerRows || '<div style="font-size:13px;color:var(--text3);padding:12px;text-align:center;">No career data available</div>'}
-        </div>
+      <!-- Career history -->
+      <div style="padding:0 16px 32px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;">Career History</div>
+        ${careerRows || '<div style="font-size:13px;color:var(--text3);">No career data available</div>'}
       </div>
 
     </div>`;
