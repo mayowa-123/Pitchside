@@ -4878,61 +4878,65 @@ function _renderPlayerResults(players, query) {
 
 
 
-/* ── Wikipedia helper: fetch full parsed HTML from Wikipedia ── */
+/* ── Wikipedia API helper ── */
 async function _fetchWikipediaData(playerName) {
   try {
-    // Step 1: Search for the player
+    // Step 1: Search
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(playerName + ' footballer')}&format=json&origin=*&srlimit=5`;
     const searchRes  = await fetch(searchUrl, { signal: AbortSignal.timeout(8000) });
     const searchData = await searchRes.json();
     const pages = searchData?.query?.search || [];
     if (!pages.length) return null;
 
-    // Pick best match
     let pageTitle = pages[0].title;
     for (const pg of pages) {
       if (pg.title.toLowerCase().includes(playerName.toLowerCase())) { pageTitle = pg.title; break; }
     }
 
-    // Step 2: Fetch fully parsed HTML + wikitext + main image in one call
-    const parseUrl = `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(pageTitle)}&prop=text|wikitext|images&format=json&origin=*`;
-    const [parseRes, imgRes] = await Promise.all([
-      fetch(parseUrl, { signal: AbortSignal.timeout(12000) }),
-      fetch(`https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(pageTitle)}&prop=pageimages&piprop=original&format=json&origin=*`, { signal: AbortSignal.timeout(8000) })
-    ]);
+    // Step 2: Fetch full extract (all sections as plain text) + wikitext + main image
+    // action=query with exintro=false gets the FULL article text, not just intro
+    const queryUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(pageTitle)}&prop=extracts|pageimages|revisions&exintro=false&explaintext=true&rvprop=content&rvslots=main&piprop=original&format=json&origin=*`;
+    const queryRes  = await fetch(queryUrl, { signal: AbortSignal.timeout(12000) });
+    const queryData = await queryRes.json();
 
-    const parseData = await parseRes.json();
-    const imgData   = await imgRes.json();
+    const pagesObj  = queryData?.query?.pages || {};
+    const pageId    = Object.keys(pagesObj)[0];
+    if (!pageId || pageId === '-1') return null;
 
-    const html      = parseData?.parse?.text?.['*'] || '';
-    const wikitext  = parseData?.parse?.wikitext?.['*'] || '';
-    const imgPages  = imgData?.query?.pages || {};
-    const mainImage = Object.values(imgPages)[0]?.original?.source || '';
-
-    if (!html) return null;
-    return { html, wikitext, image: mainImage, title: parseData?.parse?.title || pageTitle, pageTitle };
-  } catch(e) { return null; }
+    const page      = pagesObj[pageId];
+    const extract   = page?.extract   || '';  // full plain-text article
+    const wikitext  = page?.revisions?.[0]?.slots?.main?.['*'] || '';
+    const image     = page?.original?.source || '';
+    const title     = page?.title || playerName;
+    return { extract, wikitext, image, title, pageTitle };
+  } catch(e) { console.error('Wiki fetch error:', e); return null; }
 }
 
-/* ── Strip wiki markup from infobox field value ── */
+/* ── Clean a raw wikitext field value ── */
 function _cleanWikiField(raw) {
   if (!raw) return '';
   return raw
-    .replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, '')  // <ref>...</ref>
-    .replace(/<ref[^/]*\/>/gi, '')               // <ref ... />
-    .replace(/\{\{[Nn]o[Bb]old\|([^}]+)\}\}/g, '$1')  // {{nobold|text}}
-    .replace(/\{\{[Bb]irth date[^}]*\|(\d{4})\|(\d{1,2})\|(\d{1,2})[^}]*\}\}/g, (_, y, m, d) => {
+    .replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, '')
+    .replace(/<ref[^/]*\/>/gi, '')
+    .replace(/\{\{[Nn]o[Bb]old\|([^}|]+)(?:\|[^}]*)?\}\}/g, '$1')
+    .replace(/\{\{[Bb]irth[_ ]date[_ ]and[_ ]age\|(\d{4})\|(\d{1,2})\|(\d{1,2})[^}]*\}\}/gi, (_, y, m, d) => {
       const months = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
       const age = new Date().getFullYear() - parseInt(y);
       return `${parseInt(d)} ${months[parseInt(m)]} ${y} (age ${age})`;
     })
-    .replace(/\{\{[Hh]eight\|([^|]+)\|([^}]+)\}\}/g, '$1 ($2)')  // {{height|...}}
+    .replace(/\{\{[Bb]irth[_ ]date\|(\d{4})\|(\d{1,2})\|(\d{1,2})[^}]*\}\}/gi, (_, y, m, d) => {
+      const months = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
+      return `${parseInt(d)} ${months[parseInt(m)]} ${y}`;
+    })
+    .replace(/\{\{[Hh]eight\s*\|\s*m\s*=\s*([^|]+)\|[^}]*\}\}/g, '$1 m')
     .replace(/\{\{[Cc]onvert\|([^|]+)\|([^|]+)\|[^}]*\}\}/g, '$1 $2')
-    .replace(/\{\{[^}]*\}\}/g, '')               // any remaining {{...}}
-    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')  // [[link|text]] -> text
-    .replace(/\[\[([^\]]+)\]\]/g, '$1')          // [[link]] -> link
-    .replace(/'{2,3}/g, '')                      // bold/italic markers
-    .replace(/\[https?[^\s\]]*\s([^\]]*)\]/g, '$1')  // [url text]
+    .replace(/\{\{[^{}]*\}\}/g, '')       // remove remaining single-level {{...}}
+    .replace(/\{\{[^{}]*\{\{[^{}]*\}\}[^{}]*\}\}/g, '') // nested {{{{}}}}
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
+    .replace(/\[\[([^\]]+)\]\]/g, '$1')
+    .replace(/'{2,3}/g, '')
+    .replace(/\[https?[^\s\]]*\s([^\]]*)\]/g, '$1')
+    .replace(/\[https?[^\]\s]*\]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -4940,187 +4944,126 @@ function _cleanWikiField(raw) {
 /* ── Parse infobox from wikitext ── */
 function _parseWikiInfobox(wikitext) {
   const info = {};
-  const ibMatch = wikitext.match(/\{\{[Ii]nfobox football biography([\s\S]*?)(?=\n\}\}\n|\n\}\}$)/);
-  if (!ibMatch) return info;
-  const box = ibMatch[1];
-
-  function getRaw(key) {
-    // Match | key = VALUE (VALUE can span lines that don't start with |)
-    const re = new RegExp('\\|\\s*' + key + '\\s*=[ \\t]*([\\s\\S]*?)(?=\\n[ \\t]*\\||$)', 'im');
-    const m = box.match(re);
-    return m ? m[1].trim() : '';
+  // Find the infobox block
+  const ibStart = wikitext.search(/\{\{[Ii]nfobox football biography/);
+  if (ibStart === -1) return info;
+  // Extract it by counting braces
+  let depth = 0, i = ibStart, box = '';
+  for (; i < wikitext.length; i++) {
+    if (wikitext[i] === '{' && wikitext[i+1] === '{') { depth++; i++; }
+    else if (wikitext[i] === '}' && wikitext[i+1] === '}') { depth--; i++; if (depth === 0) { box = wikitext.slice(ibStart, i+1); break; } }
   }
-  function getField(key) { return _cleanWikiField(getRaw(key)); }
+  if (!box) return info;
 
-  info.fullname    = getField('fullname') || getField('name');
-  info.birth_date  = getField('birth_date');
-  info.birth_place = getField('birth_place');
-  info.height      = getField('height');
-  info.position    = getField('position');
-  info.currentclub = getField('currentclub');
-  info.clubnumber  = getRaw('clubnumber').replace(/[^0-9]/g,'') || getRaw('currentclubnumber').replace(/[^0-9]/g,'');
-  info.caption     = getField('caption');
-  info.nationalteam= getField('nationalteam');
+  // Split box into fields by top-level pipe characters
+  const fields = {};
+  let current = '', fdepth = 0;
+  for (let ci = 0; ci < box.length; ci++) {
+    const ch = box[ci];
+    if ((ch === '{' && box[ci+1] === '{') || (ch === '[' && box[ci+1] === '[')) { fdepth++; current += ch; }
+    else if ((ch === '}' && box[ci+1] === '}') || (ch === ']' && box[ci+1] === ']')) { fdepth--; current += ch; }
+    else if (ch === '|' && fdepth === 0) {
+      const eqIdx = current.indexOf('=');
+      if (eqIdx > -1) {
+        const key = current.slice(0, eqIdx).trim();
+        const val = current.slice(eqIdx + 1).trim();
+        if (key) fields[key.toLowerCase()] = val;
+      }
+      current = '';
+    } else { current += ch; }
+  }
 
-  // Youth clubs — try numbered fields first, then multi-line
+  function gf(key) { return _cleanWikiField(fields[key.toLowerCase()] || ''); }
+  function gr(key) { return (fields[key.toLowerCase()] || '').trim(); }
+
+  info.fullname    = gf('fullname') || gf('name');
+  info.birth_date  = gf('birth_date');
+  info.birth_place = gf('birth_place');
+  info.height      = gf('height');
+  info.position    = gf('position');
+  info.currentclub = gf('currentclub');
+  info.clubnumber  = gr('clubnumber').replace(/\D/g,'') || gr('currentclubnumber').replace(/\D/g,'');
+  info.caption     = gf('caption');
+
+  // Youth clubs
   const youthClubs = [];
-  for (let i = 1; i <= 12; i++) {
-    const yc = getField('youthclubs' + i);
-    const yy = _cleanWikiField(getRaw('youthyears' + i));
+  for (let n = 1; n <= 12; n++) {
+    const yc = gf('youthclubs' + n);
+    const yy = gf('youthyears' + n);
     if (yc) youthClubs.push({ years: yy, club: yc });
   }
+  // fallback: multi-line youthclubs field
   if (!youthClubs.length) {
-    const yyRaw = getRaw('youthyears');
-    const ycRaw = getRaw('youthclubs');
-    const yyLines = yyRaw.split('\n').map(s => _cleanWikiField(s)).filter(Boolean);
-    const ycLines = ycRaw.split('\n').map(s => _cleanWikiField(s)).filter(Boolean);
-    yyLines.forEach((y, i) => { if (ycLines[i]) youthClubs.push({ years: y, club: ycLines[i] }); });
-    // Also try splitting by line break template {{0}}
-    if (!youthClubs.length && ycRaw.includes('{{')) {
-      ycRaw.split(/\{\{[0-9]+\}\}|\n/).map(s => _cleanWikiField(s)).filter(Boolean)
-        .forEach((club, i) => youthClubs.push({ years: '', club }));
-    }
+    const ycRaw = gr('youthclubs'), yyRaw = gr('youthyears');
+    const ycLines = ycRaw.split(/\n|<br\s*\/?>/).map(s => _cleanWikiField(s)).filter(Boolean);
+    const yyLines = yyRaw.split(/\n|<br\s*\/?>/).map(s => _cleanWikiField(s)).filter(Boolean);
+    ycLines.forEach((club, idx) => youthClubs.push({ years: yyLines[idx] || '', club }));
   }
   info.youthClubs = youthClubs;
 
   // Senior clubs
   const seniorClubs = [];
-  for (let i = 1; i <= 20; i++) {
-    const sc = getField('clubs' + i);
-    const sy = _cleanWikiField(getRaw('years' + i));
-    const sa = getRaw('caps' + i).replace(/[^0-9]/g, '');
-    const sg = getRaw('goals' + i).replace(/[^0-9\-]/g, '');
+  for (let n = 1; n <= 20; n++) {
+    const sc = gf('clubs' + n);
+    const sy = gf('years' + n);
+    const sa = gr('caps'  + n).replace(/\D/g,'');
+    const sg = gr('goals' + n).replace(/[^\d\-]/g,'');
     if (sc) seniorClubs.push({ years: sy, club: sc, apps: sa, goals: sg });
   }
   if (!seniorClubs.length) {
-    const syLines = getRaw('years').split('\n').map(s => _cleanWikiField(s)).filter(Boolean);
-    const scLines = getRaw('clubs').split('\n').map(s => _cleanWikiField(s)).filter(Boolean);
-    const saLines = getRaw('caps').split('\n').map(s => s.replace(/[^0-9]/g,'')).filter(Boolean);
-    const sgLines = getRaw('goals').split('\n').map(s => s.replace(/[^0-9\-]/g,'')).filter(Boolean);
-    syLines.forEach((y, i) => {
-      if (scLines[i]) seniorClubs.push({ years: y, club: scLines[i], apps: saLines[i]||'', goals: sgLines[i]||'' });
-    });
+    const scLines = gr('clubs').split(/\n/).map(s => _cleanWikiField(s)).filter(Boolean);
+    const syLines = gr('years').split(/\n/).map(s => _cleanWikiField(s)).filter(Boolean);
+    const saLines = gr('caps').split(/\n/).map(s => s.replace(/\D/g,'')).filter(Boolean);
+    const sgLines = gr('goals').split(/\n/).map(s => s.replace(/[^\d\-]/g,'')).filter(Boolean);
+    scLines.forEach((club, idx) => seniorClubs.push({ years: syLines[idx]||'', club, apps: saLines[idx]||'', goals: sgLines[idx]||'' }));
   }
   info.seniorClubs = seniorClubs;
 
   // International career
   const intlCareer = [];
-  for (let i = 1; i <= 10; i++) {
-    const tc = getField('nationalteam' + i) || (i === 1 ? info.nationalteam : '');
-    const ty = _cleanWikiField(getRaw('nationalyears' + i) || getRaw('nationalteamyears' + i));
-    const ta = getRaw('nationalcaps' + i).replace(/[^0-9]/g,'');
-    const tg = getRaw('nationalgoals' + i).replace(/[^0-9\-]/g,'');
+  for (let n = 1; n <= 10; n++) {
+    const tc = gf('nationalteam' + n) || (n === 1 ? gf('nationalteam') : '');
+    const ty = gf('nationalyears' + n) || (n === 1 ? gf('nationalyears') : '');
+    const ta = gr('nationalcaps'  + n).replace(/\D/g,'');
+    const tg = gr('nationalgoals' + n).replace(/[^\d\-]/g,'');
     if (tc) intlCareer.push({ years: ty, team: tc, apps: ta, goals: tg });
   }
   info.intlCareer = intlCareer;
-
   return info;
 }
 
-/* ── Sanitise Wikipedia parsed HTML for in-app display ── */
-function _sanitiseWikiHtml(html) {
-  const div = document.createElement('div');
-  div.innerHTML = html;
+/* ── Parse plain-text extract into sections ── */
+function _parseExtractSections(extract) {
+  if (!extract) return { intro: '', sections: [] };
+  // Wikipedia plain-text extract uses == Heading == markers
+  const lines    = extract.split('\n');
+  const sections = [];
+  let currentHeading = '', currentLines = [], inIntro = true;
 
-  // Remove things we don't want
-  const removeSelectors = [
-    '.mw-editsection',        // [edit] links
-    '.reference',             // footnote numbers [1]
-    '.reflist',               // references section
-    '.navbox',                // navigation boxes
-    '.sistersitebox',
-    '.metadata',
-    '.ambox',                 // article message boxes
-    '.hatnote',               // "For other uses..." notes (keep intro clean)
-    '#toc',                   // table of contents
-    '.toc',
-    'style',
-    'script',
-    '.mw-empty-elt',
-    '.noprint',
-    '.mbox-small',
-    'table.wikitable.sortable', // stat tables (we show infobox ones already)
-  ];
-  removeSelectors.forEach(sel => {
-    div.querySelectorAll(sel).forEach(el => el.remove());
-  });
+  for (const line of lines) {
+    const h2 = line.match(/^==\s*(.+?)\s*==\s*$/);
+    const h3 = line.match(/^===\s*(.+?)\s*===\s*$/);
+    if (h2 || h3) {
+      if (inIntro) {
+        sections.push({ heading: '__intro__', level: 0, lines: currentLines });
+        inIntro = false;
+      } else if (currentLines.some(l => l.trim())) {
+        sections.push({ heading: currentHeading, level: h3 ? 3 : 2, lines: currentLines });
+      }
+      currentHeading = (h2 || h3)[1];
+      currentLines   = [];
+    } else {
+      currentLines.push(line);
+    }
+  }
+  if (currentLines.some(l => l.trim())) {
+    sections.push({ heading: currentHeading, level: 2, lines: currentLines });
+  }
 
-  // Make all internal Wikipedia links non-navigating (strip href)
-  div.querySelectorAll('a[href^="/wiki/"]').forEach(a => {
-    a.removeAttribute('href');
-    a.style.cssText = 'color:#6ba3e0;cursor:default;';
-  });
-
-  // External links — keep them but open in new tab
-  div.querySelectorAll('a[href^="http"]').forEach(a => {
-    a.setAttribute('target', '_blank');
-    a.setAttribute('rel', 'noopener');
-    a.style.color = '#6ba3e0';
-  });
-
-  // Style images inside the article
-  div.querySelectorAll('img').forEach(img => {
-    img.style.cssText = 'max-width:100%;height:auto;border-radius:6px;display:block;margin:8px auto;';
-    img.removeAttribute('width');
-    img.removeAttribute('height');
-    // Fix srcset / src to use https
-    const src = img.getAttribute('src') || '';
-    if (src.startsWith('//')) img.setAttribute('src', 'https:' + src);
-    const srcset = img.getAttribute('srcset') || '';
-    if (srcset) img.setAttribute('srcset', srcset.replace(/\/\//g, 'https://'));
-  });
-
-  // Style figure captions
-  div.querySelectorAll('figcaption, .thumbcaption').forEach(cap => {
-    cap.style.cssText = 'font-size:11px;color:#888;text-align:center;margin-top:4px;line-height:1.4;';
-  });
-
-  // Style figure/thumb containers
-  div.querySelectorAll('.thumb, figure').forEach(fig => {
-    fig.style.cssText = 'margin:12px auto;text-align:center;max-width:100%;';
-  });
-
-  // Style section headings
-  div.querySelectorAll('h2').forEach(h => {
-    h.style.cssText = 'font-size:18px;font-weight:700;color:var(--text);margin:20px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--border);';
-  });
-  div.querySelectorAll('h3').forEach(h => {
-    h.style.cssText = 'font-size:15px;font-weight:700;color:var(--text);margin:16px 0 8px;';
-  });
-  div.querySelectorAll('h4').forEach(h => {
-    h.style.cssText = 'font-size:14px;font-weight:600;color:var(--text2);margin:12px 0 6px;';
-  });
-
-  // Style paragraphs
-  div.querySelectorAll('p').forEach(p => {
-    p.style.cssText = 'font-size:14px;color:var(--text2);line-height:1.75;margin:0 0 12px;';
-  });
-
-  // Style blockquotes
-  div.querySelectorAll('blockquote').forEach(bq => {
-    bq.style.cssText = 'border-left:3px solid var(--green);margin:12px 0;padding:8px 12px;background:var(--bg2);border-radius:0 6px 6px 0;font-style:italic;font-size:13px;color:var(--text2);';
-  });
-
-  // Style lists
-  div.querySelectorAll('ul, ol').forEach(list => {
-    list.style.cssText = 'font-size:14px;color:var(--text2);line-height:1.7;margin:0 0 12px;padding-left:20px;';
-  });
-
-  // Style wikitables (career stats tables, etc.)
-  div.querySelectorAll('table').forEach(tbl => {
-    tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;margin:12px 0;overflow-x:auto;display:block;';
-    tbl.querySelectorAll('th').forEach(th => {
-      th.style.cssText = 'padding:7px 8px;background:rgba(100,130,200,0.15);color:var(--text);font-weight:700;border:1px solid var(--border);font-size:11px;';
-    });
-    tbl.querySelectorAll('td').forEach(td => {
-      td.style.cssText = 'padding:6px 8px;color:var(--text2);border:1px solid var(--border);font-size:12px;';
-    });
-  });
-
-  // Remove the infobox table (we render our own clean one)
-  div.querySelectorAll('table.infobox, .infobox').forEach(el => el.remove());
-
-  return div.innerHTML;
+  const introSec = sections.find(s => s.heading === '__intro__');
+  const intro    = introSec ? introSec.lines.join('\n') : '';
+  const rest     = sections.filter(s => s.heading !== '__intro__');
+  return { intro, sections: rest };
 }
 
 /* ── Open full player profile overlay (Wikipedia-style) ── */
@@ -5150,7 +5093,7 @@ async function openPlayerProfile(playerId, fbName) {
     </div>`;
   overlay.style.display = 'flex';
 
-  // Fetch API-Football data (for photo fallback)
+  // API-Football (photo fallback)
   if (!_playerDetailCache[playerId]) {
     try {
       let url;
@@ -5162,8 +5105,7 @@ async function openPlayerProfile(playerId, fbName) {
         let result = data.response?.[0] || null;
         if (!result) {
           const res2 = await fetch(url.replace('season=2025','season=2024'), { signal: AbortSignal.timeout(8000) });
-          const data2 = await res2.json();
-          result = data2.response?.[0] || null;
+          result = (await res2.json()).response?.[0] || null;
         }
         _playerDetailCache[playerId] = result;
       }
@@ -5176,16 +5118,32 @@ async function openPlayerProfile(playerId, fbName) {
   const main       = stats[0] || {};
   const playerName = fbName || (`${p.firstname||''} ${p.lastname||''}`).trim() || 'Unknown';
 
-  // Fetch Wikipedia (parsed HTML + wikitext)
   const wikiData   = await _fetchWikipediaData(playerName);
   const infobox    = wikiData ? _parseWikiInfobox(wikiData.wikitext) : {};
-  const photo      = p.photo || wikiData?.image || '';
-  const displayName= wikiData?.title || playerName;
+  const { intro, sections } = _parseExtractSections(wikiData?.extract || '');
 
-  // Sanitise the full Wikipedia HTML for in-app use
-  const cleanArticleHtml = wikiData?.html ? _sanitiseWikiHtml(wikiData.html) : '';
+  const photo       = p.photo || wikiData?.image || '';
+  const displayName = wikiData?.title || playerName;
 
-  // --- Build infobox rows ---
+  // Render intro paragraphs
+  function renderText(text) {
+    return text.split('\n\n').map(para => para.trim()).filter(t => t.length > 30)
+      .map(para => `<p style="font-size:14px;color:var(--text2);line-height:1.75;margin:0 0 12px;">${para.replace(/\n/g,' ')}</p>`)
+      .join('');
+  }
+
+  // Render all article sections
+  const sectionsHtml = sections.map(sec => {
+    const body = renderText(sec.lines.join('\n'));
+    if (!body) return '';
+    const tag   = sec.level === 3 ? 'h3' : 'h2';
+    const style = sec.level === 3
+      ? 'font-size:15px;font-weight:700;color:var(--text);margin:16px 0 8px;'
+      : 'font-size:18px;font-weight:700;color:var(--text);margin:20px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--border);';
+    return `<${tag} style="${style}">${sec.heading}</${tag}>${body}`;
+  }).join('');
+
+  // Infobox table rows
   const personalRows = [
     infobox.fullname                                         ? ['Full name',      infobox.fullname]                                       : null,
     infobox.birth_date                                       ? ['Date of birth',  infobox.birth_date]                                     : null,
@@ -5195,33 +5153,39 @@ async function openPlayerProfile(playerId, fbName) {
   ].filter(Boolean);
 
   const teamRows = [
-    (infobox.currentclub || main.team?.name) ? ['Current team', infobox.currentclub || main.team?.name]    : null,
-    (infobox.clubnumber  || main.games?.number) ? ['Number',    infobox.clubnumber  || main.games?.number] : null,
+    (infobox.currentclub || main.team?.name)     ? ['Current team', infobox.currentclub || main.team?.name]    : null,
+    (infobox.clubnumber  || main.games?.number)  ? ['Number',       infobox.clubnumber  || main.games?.number] : null,
   ].filter(Boolean);
 
-  const youthRows = (infobox.youthClubs || []).map(c => `
-    <tr style="border-bottom:1px solid var(--border);">
-      <td style="padding:8px 12px;font-size:13px;color:var(--text2);">${c.years||''}</td>
-      <td style="padding:8px 12px;font-size:13px;color:#6ba3e0;font-weight:500;">${c.club}</td>
-    </tr>`).join('');
+  function infoRow(label, val) {
+    return `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:9px 12px;font-size:13px;font-weight:700;color:var(--text);width:42%;vertical-align:top;">${label}</td>
+      <td style="padding:9px 12px;font-size:13px;color:var(--text2);vertical-align:top;">${val}</td>
+    </tr>`;
+  }
+  function infoRowBlue(label, val) {
+    return `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:9px 12px;font-size:13px;font-weight:700;color:var(--text);width:42%;vertical-align:top;">${label}</td>
+      <td style="padding:9px 12px;font-size:13px;color:#6ba3e0;vertical-align:top;">${val}</td>
+    </tr>`;
+  }
+  function sectionHeader(title) {
+    return `<div style="background:rgba(100,130,200,0.15);padding:8px 12px;border-bottom:1px solid var(--border);">
+      <span style="font-size:13px;font-weight:700;color:var(--text);">${title}</span>
+    </div>`;
+  }
 
-  const seniorRows = (infobox.seniorClubs || []).map(c => `
-    <tr style="border-bottom:1px solid var(--border);">
-      <td style="padding:8px 12px;font-size:13px;color:var(--text2);">${c.years||''}</td>
-      <td style="padding:8px 12px;font-size:13px;color:#6ba3e0;font-weight:500;">${c.club}</td>
-      <td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">${c.apps||'&#8212;'}</td>
-      <td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">(${c.goals||'&#8212;'})</td>
-    </tr>`).join('');
+  const youthRows  = (infobox.youthClubs  || []).map(c => `<tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;font-size:13px;color:var(--text2);">${c.years}</td><td style="padding:8px 12px;font-size:13px;color:#6ba3e0;font-weight:500;">${c.club}</td></tr>`).join('');
+  const seniorRows = (infobox.seniorClubs  || []).map(c => `<tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;font-size:13px;color:var(--text2);">${c.years}</td><td style="padding:8px 12px;font-size:13px;color:#6ba3e0;font-weight:500;">${c.club}</td><td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">${c.apps||'&#8212;'}</td><td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">(${c.goals||'&#8212;'})</td></tr>`).join('');
+  const intlRows   = (infobox.intlCareer   || []).map(c => `<tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;font-size:13px;color:var(--text2);">${c.years}</td><td style="padding:8px 12px;font-size:13px;color:#6ba3e0;font-weight:500;">${c.team}</td><td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">${c.apps||'&#8212;'}</td><td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">(${c.goals||'&#8212;'})</td></tr>`).join('');
 
-  const intlRows = (infobox.intlCareer || []).map(c => `
-    <tr style="border-bottom:1px solid var(--border);">
-      <td style="padding:8px 12px;font-size:13px;color:var(--text2);">${c.years||''}</td>
-      <td style="padding:8px 12px;font-size:13px;color:#6ba3e0;font-weight:500;">${c.team}</td>
-      <td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">${c.apps||'&#8212;'}</td>
-      <td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">(${c.goals||'&#8212;'})</td>
-    </tr>`).join('');
+  const careerTableHeader = `<tr style="background:var(--bg3);border-bottom:1px solid var(--border);">
+    <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left;">Years</th>
+    <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left;">Team</th>
+    <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:center;">Apps</th>
+    <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:center;">(Gls)</th>
+  </tr>`;
 
-  // --- Render ---
   overlay.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg2);">
       <button onclick="closePlayerProfile()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;flex-shrink:0;">&#8249;</button>
@@ -5231,107 +5195,45 @@ async function openPlayerProfile(playerId, fbName) {
 
     <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0;">
 
-      <!-- Player name heading -->
+      <!-- Title -->
       <div style="padding:20px 16px 0;">
         <h1 style="font-size:26px;font-weight:700;color:var(--text);margin:0 0 16px;line-height:1.2;">${displayName}</h1>
       </div>
 
-      <!-- Full Wikipedia article content (intro paragraphs + all sections + images) -->
-      ${cleanArticleHtml
-        ? `<div id="wiki-article-body" style="padding:0 16px 16px;">${cleanArticleHtml}</div>`
-        : `<div style="padding:16px;color:var(--text3);font-style:italic;">No Wikipedia article found for this player.</div>`}
+      <!-- Intro paragraphs -->
+      <div style="padding:0 16px;">
+        ${intro ? renderText(intro) : `<p style="font-size:14px;color:var(--text3);font-style:italic;">No Wikipedia article found for this player.</p>`}
+      </div>
 
-      <!-- Infobox card (our clean version) -->
-      <div style="margin:8px 16px 16px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg2);">
-
-        <!-- Name header -->
+      <!-- Infobox -->
+      <div style="margin:12px 16px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg2);">
         <div style="padding:12px;text-align:center;border-bottom:1px solid var(--border);background:rgba(16,185,129,0.06);">
           <div style="font-size:15px;font-weight:700;color:var(--text);">${displayName}</div>
         </div>
 
-        <!-- Photo -->
-        ${photo ? `
-        <div style="text-align:center;padding:12px;border-bottom:1px solid var(--border);">
+        ${photo ? `<div style="text-align:center;padding:12px;border-bottom:1px solid var(--border);">
           <img src="${photo}" style="max-width:220px;max-height:260px;width:100%;object-fit:cover;border-radius:4px;" onerror="this.parentElement.style.display='none'">
           ${infobox.caption ? `<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4;">${infobox.caption}</div>` : ''}
         </div>` : ''}
 
-        <!-- Personal information -->
-        ${personalRows.length ? `
-        <div style="background:rgba(100,130,200,0.15);padding:8px 12px;border-bottom:1px solid var(--border);">
-          <span style="font-size:13px;font-weight:700;color:var(--text);">Personal information</span>
-        </div>
-        <table style="width:100%;border-collapse:collapse;">
-          ${personalRows.map(([label, val]) => `
-          <tr style="border-bottom:1px solid var(--border);">
-            <td style="padding:9px 12px;font-size:13px;font-weight:700;color:var(--text);width:42%;vertical-align:top;">${label}</td>
-            <td style="padding:9px 12px;font-size:13px;color:var(--text2);vertical-align:top;">${val}</td>
-          </tr>`).join('')}
-        </table>` : ''}
+        ${personalRows.length ? sectionHeader('Personal information') + `<table style="width:100%;border-collapse:collapse;">${personalRows.map(([l,v])=>infoRow(l,v)).join('')}</table>` : ''}
+        ${teamRows.length     ? sectionHeader('Team information')     + `<table style="width:100%;border-collapse:collapse;">${teamRows.map(([l,v])=>infoRowBlue(l,v)).join('')}</table>` : ''}
+        ${youthRows           ? sectionHeader('Youth career')         + `<table style="width:100%;border-collapse:collapse;">${youthRows}</table>` : ''}
+        ${seniorRows          ? sectionHeader('Senior career*')       + `<table style="width:100%;border-collapse:collapse;">${careerTableHeader}${seniorRows}</table>` : ''}
+        ${intlRows            ? sectionHeader('International career&#8225;') + `<table style="width:100%;border-collapse:collapse;">${careerTableHeader.replace(/Team/g,'Team')}${intlRows}</table>` : ''}
 
-        <!-- Team information -->
-        ${teamRows.length ? `
-        <div style="background:rgba(100,130,200,0.15);padding:8px 12px;border-bottom:1px solid var(--border);">
-          <span style="font-size:13px;font-weight:700;color:var(--text);">Team information</span>
-        </div>
-        <table style="width:100%;border-collapse:collapse;">
-          ${teamRows.map(([label, val]) => `
-          <tr style="border-bottom:1px solid var(--border);">
-            <td style="padding:9px 12px;font-size:13px;font-weight:700;color:var(--text);width:42%;vertical-align:top;">${label}</td>
-            <td style="padding:9px 12px;font-size:13px;color:#6ba3e0;vertical-align:top;">${val}</td>
-          </tr>`).join('')}
-        </table>` : ''}
+        ${!personalRows.length && !youthRows && !seniorRows
+          ? `<div style="padding:16px;text-align:center;color:var(--text3);font-size:13px;">Detailed infobox not available for this player on Wikipedia.</div>` : ''}
 
-        <!-- Youth career -->
-        ${youthRows ? `
-        <div style="background:rgba(100,130,200,0.15);padding:8px 12px;border-bottom:1px solid var(--border);">
-          <span style="font-size:13px;font-weight:700;color:var(--text);">Youth career</span>
-        </div>
-        <table style="width:100%;border-collapse:collapse;">${youthRows}</table>` : ''}
-
-        <!-- Senior career -->
-        ${seniorRows ? `
-        <div style="background:rgba(100,130,200,0.15);padding:8px 12px;border-bottom:1px solid var(--border);">
-          <span style="font-size:13px;font-weight:700;color:var(--text);">Senior career*</span>
-        </div>
-        <table style="width:100%;border-collapse:collapse;">
-          <tr style="background:var(--bg3);border-bottom:1px solid var(--border);">
-            <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left;">Years</th>
-            <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left;">Team</th>
-            <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:center;">Apps</th>
-            <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:center;">(Gls)</th>
-          </tr>
-          ${seniorRows}
-        </table>` : ''}
-
-        <!-- International career -->
-        ${intlRows ? `
-        <div style="background:rgba(100,130,200,0.15);padding:8px 12px;border-bottom:1px solid var(--border);">
-          <span style="font-size:13px;font-weight:700;color:var(--text);">International career&#8225;</span>
-        </div>
-        <table style="width:100%;border-collapse:collapse;">
-          <tr style="background:var(--bg3);border-bottom:1px solid var(--border);">
-            <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left;">Years</th>
-            <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left;">Team</th>
-            <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:center;">Apps</th>
-            <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:center;">(Gls)</th>
-          </tr>
-          ${intlRows}
-        </table>` : ''}
-
-        ${!personalRows.length && !youthRows && !seniorRows ? `
-        <div style="padding:16px;text-align:center;color:var(--text3);font-size:13px;">
-          Detailed infobox not available for this player on Wikipedia.
-        </div>` : ''}
-
-        <!-- Footer note -->
-        <div style="padding:10px 12px;font-size:11px;color:var(--text3);border-top:1px solid var(--border);text-align:center;">
+        <div style="padding:8px 12px;font-size:11px;color:var(--text3);border-top:1px solid var(--border);text-align:center;">
           Source: Wikipedia, the free encyclopedia
         </div>
       </div>
 
-      <!-- Bottom padding -->
-      <div style="height:32px;"></div>
+      <!-- All article sections -->
+      ${sectionsHtml ? `<div style="padding:0 16px 16px;">${sectionsHtml}</div>` : ''}
+
+      <div style="height:40px;"></div>
     </div>`;
 }
 
