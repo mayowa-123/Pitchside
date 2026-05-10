@@ -4881,34 +4881,70 @@ function _renderPlayerResults(players, query) {
 /* ── Wikipedia API helper ── */
 async function _fetchWikipediaData(playerName) {
   try {
-    // Step 1: Search Wikipedia
-    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(playerName + ' footballer')}&format=json&origin=*&srlimit=5`;
+    // Helper: fetch a Wikipedia page by exact title
+    const fetchPage = async (title) => {
+      const url = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=extracts|pageimages|revisions&exintro=false&explaintext=true&rvprop=content&rvslots=main&piprop=original&format=json&origin=*`;
+      const res  = await fetch(url, { signal: AbortSignal.timeout(12000) });
+      const data = await res.json();
+      const pObj = data?.query?.pages || {};
+      const pid  = Object.keys(pObj)[0];
+      if (!pid || pid === '-1') return null;
+      const page = pObj[pid];
+      const wikitext = page?.revisions?.[0]?.slots?.main?.['*'] || '';
+      return {
+        extract  : page?.extract || '',
+        wikitext,
+        image    : page?.original?.source || '',
+        title    : page?.title || title,
+        pageTitle: title,
+        hasInfobox: /\{\{[Ii]nfobox\s+football\s+bio/i.test(wikitext)
+      };
+    };
+
+    // Strategy 1: Try exact player name directly first (most reliable)
+    let result = await fetchPage(playerName);
+    if (result?.hasInfobox) return result;
+
+    // Strategy 2: Search Wikipedia
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(playerName + ' footballer')}&format=json&origin=*&srlimit=10`;
     const searchRes  = await fetch(searchUrl, { signal: AbortSignal.timeout(8000) });
     const searchData = await searchRes.json();
     const pages = searchData?.query?.search || [];
-    if (!pages.length) return null;
 
-    // Pick best title match
-    let pageTitle = pages[0].title;
-    for (const pg of pages) {
-      if (pg.title.toLowerCase().includes(playerName.toLowerCase())) { pageTitle = pg.title; break; }
+    // Sort: exact name matches first, sub-articles ("Career of...") last
+    const nameLower = playerName.toLowerCase();
+    const sorted = [...pages].sort((a, b) => {
+      const at = a.title.toLowerCase(), bt = b.title.toLowerCase();
+      const aExact = at === nameLower ? 0 : at.includes(nameLower) && !at.includes('career of') && !at.includes('personal life') ? 1 : 2;
+      const bExact = bt === nameLower ? 0 : bt.includes(nameLower) && !bt.includes('career of') && !bt.includes('personal life') ? 1 : 2;
+      return aExact - bExact;
+    });
+
+    // Try each result until we find one with an infobox
+    for (const pg of sorted) {
+      const candidate = await fetchPage(pg.title);
+      if (candidate?.hasInfobox) return candidate;
+      // Keep the first result as fallback even without infobox
+      if (!result && candidate) result = candidate;
     }
 
-    // Step 2: Full article as plain text (explaintext=true) + wikitext for infobox + main image
-    const queryUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(pageTitle)}&prop=extracts|pageimages|revisions&exintro=false&explaintext=true&rvprop=content&rvslots=main&piprop=original&format=json&origin=*`;
-    const queryRes  = await fetch(queryUrl, { signal: AbortSignal.timeout(12000) });
-    const queryData = await queryRes.json();
+    // Strategy 3: Try common name variations
+    const variations = [
+      playerName,
+      // Handle accented names: try ASCII version
+      playerName.normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
+      // Try "Firstname Lastname (footballer)"
+      `${playerName} (footballer)`,
+      // Try "Firstname Lastname (association footballer)"
+      `${playerName} (association football)`
+    ];
+    for (const variant of variations) {
+      if (variant === playerName) continue; // already tried
+      const candidate = await fetchPage(variant);
+      if (candidate?.hasInfobox) return candidate;
+    }
 
-    const pagesObj = queryData?.query?.pages || {};
-    const pageId   = Object.keys(pagesObj)[0];
-    if (!pageId || pageId === '-1') return null;
-
-    const page     = pagesObj[pageId];
-    const extract  = page?.extract  || '';
-    const wikitext = page?.revisions?.[0]?.slots?.main?.['*'] || '';
-    const image    = page?.original?.source || '';
-    const title    = page?.title || playerName;
-    return { extract, wikitext, image, title, pageTitle };
+    return result; // return best we have even without infobox
   } catch(e) { console.error('Wiki fetch:', e); return null; }
 }
 
@@ -4918,24 +4954,18 @@ function _cleanWikiField(raw) {
   return raw
     .replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, '')
     .replace(/<ref[^/]*\/>/gi, '')
-    // {{nobold|text}} or {{nobold|text|...}}
     .replace(/\{\{[Nn]o[Bb]old\s*\|\s*([^|}]+)[^}]*\}\}/g, '$1')
-    // {{birth date and age|YYYY|M|D}} → "D Month YYYY (age N)"
-    .replace(/\{\{[Bb]irth[\s_][Dd]ate[\s_][Aa]nd[\s_][Aa]ge\s*\|\s*(\d{4})\s*\|\s*(\d{1,2})\s*\|\s*(\d{1,2})[^}]*\}\}/g, (_, y, m, d) => {
-      const months = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
-      return `${parseInt(d)} ${months[parseInt(m)]} ${y} (age ${new Date().getFullYear() - parseInt(y)})`;
+    .replace(/\{\{[Bb]irth[\s_][Dd]ate[\s_][Aa]nd[\s_][Aa]ge\s*\|\s*(\d{4})\s*\|\s*(\d{1,2})\s*\|\s*(\d{1,2})[^}]*\}\}/gi, (_, y, m, d) => {
+      const mo = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
+      return `${parseInt(d)} ${mo[parseInt(m)]} ${y} (age ${new Date().getFullYear() - parseInt(y)})`;
     })
-    // {{birth date|YYYY|M|D}}
-    .replace(/\{\{[Bb]irth[\s_][Dd]ate\s*\|\s*(\d{4})\s*\|\s*(\d{1,2})\s*\|\s*(\d{1,2})[^}]*\}\}/g, (_, y, m, d) => {
-      const months = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
-      return `${parseInt(d)} ${months[parseInt(m)]} ${y}`;
+    .replace(/\{\{[Bb]irth[\s_][Dd]ate\s*\|\s*(\d{4})\s*\|\s*(\d{1,2})\s*\|\s*(\d{1,2})[^}]*\}\}/gi, (_, y, m, d) => {
+      const mo = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
+      return `${parseInt(d)} ${mo[parseInt(m)]} ${y}`;
     })
-    // {{height|m=X.XX|...}} or {{convert|X|m|...}}
     .replace(/\{\{[Hh]eight\s*\|[^}]*?m\s*=\s*([\d.]+)[^}]*\}\}/g, '$1 m')
     .replace(/\{\{[Cc]onvert\s*\|\s*([\d.]+)\s*\|\s*([a-z]+)[^}]*\}\}/gi, '$1 $2')
-    // strip all remaining {{...}} — do two passes for nested
     .replace(/\{\{[^{}]*\}\}/g, '').replace(/\{\{[^{}]*\}\}/g, '')
-    // [[link|text]] → text,  [[link]] → link
     .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
     .replace(/\[\[([^\]]+)\]\]/g, '$1')
     .replace(/'{2,3}/g, '')
@@ -4945,27 +4975,25 @@ function _cleanWikiField(raw) {
     .trim();
 }
 
-/* ── Extract a numeric value only (first number found) ── */
+/* ── Extract first clean number from a raw wikitext field ── */
 function _numericField(raw) {
   if (!raw) return '';
-  // Strip refs, templates, markup first
   const clean = raw
     .replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, '')
     .replace(/<ref[^/]*\/>/gi, '')
     .replace(/\{\{[^{}]*\}\}/g, '').replace(/\{\{[^{}]*\}\}/g, '')
     .replace(/\[\[[^\]]*\]\]/g, '');
-  // Take only the first standalone number (ignore the rest — e.g. accumulated season totals)
-  const m = clean.match(/^[^0-9\-]*(-?\d+)/);
+  const m = clean.match(/(-?\d+)/);
   return m ? m[1] : '';
 }
 
-/* ── Parse infobox using brace-counting for correctness ── */
+/* ── Parse infobox using brace-counting (handles nested templates) ── */
 function _parseWikiInfobox(wikitext) {
   const info = {};
-  const ibStart = wikitext.search(/\{\{[Ii]nfobox\s+football\s+biography/);
+  const ibStart = wikitext.search(/\{\{[Ii]nfobox\s+football\s+bio/i);
   if (ibStart === -1) return info;
 
-  // Extract infobox block by counting {{ }}
+  // Extract full infobox block by counting braces
   let depth = 0, pos = ibStart, box = '';
   for (; pos < wikitext.length; pos++) {
     if (wikitext[pos] === '{' && wikitext[pos+1] === '{') { depth++; pos++; }
@@ -4976,7 +5004,7 @@ function _parseWikiInfobox(wikitext) {
   }
   if (!box) return info;
 
-  // Split into top-level fields by pipe not inside {{ or [[
+  // Split box into top-level pipe-delimited fields
   const fields = {};
   let cur = '', fd = 0;
   for (let ci = 0; ci < box.length; ci++) {
@@ -4995,7 +5023,7 @@ function _parseWikiInfobox(wikitext) {
   }
 
   const gf = k => _cleanWikiField(fields[k] || '');
-  const gn = k => _numericField(fields[k] || '');  // numeric-only
+  const gn = k => _numericField(fields[k] || '');
 
   info.fullname    = gf('fullname') || gf('name');
   info.birth_date  = gf('birth_date');
@@ -5006,14 +5034,13 @@ function _parseWikiInfobox(wikitext) {
   info.clubnumber  = gn('clubnumber') || gn('currentclubnumber');
   info.caption     = gf('caption');
 
-  // Youth career — numbered fields
+  // Youth career
   const youthClubs = [];
   for (let n = 1; n <= 12; n++) {
     const yc = gf('youthclubs' + n);
     const yy = gf('youthyears' + n);
     if (yc) youthClubs.push({ years: yy, club: yc });
   }
-  // fallback: multi-line single fields
   if (!youthClubs.length) {
     const ycLines = (fields['youthclubs'] || '').split(/\n/).map(s => _cleanWikiField(s)).filter(Boolean);
     const yyLines = (fields['youthyears'] || '').split(/\n/).map(s => _cleanWikiField(s)).filter(Boolean);
@@ -5021,7 +5048,7 @@ function _parseWikiInfobox(wikitext) {
   }
   info.youthClubs = youthClubs;
 
-  // Senior career — numbered fields, use _numericField for apps/goals
+  // Senior career
   const seniorClubs = [];
   for (let n = 1; n <= 20; n++) {
     const sc = gf('clubs' + n);
@@ -5067,15 +5094,15 @@ function _parseExtractSections(extract) {
       heading = (h2||h3)[1];
       level   = h3 ? 3 : 2;
       buf     = [];
-    } else {
-      buf.push(line);
-    }
+    } else { buf.push(line); }
   }
   if (buf.some(l => l.trim())) sections.push({ heading, level, lines: buf });
 
   const introSec = sections.find(s => s.heading === '__intro__');
-  const intro    = introSec ? introSec.lines.join('\n') : '';
-  return { intro, sections: sections.filter(s => s.heading !== '__intro__') };
+  return {
+    intro   : introSec ? introSec.lines.join('\n') : '',
+    sections: sections.filter(s => s.heading !== '__intro__')
+  };
 }
 
 /* ── Open full player profile overlay (Wikipedia-style) ── */
@@ -5137,14 +5164,12 @@ async function openPlayerProfile(playerId, fbName) {
   const photo       = p.photo || wikiData?.image || '';
   const displayName = wikiData?.title || playerName;
 
-  // Render paragraphs from plain text
   function renderText(text) {
-    return text.split('\n\n').map(p => p.trim()).filter(t => t.length > 30)
-      .map(p => `<p style="font-size:14px;color:var(--text2);line-height:1.75;margin:0 0 12px;">${p.replace(/\n/g,' ')}</p>`)
+    return text.split('\n\n').map(t => t.trim()).filter(t => t.length > 30)
+      .map(t => `<p style="font-size:14px;color:var(--text2);line-height:1.75;margin:0 0 12px;">${t.replace(/\n/g,' ')}</p>`)
       .join('');
   }
 
-  // All sections HTML
   const sectionsHtml = sections.map(sec => {
     const body = renderText(sec.lines.join('\n'));
     if (!body) return '';
@@ -5155,7 +5180,6 @@ async function openPlayerProfile(playerId, fbName) {
     return `<${tag} style="${style}">${sec.heading}</${tag}>${body}`;
   }).join('');
 
-  // Infobox row helpers
   const personalRows = [
     infobox.fullname                                         ? ['Full name',      infobox.fullname]                                       : null,
     infobox.birth_date                                       ? ['Date of birth',  infobox.birth_date]                                     : null,
@@ -5169,46 +5193,40 @@ async function openPlayerProfile(playerId, fbName) {
     (infobox.clubnumber  || main.games?.number) ? ['Number',       infobox.clubnumber  || main.games?.number] : null,
   ].filter(Boolean);
 
-  const sectionHdr = (title) =>
+  const sHdr = t =>
     `<div style="background:rgba(100,130,200,0.15);padding:8px 12px;border-bottom:1px solid var(--border);">
-       <span style="font-size:13px;font-weight:700;color:var(--text);">${title}</span>
-     </div>`;
+       <span style="font-size:13px;font-weight:700;color:var(--text);">${t}</span></div>`;
 
-  const infoTr = (label, val, blue) =>
+  const iTr = (label, val, blue) =>
     `<tr style="border-bottom:1px solid var(--border);">
        <td style="padding:9px 12px;font-size:13px;font-weight:700;color:var(--text);width:42%;vertical-align:top;">${label}</td>
-       <td style="padding:9px 12px;font-size:13px;color:${blue?'#6ba3e0':'var(--text2)'};vertical-align:top;">${val}</td>
-     </tr>`;
+       <td style="padding:9px 12px;font-size:13px;color:${blue?'#6ba3e0':'var(--text2)'};vertical-align:top;">${val}</td></tr>`;
 
-  const careerThead =
+  const cThead =
     `<tr style="background:var(--bg3);border-bottom:1px solid var(--border);">
        <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left;">Years</th>
        <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left;">Team</th>
        <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:center;">Apps</th>
-       <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:center;">(Gls)</th>
-     </tr>`;
+       <th style="padding:7px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:center;">(Gls)</th></tr>`;
 
   const youthRows  = (infobox.youthClubs  || []).map(c =>
     `<tr style="border-bottom:1px solid var(--border);">
        <td style="padding:8px 12px;font-size:13px;color:var(--text2);">${c.years}</td>
-       <td style="padding:8px 12px;font-size:13px;color:#6ba3e0;font-weight:500;" colspan="2">${c.club}</td>
-     </tr>`).join('');
+       <td style="padding:8px 12px;font-size:13px;color:#6ba3e0;font-weight:500;" colspan="2">${c.club}</td></tr>`).join('');
 
   const seniorRows = (infobox.seniorClubs || []).map(c =>
     `<tr style="border-bottom:1px solid var(--border);">
        <td style="padding:8px 12px;font-size:13px;color:var(--text2);">${c.years}</td>
        <td style="padding:8px 12px;font-size:13px;color:#6ba3e0;font-weight:500;">${c.club}</td>
        <td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">${c.apps||'&#8212;'}</td>
-       <td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">(${c.goals||'&#8212;'})</td>
-     </tr>`).join('');
+       <td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">(${c.goals||'&#8212;'})</td></tr>`).join('');
 
-  const intlRows   = (infobox.intlCareer  || []).map(c =>
+  const intlRows = (infobox.intlCareer || []).map(c =>
     `<tr style="border-bottom:1px solid var(--border);">
        <td style="padding:8px 12px;font-size:13px;color:var(--text2);">${c.years}</td>
        <td style="padding:8px 12px;font-size:13px;color:#6ba3e0;font-weight:500;">${c.team}</td>
        <td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">${c.apps||'&#8212;'}</td>
-       <td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">(${c.goals||'&#8212;'})</td>
-     </tr>`).join('');
+       <td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">(${c.goals||'&#8212;'})</td></tr>`).join('');
 
   overlay.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg2);">
@@ -5219,17 +5237,14 @@ async function openPlayerProfile(playerId, fbName) {
 
     <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0;">
 
-      <!-- Title -->
       <div style="padding:20px 16px 0;">
         <h1 style="font-size:26px;font-weight:700;color:var(--text);margin:0 0 16px;line-height:1.2;">${displayName}</h1>
       </div>
 
-      <!-- Full intro (all paragraphs, no cap) -->
       <div style="padding:0 16px;">
         ${intro ? renderText(intro) : `<p style="font-size:14px;color:var(--text3);font-style:italic;">No Wikipedia article found for this player.</p>`}
       </div>
 
-      <!-- Infobox card -->
       <div style="margin:12px 16px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg2);">
         <div style="padding:12px;text-align:center;border-bottom:1px solid var(--border);background:rgba(16,185,129,0.06);">
           <div style="font-size:15px;font-weight:700;color:var(--text);">${displayName}</div>
@@ -5240,11 +5255,11 @@ async function openPlayerProfile(playerId, fbName) {
           ${infobox.caption ? `<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4;">${infobox.caption}</div>` : ''}
         </div>` : ''}
 
-        ${personalRows.length ? sectionHdr('Personal information') + `<table style="width:100%;border-collapse:collapse;">${personalRows.map(([l,v])=>infoTr(l,v,false)).join('')}</table>` : ''}
-        ${teamRows.length     ? sectionHdr('Team information')     + `<table style="width:100%;border-collapse:collapse;">${teamRows.map(([l,v])=>infoTr(l,v,true)).join('')}</table>` : ''}
-        ${youthRows           ? sectionHdr('Youth career')         + `<table style="width:100%;border-collapse:collapse;">${youthRows}</table>` : ''}
-        ${seniorRows          ? sectionHdr('Senior career*')       + `<table style="width:100%;border-collapse:collapse;">${careerThead}${seniorRows}</table>` : ''}
-        ${intlRows            ? sectionHdr('International career&#8225;') + `<table style="width:100%;border-collapse:collapse;">${careerThead}${intlRows}</table>` : ''}
+        ${personalRows.length ? sHdr('Personal information') + `<table style="width:100%;border-collapse:collapse;">${personalRows.map(([l,v])=>iTr(l,v,false)).join('')}</table>` : ''}
+        ${teamRows.length     ? sHdr('Team information')     + `<table style="width:100%;border-collapse:collapse;">${teamRows.map(([l,v])=>iTr(l,v,true)).join('')}</table>`  : ''}
+        ${youthRows           ? sHdr('Youth career')         + `<table style="width:100%;border-collapse:collapse;">${youthRows}</table>`                                        : ''}
+        ${seniorRows          ? sHdr('Senior career*')       + `<table style="width:100%;border-collapse:collapse;">${cThead}${seniorRows}</table>`                              : ''}
+        ${intlRows            ? sHdr('International career&#8225;') + `<table style="width:100%;border-collapse:collapse;">${cThead}${intlRows}</table>`                         : ''}
 
         ${!personalRows.length && !youthRows && !seniorRows
           ? `<div style="padding:16px;text-align:center;color:var(--text3);font-size:13px;">Detailed infobox not available for this player on Wikipedia.</div>` : ''}
@@ -5254,9 +5269,7 @@ async function openPlayerProfile(playerId, fbName) {
         </div>
       </div>
 
-      <!-- All article sections to last full stop -->
       ${sectionsHtml ? `<div style="padding:0 16px 16px;">${sectionsHtml}</div>` : ''}
-
       <div style="height:40px;"></div>
     </div>`;
 }
