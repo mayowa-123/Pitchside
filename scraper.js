@@ -1,7 +1,6 @@
-const axios   = require('axios');
-const cheerio = require('cheerio');
-const admin   = require('firebase-admin');
-
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+import admin from 'firebase-admin';
 // ─── Firebase Init ────────────────────────────────────────────────────────────
 if (!admin.apps.length) {
     try {
