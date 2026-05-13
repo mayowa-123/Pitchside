@@ -1,4 +1,5 @@
-// ── Scorebat Free API Highlights ──────────────────────────────
+
+  // ── YouTube Highlights ──────────────────────────────────────────
 let _sbAllVideos = [];
 let _sbCurrentFilter = 'all';
 
@@ -11,7 +12,6 @@ async function loadSBHighlights(filter) {
   _sbAllVideos = [];
   _sbPage = 0;
 
-  // Update button styles
   document.querySelectorAll('[id^="sb-btn-"]').forEach(btn => {
     btn.style.background = 'var(--bg2)';
     btn.style.color = 'var(--text)';
@@ -29,22 +29,25 @@ async function loadSBHighlights(filter) {
   grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);"><div style="font-size:28px;">⚽</div><div style="margin-top:8px;font-size:14px;">Loading highlights...</div></div>';
 
   try {
-    const res = await fetch('https://www.scorebat.com/video-api/v3/');
+    const leagueMap = {
+      'ENGLAND: Premier League': 'Premier League highlights',
+      'SPAIN: La Liga': 'La Liga highlights',
+      'ITALY: Serie A': 'Serie A highlights',
+      'GERMANY: Bundesliga': 'Bundesliga highlights',
+      'UEFA: Champions League': 'Champions League highlights',
+      'FRANCE: Ligue 1': 'Ligue 1 highlights',
+    };
+    const query = leagueMap[filter] || 'football highlights today';
+    const res = await fetch(`/api/highlights?query=${encodeURIComponent(query)}`);
     const data = await res.json();
-    _sbAllVideos = data.response || data || [];
-
-    _sbFiltered = filter === 'all' ? _sbAllVideos :
-      _sbAllVideos.filter(v =>
-        (v.competition || '').toLowerCase().includes(filter.split(': ')[1]?.toLowerCase() || filter.toLowerCase())
-      );
+    _sbAllVideos = data.videos || [];
+    _sbFiltered = _sbAllVideos;
 
     if (!_sbFiltered.length) {
-      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">No highlights found for this league right now.</div>';
+      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">No highlights found right now.</div>';
       return;
     }
-
     renderSBPage(true);
-
   } catch(e) {
     grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">Could not load highlights. Please try again.</div>`;
   }
@@ -55,15 +58,15 @@ function renderSBPage(reset) {
   const start = _sbPage * _sbPageSize;
   const end = start + _sbPageSize;
   const slice = _sbFiltered.slice(start, end);
-  const hasMore = _sbFiltered.length > end || _sbFiltered.length === _sbAllVideos.length;
+  const hasMore = _sbFiltered.length > end;
 
   const cards = slice.map(v => {
     const thumb = v.thumbnail || 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽';
     const title = (v.title || 'Highlight').replace(/'/g, "\\'");
-    const embed = (v.videos?.[0]?.embed || v.embed || '').replace(/'/g, "\\'");
-    const comp = v.competition || '';
+    const videoId = v.videoId || '';
+    const channel = v.channel || '';
     return `
-      <div onclick="openSBPlayer('${title}','${embed}')" style="cursor:pointer;border-radius:12px;overflow:hidden;background:var(--bg2);box-shadow:var(--shadow-md);">
+      <div onclick="openSBPlayer('${title}','${videoId}')" style="cursor:pointer;border-radius:12px;overflow:hidden;background:var(--bg2);box-shadow:var(--shadow-md);">
         <div style="position:relative;aspect-ratio:16/9;background:#111;">
           <img src="${thumb}" style="width:100%;height:100%;object-fit:cover;" onerror="this.src='https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽'">
           <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
@@ -73,16 +76,16 @@ function renderSBPage(reset) {
           </div>
         </div>
         <div style="padding:8px;">
-          <div style="font-size:11px;color:var(--green);font-weight:600;margin-bottom:3px;">${comp}</div>
+          <div style="font-size:11px;color:var(--green);font-weight:600;margin-bottom:3px;">${channel}</div>
           <div style="font-size:12px;color:var(--text);font-weight:500;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${v.title || 'Highlight'}</div>
         </div>
       </div>`;
   }).join('');
 
-  const loadMoreBtn = `
+  const loadMoreBtn = hasMore ? `
     <div id="sb-load-more-wrap" style="grid-column:1/-1;text-align:center;padding:16px 16px 120px;">
       <button onclick="sbLoadMore()" style="padding:10px 32px;border-radius:20px;border:none;background:var(--green);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Load More</button>
-    </div>`;
+    </div>` : '';
 
   if (reset) {
     grid.innerHTML = cards + loadMoreBtn;
@@ -93,58 +96,24 @@ function renderSBPage(reset) {
   }
 }
 
-let _sbApiPage = 1;
-
 async function sbLoadMore() {
   _sbPage++;
-
-  // If we still have local videos to show
   if (_sbPage * _sbPageSize < _sbFiltered.length) {
     renderSBPage(false);
     return;
   }
-
-  // Fetch next page from Scorebat
-  const btn = document.querySelector('#sb-load-more-wrap button');
-  if (btn) btn.textContent = 'Loading...';
-
-  try {
-    _sbApiPage++;
-    const res = await fetch(`https://www.scorebat.com/video-api/v3/?page=${_sbApiPage}`);
-    const data = await res.json();
-    const newVideos = data.response || data || [];
-
-    if (!newVideos.length) {
-      const wrap = document.getElementById('sb-load-more-wrap');
-      if (wrap) wrap.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:10px;">All highlights loaded!</div>';
-      return;
-    }
-
-    _sbAllVideos = [..._sbAllVideos, ...newVideos];
-    _sbFiltered = _sbCurrentFilter === 'all' ? _sbAllVideos :
-      _sbAllVideos.filter(v =>
-        (v.competition || '').toLowerCase().includes(_sbCurrentFilter.split(': ')[1]?.toLowerCase() || _sbCurrentFilter.toLowerCase())
-      );
-
-    renderSBPage(false);
-  } catch(e) {
-    if (btn) btn.textContent = 'Load More';
-  }
+  const wrap = document.getElementById('sb-load-more-wrap');
+  if (wrap) wrap.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:10px;">All highlights loaded!</div>';
 }
 
-function openSBPlayer(title, embedHtml) {
+function openSBPlayer(title, videoId) {
   const overlay = document.getElementById('sb-player-overlay');
   document.getElementById('sb-player-title').textContent = title;
   const body = document.getElementById('sb-player-body');
-  const srcMatch = embedHtml.match(/src=["']([^"']+)["']/);
-  const src = srcMatch ? srcMatch[1] : embedHtml;
-  const cleanSrc = src.includes('youtube') || src.includes('youtu.be')
-    ? src + (src.includes('?') ? '&' : '?') + 'rel=0&modestbranding=1&showinfo=0'
-    : src;
+  const src = `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
   body.innerHTML = `
     <div style="position:relative;width:100%;height:100%;">
-      <iframe src="${cleanSrc}" width="100%" height="100%" style="border:none;display:block;height:100%;" allowfullscreen allow="autoplay; fullscreen"></iframe>
-      <!-- Cover only YouTube bottom bar - moved up more -->
+      <iframe src="${src}" width="100%" height="100%" style="border:none;display:block;height:100%;" allowfullscreen allow="autoplay; fullscreen"></iframe>
       <div style="position:absolute;bottom:0;left:0;right:0;height:50px;background:#000;pointer-events:none;z-index:10;"></div>
     </div>`;
   overlay.style.display = 'flex';
