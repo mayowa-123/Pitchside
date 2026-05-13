@@ -166,6 +166,72 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 });
+// ── Scorebat Free API Highlights ──────────────────────────────
+let _sbAllVideos = [];
+let _sbCurrentFilter = 'all';
+
+let _sbPage = 0;
+const _sbPageSize = 20;
+let _sbFiltered = [];
+
+async function loadSBHighlights(filter) {
+  _sbCurrentFilter = filter;
+  _sbAllVideos = [];
+  _sbPage = 0;
+
+  // Update button styles
+  document.querySelectorAll('[id^="sb-btn-"]').forEach(btn => {
+    btn.style.background = 'var(--bg2)';
+    btn.style.color = 'var(--text)';
+  });
+  const btnMap = {
+    'all': 'all', 'ENGLAND: Premier League': 'pl', 'SPAIN: La Liga': 'll',
+    'ITALY: Serie A': 'sa', 'GERMANY: Bundesliga': 'bl',
+    'UEFA: Champions League': 'cl', 'FRANCE: Ligue 1': 'l1'
+  };
+  const activeId = 'sb-btn-' + (btnMap[filter] || 'all');
+  const activeBtn = document.getElementById(activeId);
+  if (activeBtn) { activeBtn.style.background = 'var(--green)'; activeBtn.style.color = '#fff'; }
+
+  const grid = document.getElementById('sb-video-grid');
+  grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);"><div style="font-size:28px;">⚽</div><div style="margin-top:8px;font-size:14px;">Loading highlights...</div></div>';
+
+  try {
+    const res = await fetch('https://www.scorebat.com/video-api/v3/');
+    const data = await res.json();
+    _sbAllVideos = data.response || data || [];
+
+    _sbFiltered = filter === 'all' ? _sbAllVideos :
+      _sbAllVideos.filter(v =>
+        (v.competition || '').toLowerCase().includes(filter.split(': ')[1]?.toLowerCase() || filter.toLowerCase())
+      );
+
+    if (!_sbFiltered.length) {
+      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">No highlights found for this league right now.</div>';
+      return;
+    }
+
+    renderSBPage(true);
+
+  } catch(e) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">Could not load highlights. Please try again.</div>`;
+  }
+}
+
+function renderSBPage(reset) {
+  const grid = document.getElementById('sb-video-grid');
+  const start = _sbPage * _sbPageSize;
+  const end = start + _sbPageSize;
+  const slice = _sbFiltered.slice(start, end);
+  const hasMore = _sbFiltered.length > end || _sbFiltered.length === _sbAllVideos.length;
+
+  const cards = slice.map(v => {
+    const thumb = v.thumbnail || 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽';
+    const title = (v.title || 'Highlight').replace(/'/g, "\\'");
+    const embed = (v.videos?.[0]?.embed || v.embed || '').replace(/'/g, "\\'");
+    const comp = v.competition || '';
+    return `
+
 
 /* ═══════════════════════════════════════════
    LIVE SCORES ENGINE
