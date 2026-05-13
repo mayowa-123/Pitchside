@@ -37,12 +37,30 @@ async function loadSBHighlights(filter) {
       'UEFA: Champions League': 'Champions League highlights',
       'FRANCE: Ligue 1': 'Ligue 1 highlights',
     };
-    const query = leagueMap[filter] || 'football highlights today';
-    const res = await fetch(`/api/highlights?query=${encodeURIComponent(query)}`);
-    const data = await res.json();
-    _sbAllVideos = data.videos || [];
+    const cacheKey = `ps_hl_${query}`;
+const cached = localStorage.getItem(cacheKey);
+if (cached) {
+  const { videos, cachedAt } = JSON.parse(cached);
+  const age = Date.now() - cachedAt;
+  if (age < 2 * 60 * 60 * 1000) {
+    _sbAllVideos = videos;
     _sbFiltered = _sbAllVideos;
-
+    if (!_sbFiltered.length) {
+      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">No highlights found right now.</div>';
+      return;
+    }
+    renderSBPage(true);
+    return;
+  }
+}
+const res = await fetch(`/api/highlights?query=${encodeURIComponent(query)}`);
+const data = await res.json();
+_sbAllVideos = data.videos || [];
+_sbFiltered = _sbAllVideos;
+localStorage.setItem(cacheKey, JSON.stringify({
+  videos: _sbAllVideos,
+  cachedAt: data.cachedAt || Date.now()
+}));
     if (!_sbFiltered.length) {
       grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">No highlights found right now.</div>';
       return;
