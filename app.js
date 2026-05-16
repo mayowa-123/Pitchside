@@ -37,7 +37,7 @@ async function loadSBHighlights(filter) {
       'UEFA: Champions League': 'Champions League highlights',
       'FRANCE: Ligue 1': 'Ligue 1 highlights',
     };
-    const query = filter === 'all' ? '' : (leagueMap[filter] || filter):
+const query = filter === 'all' ? '' : (leagueMap[filter] || filter);
 const cacheKey = `ps_hl_${query}`;
 try {
   const cached = localStorage.getItem(cacheKey);
