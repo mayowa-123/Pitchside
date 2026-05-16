@@ -16,7 +16,7 @@ const db = admin.firestore();
 
 // ─── HTTP client ──────────────────────────────────────────────────────────────
 const HTTP = axios.create({
-    timeout: 20000,
+    timeout: 45000,
     maxRedirects: 5,
     headers: {
         'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
