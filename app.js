@@ -4265,129 +4265,140 @@ function renderNews(cat) { _renderNewsFiltered(cat); }
 window._activateNewsListener = _activateNewsListener;
 
 /* ═══════════════════════════════════════════
-   NPFL
+   SCORES PAGE
 ═══════════════════════════════════════════ */
-/* ═══════════════════════════════════════════
-   NPFL — Live data from API-Football
-   League ID 332 = Nigeria Professional Football League
-   Auto-refreshes every 60 seconds when page is open
-═══════════════════════════════════════════ */
-const NPFL_LEAGUE_ID  = 332;
-const NPFL_SEASON     = 2024;
-const APIFOOTBALL_KEY = ''; // Secured in Netlify
-let   _npflRefreshInterval = null;
-let   _npflCurrentTab      = 'npfl-fixtures';
 
-/* ── Spinner HTML ── */
-function _npflSpinner(msg) {
+let _scoresCurrentTab = 'scores-top';
+let _scoresRefreshInterval = null;
+
+function _scoresSpinner(msg) {
   return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px;gap:12px;">
     <div style="position:relative;width:52px;height:52px;">
       <div style="width:52px;height:52px;border-radius:50%;border:3px solid rgba(16,185,129,0.15);border-top-color:#10b981;animation:spin .9s linear infinite;position:absolute;inset:0;"></div>
-      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;">🇳🇬</div>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;">⚽</div>
     </div>
-    <div style="font-size:13px;color:var(--text2);font-weight:600;">${msg || 'Loading NPFL data…'}</div>
+    <div style="font-size:13px;color:var(--text2);font-weight:600;">${msg || 'Loading…'}</div>
   </div>`;
 }
 
-/* ── Show spinner in all three tabs ── */
-function _npflShowLoading() {
-  ['npfl-fixtures','npfl-standings','npfl-results'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = _npflSpinner();
-  });
-}
-
-/* ── Map API status to our badge classes ── */
-function _npflStatusClass(short) {
-  if (['1H','2H','ET','BT','P','INT','LIVE'].includes(short)) return 'npfl-live';
-  if (short === 'FT' || short === 'AET' || short === 'PEN')   return 'npfl-ft';
-  return 'npfl-ns';
-}
-function _npflStatusLabel(f) {
-  const s = f.fixture.status;
-  if (['1H','2H','ET','BT','P','INT'].includes(s.short)) return `${s.elapsed || ''}' LIVE`;
-  if (s.short === 'HT') return 'HT';
-  if (s.short === 'FT') return 'FT';
-  if (s.short === 'NS') {
-    const d = new Date(f.fixture.date);
-    return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+function _renderStandingsTable(standings, container) {
+  if (!standings || !standings.length) {
+    document.getElementById(container).innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">No standings available</div>';
+    return;
   }
-  return s.short || 'NS';
-}
+  const hdr = `<div class="stand-row stand-hdr">
+    <div class="stand-pos">#</div>
+    <div class="stand-team">Club</div>
+    <div class="stand-stat">P</div>
+    <div class="stand-stat">W</div>
+    <div class="stand-stat">D</div>
+    <div class="stand-stat">L</div>
+    <div class="stand-stat">GD</div>
+    <div class="stand-pts">Pts</div>
+  </div>`;
 
-/* ── Render a single match row ── */
-function _npflRenderMatch(f) {
-  const isLive  = ['1H','2H','ET','HT','BT','P','INT'].includes(f.fixture.status.short);
-  const isFT    = ['FT','AET','PEN'].includes(f.fixture.status.short);
-  const hasScore = f.goals.home !== null;
-  const statusCls = _npflStatusClass(f.fixture.status.short);
-  const label     = _npflStatusLabel(f);
-
-  const scoreHTML = hasScore
-    ? `<div class="npfl-score">${f.goals.home}</div><div class="npfl-score">${f.goals.away}</div>`
-    : `<div style="font-size:11px;color:var(--text3);line-height:1.5;">${label}</div>`;
-
-  const homeWin = hasScore && f.goals.home > f.goals.away;
-  const awayWin = hasScore && f.goals.away > f.goals.home;
-
-  return `
-    <div class="npfl-match">
-      ${isLive ? `<div style="width:6px;height:6px;background:var(--red-live);border-radius:50%;animation:blink 1s infinite;flex-shrink:0;"></div>` : ''}
-      <div class="npfl-teams">
-        <div class="npfl-team-row" style="${homeWin ? 'font-weight:800;' : ''}">
-          <img src="${f.teams.home.logo}" style="width:22px;height:22px;object-fit:contain;border-radius:3px;"
-               onerror="this.style.display='none'">
-          ${f.teams.home.name}
-        </div>
-        <div class="npfl-team-row" style="${awayWin ? 'font-weight:800;' : ''}">
-          <img src="${f.teams.away.logo}" style="width:22px;height:22px;object-fit:contain;border-radius:3px;"
-               onerror="this.style.display='none'">
-          ${f.teams.away.name}
-        </div>
-      </div>
-      <div class="npfl-score-col">
-        ${scoreHTML}
-        ${hasScore ? `<span class="npfl-status-badge ${statusCls}">${label}</span>` : ''}
-      </div>
+  const rows = standings.map((t, i) => {
+    const pos = t.rank || (i + 1);
+    const gd = parseInt(t.goalDifference || 0);
+    const gdStr = gd > 0 ? `+${gd}` : `${gd}`;
+    const hl = pos <= 3 ? 'color:var(--blue);font-weight:800;' : '';
+    const badge = t.badge ? `<img src="${t.badge}" style="width:18px;height:18px;object-fit:contain;" onerror="this.style.display='none'">` : '🏟';
+    return `<div class="stand-row">
+      <div class="stand-pos" style="${hl}">${pos}</div>
+      <div class="stand-team">${badge} <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;">${t.team}</span></div>
+      <div class="stand-stat">${t.played}</div>
+      <div class="stand-stat">${t.won}</div>
+      <div class="stand-stat">${t.drawn}</div>
+      <div class="stand-stat">${t.lost}</div>
+      <div class="stand-stat">${gdStr}</div>
+      <div class="stand-pts" style="${hl}">${t.points}</div>
     </div>`;
+  }).join('');
+
+  document.getElementById(container).innerHTML = hdr + rows;
 }
 
-/* ── Fetch fixtures for today + upcoming ── */
-/* ── Convert a Firebase npfl_fixtures doc into the shape _npflRenderMatch() expects ── */
-function _fbFixtureToApiShape(d) {
-  const statusMap = { upcoming:'NS', live:'1H', halftime:'HT', finished:'FT', result:'FT', postponed:'PST' };
-  const short = statusMap[d.status] || d.status || 'NS';
-  return {
-    fixture: {
-      id:     d.eventId || d._dedup || '',
-      date:   d.date ? d.date + 'T' + (d.time || '14:00') + ':00' : null,
-      status: { short, elapsed: null },
-      venue:  { name: d.venue || '' }
-    },
-    league: { id: 332, name: d.league || 'NPFL', country: d.country || 'Nigeria', logo: '', flag: '' },
-    teams: {
-      home: { id: 0, name: d.homeTeam || '—', logo: '' },
-      away: { id: 0, name: d.awayTeam || '—', logo: '' }
-    },
-    goals: {
-      home: (d.homeScore !== undefined && d.homeScore !== null) ? d.homeScore : null,
-      away: (d.awayScore !== undefined && d.awayScore !== null) ? d.awayScore : null
+async function loadLeagueStandings(leagueId) {
+  const el = document.getElementById('top-standings-body');
+  el.innerHTML = _scoresSpinner('Loading standings…');
+  try {
+    const res = await fetch(`/api/standings?league=${leagueId}&season=2025-2026`);
+    const data = await res.json();
+    _renderStandingsTable(data.standings, 'top-standings-body');
+  } catch(e) {
+    el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load standings</div>';
+  }
+}
+
+async function _loadNpflStandings() {
+  const el = document.getElementById('npfl-standings-body');
+  if (!el) return;
+  el.innerHTML = _scoresSpinner('Loading NPFL standings…');
+  try {
+    const { collection, getDocs, db } = await waitForFs();
+    const snap = await getDocs(collection(db, 'npfl_standings'));
+    if (snap.empty) {
+      el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">No NPFL data available</div>';
+      return;
     }
-  };
+    const rows = snap.docs.map(d => {
+      const t = d.data();
+      return {
+        rank: parseInt(t.rank ?? 0, 10),
+        team: t.team || d.id || '—',
+        played: parseInt(t.played ?? 0, 10),
+        won: parseInt(t.won ?? 0, 10),
+        drawn: parseInt(t.drawn ?? 0, 10),
+        lost: parseInt(t.lost ?? 0, 10),
+        goalDifference: parseInt(t.goalsFor ?? 0, 10) - parseInt(t.goalsAgainst ?? 0, 10),
+        points: parseInt(t.points ?? 0, 10),
+      };
+    });
+    rows.sort((a, b) => (b.points - a.points) || (b.goalDifference - a.goalDifference));
+    _renderStandingsTable(rows, 'npfl-standings-body');
+  } catch(e) {
+    el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load NPFL standings</div>';
+  }
 }
 
-/* ══════════════════════════════════════════════════════
-   NPFL DATA — Firestore ONLY. Zero connection to any global API.
-   Source: npfl_fixtures · npfl_results · npfl_standings
-   Written exclusively by the GitHub Action scraper bot.
-   Numbers stored as strings by the bot → always use parseInt().
-════════════════════════════════════════════════════════ */
+async function _loadU17Standings() {
+  const el = document.getElementById('u17-standings-body');
+  if (!el) return;
+  el.innerHTML = _scoresSpinner('Loading U-17 data…');
+  try {
+    // TheSportsDB league ID for FIFA U-17 World Cup
+    const res = await fetch(`/api/standings?league=4936&season=2025-2026`);
+    const data = await res.json();
+    if (data.standings && data.standings.length) {
+      _renderStandingsTable(data.standings, 'u17-standings-body');
+    } else {
+      el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">U-17 tournament data coming soon</div>';
+    }
+  } catch(e) {
+    el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">U-17 data not available right now</div>';
+  }
+}
 
-/**
- * waitForFs()
- * Polls until window._psFs is ready (set by the Firebase module script).
- * Resolves immediately if already available. Rejects after 10 s.
- */
+function initNpfl() {
+  // Load top leagues by default
+  loadLeagueStandings('4328');
+  _loadNpflStandings();
+  _loadU17Standings();
+  if (_scoresRefreshInterval) clearInterval(_scoresRefreshInterval);
+  _scoresRefreshInterval = setInterval(() => {
+    const select = document.getElementById('league-select');
+    if (select) loadLeagueStandings(select.value);
+  }, 300000); // refresh every 5 minutes
+}
+
+function switchNpflTab(el, tabId) {
+  _scoresCurrentTab = tabId;
+  document.querySelectorAll('.npfl-tab').forEach(t => t.classList.remove('on'));
+  document.querySelectorAll('.npfl-content').forEach(c => c.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById(tabId).classList.add('on');
+}
+
 function waitForFs() {
   return new Promise((resolve, reject) => {
     if (window._psFs && window._psFs.db) { resolve(window._psFs); return; }
@@ -4396,7 +4407,7 @@ function waitForFs() {
       if (window._psFs && window._psFs.db) {
         clearInterval(iv);
         resolve(window._psFs);
-      } else if (++tries > 100) {   // 100 × 100ms = 10s
+      } else if (++tries > 100) {
         clearInterval(iv);
         reject(new Error('Firebase not ready after 10s'));
       }
@@ -4404,243 +4415,7 @@ function waitForFs() {
   });
 }
 
-const _NPFL_UPDATING = `
-  <div style="display:flex;flex-direction:column;align-items:center;
-              justify-content:center;padding:48px 24px;gap:10px;">
-    <div style="font-size:30px;">🇳🇬</div>
-    <div style="font-size:13px;font-weight:700;color:var(--text2);">Updating Live NPFL Data…</div>
-    <div style="font-size:11px;color:var(--text3);">Check back shortly</div>
-  </div>`;
-
-/* ── renderNPFLOnly ────────────────────────────────────────────────
-   The single entry-point for ALL NPFL screen data.
-   Reads ONLY from Firestore. No Scorebat. No /api/football.
-   Called by initNpfl() and switchPage() when pageId === 'npfl'.
-─────────────────────────────────────────────────────────────────── */
-async function renderNPFLOnly() {
-  await Promise.all([
-    _npflFetchFixtures(),
-    _npflFetchResults(),
-    _npflFetchStandings(),
-  ]);
-}
-
-async function _npflFetchFixtures() {
-  const el = document.getElementById('npfl-fixtures');
-  if (!el) return;
-  el.innerHTML = _npflSpinner('Loading NPFL fixtures…');
-  try {
-    const { collection, getDocs, db } = await waitForFs();
-    const snap = await getDocs(collection(db, 'npfl_fixtures'));
-    if (snap.empty) { el.innerHTML = _NPFL_UPDATING; return; }
-
-    const all      = snap.docs.map(d => d.data());
-    const live     = all.filter(f => (f.status || '').toLowerCase() === 'live');
-    const upcoming = all.filter(f => (f.status || '').toLowerCase() !== 'live');
-    let html = '';
-
-    if (live.length) {
-      html += `<div style="background:rgba(244,63,94,0.08);border-bottom:1px solid rgba(244,63,94,0.2);padding:8px 14px;">
-        <span style="font-size:10px;font-weight:800;color:var(--red-live);letter-spacing:.06em;">🔴 LIVE NOW</span>
-      </div>`;
-      html += live.map(f => {
-        const hScore   = f.homeScore != null ? parseInt(f.homeScore, 10) : null;
-        const aScore   = f.awayScore != null ? parseInt(f.awayScore, 10) : null;
-        const hasScore = hScore !== null && aScore !== null;
-        return `<div class="npfl-match">
-          <div style="width:6px;height:6px;background:var(--red-live);border-radius:50%;
-                      animation:blink 1s infinite;flex-shrink:0;"></div>
-          <div class="npfl-teams">
-            <div class="npfl-team-row"
-                 style="${hasScore && hScore > aScore ? 'font-weight:800;' : ''}">
-              🏟 ${f.homeTeam || f.home || '—'}
-            </div>
-            <div class="npfl-team-row"
-                 style="${hasScore && aScore > hScore ? 'font-weight:800;' : ''}">
-              🏟 ${f.awayTeam || f.away || '—'}
-            </div>
-          </div>
-          <div class="npfl-score-col">
-            ${hasScore
-              ? `<div class="npfl-score">${hScore}</div><div class="npfl-score">${aScore}</div>`
-              : ''}
-            <span class="npfl-status-badge npfl-live">LIVE</span>
-          </div>
-        </div>`;
-      }).join('');
-      if (upcoming.length) {
-        html += `<div style="background:var(--bg2);border-bottom:1px solid var(--border);padding:8px 14px;">
-          <span style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;">UPCOMING</span>
-        </div>`;
-      }
-    }
-
-    html += upcoming.map(f => `
-      <div class="npfl-match">
-        <div class="npfl-teams">
-          <div class="npfl-team-row">🏟 ${f.homeTeam || f.home || '—'}</div>
-          <div class="npfl-team-row">🏟 ${f.awayTeam || f.away || '—'}</div>
-        </div>
-        <div class="npfl-score-col">
-          <div style="font-size:11px;color:var(--text3);text-align:center;line-height:1.6;">${f.date || ''}</div>
-          <div style="font-size:11px;color:var(--blue);font-weight:700;text-align:center;">${f.time || ''}</div>
-        </div>
-      </div>`).join('');
-
-    el.innerHTML = html || _NPFL_UPDATING;
-  } catch(e) {
-    console.error('[NPFL] Fixtures error:', e);
-    el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load fixtures</div>';
-  }
-}
-
-async function _npflFetchResults() {
-  const el = document.getElementById('npfl-results');
-  if (!el) return;
-  el.innerHTML = _npflSpinner('Loading results…');
-  try {
-    const { collection, getDocs, db } = await waitForFs();
-    const snap = await getDocs(collection(db, 'npfl_results'));
-    if (snap.empty) { el.innerHTML = _NPFL_UPDATING; return; }
-
-    el.innerHTML = snap.docs.map(d => {
-      const r      = d.data();
-      // parseInt: bot stores scores as strings e.g. "2"
-      const hScore = parseInt(r.homeScore ?? r.home_score ?? r.scoreH ?? 0, 10);
-      const aScore = parseInt(r.awayScore ?? r.away_score ?? r.scoreA ?? 0, 10);
-      const home   = r.homeTeam || r.home_team || r.home || '—';
-      const away   = r.awayTeam || r.away_team || r.away || '—';
-      return `<div class="npfl-match">
-        <div class="npfl-teams">
-          <div class="npfl-team-row" style="${hScore > aScore ? 'font-weight:800;' : ''}">🏟 ${home}</div>
-          <div class="npfl-team-row" style="${aScore > hScore ? 'font-weight:800;' : ''}">🏟 ${away}</div>
-        </div>
-        <div class="npfl-score-col">
-          <div class="npfl-score">${hScore}</div>
-          <div class="npfl-score">${aScore}</div>
-          <span class="npfl-status-badge npfl-ft">FT</span>
-        </div>
-      </div>`;
-    }).join('');
-  } catch(e) {
-    console.error('[NPFL] Results error:', e);
-    el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load results</div>';
-  }
-}
-
-async function _npflFetchStandings() {
-  const el = document.getElementById('npfl-standings');
-  if (!el) return;
-  el.innerHTML = _npflSpinner('Loading standings…');
-  try {
-    const { collection, getDocs, db } = await waitForFs();
-    const snap = await getDocs(collection(db, 'npfl_standings'));
-    if (snap.empty) { el.innerHTML = _NPFL_UPDATING; return; }
-
-    // parseInt every numeric field — bot stores all numbers as strings e.g. "55"
-    const rows = snap.docs.map(d => {
-      const t = d.data();
-      return {
-        team:   t.team   || t.name   || t.club   || d.id || '—',
-        played: parseInt(t.played   ?? t.p    ?? t.mp      ?? 0, 10),
-        won:    parseInt(t.won      ?? t.w    ?? t.wins    ?? 0, 10),
-        drawn:  parseInt(t.drawn    ?? t.d    ?? t.draws   ?? 0, 10),
-        lost:   parseInt(t.lost     ?? t.l    ?? t.losses  ?? 0, 10),
-        gf:     parseInt(t.goalsFor    ?? t.gf  ?? 0, 10),
-        ga:     parseInt(t.goalsAgainst ?? t.ga ?? 0, 10),
-        points: parseInt(t.points   ?? t.pts  ?? 0, 10),  // ← string "55" → number 55
-      };
-    });
-
-    // Pure numeric sort — works correctly because parseInt was applied above
-    rows.sort((a, b) => (b.points - a.points) || ((b.gf - b.ga) - (a.gf - a.ga)));
-
-    const hdr = `<div class="stand-row stand-hdr">
-      <div class="stand-pos">#</div>
-      <div class="stand-team">Club</div>
-      <div class="stand-stat">P</div>
-      <div class="stand-stat">W</div>
-      <div class="stand-stat">D</div>
-      <div class="stand-stat">L</div>
-      <div class="stand-stat">GD</div>
-      <div class="stand-pts">Pts</div>
-    </div>`;
-
-    const rowsHtml = rows.map((t, i) => {
-      const pos   = i + 1;
-      const gd    = t.gf - t.ga;
-      const gdStr = gd > 0 ? `+${gd}` : `${gd}`;
-      const hl    = pos <= 3 ? 'color:var(--blue);font-weight:800;' : '';
-      return `<div class="stand-row">
-        <div class="stand-pos" style="${hl}">${pos}</div>
-        <div class="stand-team">🏟 <span style="white-space:nowrap;overflow:hidden;
-             text-overflow:ellipsis;max-width:110px;">${t.team}</span></div>
-        <div class="stand-stat">${t.played}</div>
-        <div class="stand-stat">${t.won}</div>
-        <div class="stand-stat">${t.drawn}</div>
-        <div class="stand-stat">${t.lost}</div>
-        <div class="stand-stat">${gdStr}</div>
-        <div class="stand-pts" style="${hl}">${t.points}</div>
-      </div>`;
-    }).join('');
-
-    el.innerHTML = hdr + rowsHtml;
-  } catch(e) {
-    console.error('[NPFL] Standings error:', e);
-    el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load standings</div>';
-  }
-}
-/* ── Also fetch any live NPFL matches ── */
-async function _npflFetchLive() {
-  try {
-    const { collection, getDocs, query: fsQuery, where, db } = await waitForFs();
-    const q = fsQuery(
-      collection(db, 'npfl_fixtures'),
-      where('status', '==', 'live')
-    );
-    const snap = await getDocs(q);
-    const live = snap.docs.map(d => _fbFixtureToApiShape(d.data()));
-    if (!live.length) return;
-    const el = document.getElementById('npfl-fixtures');
-    if (!el) return;
-    const liveHTML = `
-      <div style="background:rgba(244,63,94,0.08);border-bottom:1px solid rgba(244,63,94,0.2);padding:8px 14px;">
-        <span style="font-size:10px;font-weight:800;color:var(--red-live);letter-spacing:.06em;">🔴 LIVE NOW</span>
-      </div>
-      ${live.map(_npflRenderMatch).join('')}
-      <div style="background:var(--bg2);border-bottom:1px solid var(--border);padding:8px 14px;">
-        <span style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;">UPCOMING</span>
-      </div>`;
-    const existing = el.innerHTML;
-    if (!existing.includes('LIVE NOW')) {
-      el.innerHTML = liveHTML + existing;
-    }
-  } catch(_) {}
-}
-
-/* ── Main init — called when user taps NPFL nav or switchPage fires ── */
-function initNpfl() {
-  _npflShowLoading();
-  // renderNPFLOnly: Firestore-only, zero connection to any global API
-  renderNPFLOnly();
-  // Auto-refresh every 60 seconds — Firestore reads only
-  if (_npflRefreshInterval) clearInterval(_npflRefreshInterval);
-  _npflRefreshInterval = setInterval(() => {
-    renderNPFLOnly();
-  }, 60000);
-}
-
-function switchNpflTab(el, tabId) {
-  _npflCurrentTab = tabId;
-  document.querySelectorAll('.npfl-tab').forEach(t => t.classList.remove('on'));
-  document.querySelectorAll('.npfl-content').forEach(c => c.classList.remove('on'));
-  el.classList.add('on');
-  document.getElementById(tabId).classList.add('on');
-}
-
-// Legacy stub kept so nothing breaks if called elsewhere
 function renderNpflMatch(m) { return ''; }
-
 /* ═══════════════════════════════════════════
    PLAYER SEARCH — Real data from API-Football
    Searches players by name, returns real stats,
