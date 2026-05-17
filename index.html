@@ -707,20 +707,42 @@
   </div>
 </div>
 
-<!-- NPFL PAGE -->
+<!-- SCORES PAGE -->
 <div id="page-npfl" class="page">
   <div class="npfl-hero">
-    <h2>🇳🇬 NPFL SCORES</h2>
-    <p>Nigeria Professional Football League</p>
+    <h2>⚽ SCORES</h2>
+    <p>Live standings from top football leagues</p>
   </div>
   <div class="npfl-tabs">
-    <div class="npfl-tab on" onclick="switchNpflTab(this,'npfl-fixtures')">Fixtures</div>
-    <div class="npfl-tab" onclick="switchNpflTab(this,'npfl-standings')">Table</div>
-    <div class="npfl-tab" onclick="switchNpflTab(this,'npfl-results')">Results</div>
+    <div class="npfl-tab on" onclick="switchNpflTab(this,'scores-top')">Top Leagues</div>
+    <div class="npfl-tab" onclick="switchNpflTab(this,'scores-npfl')">NPFL</div>
+    <div class="npfl-tab" onclick="switchNpflTab(this,'scores-u17')">U-17</div>
   </div>
-  <div id="npfl-fixtures" class="npfl-content on"></div>
-  <div id="npfl-standings" class="npfl-content"></div>
-  <div id="npfl-results" class="npfl-content"></div>
+
+  <!-- TOP LEAGUES TAB -->
+  <div id="scores-top" class="npfl-content on">
+    <div style="padding:10px;">
+      <select id="league-select" onchange="loadLeagueStandings(this.value)" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:14px;margin-bottom:12px;">
+        <option value="4328">🏴󠁧󠁢󠁥󠁮󠁧󠁿 Premier League</option>
+        <option value="4335">🇪🇸 La Liga</option>
+        <option value="4480">🏆 Champions League</option>
+        <option value="4332">🇮🇹 Serie A</option>
+        <option value="4331">🇩🇪 Bundesliga</option>
+        <option value="4334">🇫🇷 Ligue 1</option>
+      </select>
+      <div id="top-standings-body"></div>
+    </div>
+  </div>
+
+  <!-- NPFL TAB -->
+  <div id="scores-npfl" class="npfl-content">
+    <div id="npfl-standings-body" style="padding:10px;"></div>
+  </div>
+
+  <!-- U-17 TAB -->
+  <div id="scores-u17" class="npfl-content">
+    <div id="u17-standings-body" style="padding:10px;"></div>
+  </div>
 </div>
 
 <!-- PLAYER SEARCH PAGE -->
