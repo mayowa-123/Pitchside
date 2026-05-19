@@ -4322,7 +4322,7 @@ async function loadLeagueStandings(leagueId) {
   const el = document.getElementById('top-standings-body');
   el.innerHTML = _scoresSpinner('Loading standings…');
   try {
-    const res = await fetch(`/api/standings?league=${leagueId}&season=2025-2026`);
+    const res = await fetch(`/api/standings?league=${leagueId}&season=2025`);
     const data = await res.json();
     _renderStandingsTable(data.standings, 'top-standings-body');
   } catch(e) {
