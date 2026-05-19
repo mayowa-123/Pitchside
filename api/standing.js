@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    const { league = '4328', season = '2025-2026' } = req.query;
+    const { league = '4328', season = '2025' } = req.query;
 
     const url = `https://www.thesportsdb.com/api/v1/json/3/lookuptable.php?l=${league}&s=${season}`;
     const response = await fetch(url);
