@@ -190,8 +190,7 @@ async function fetchLiveScores() {
   const today     = new Date().toISOString().split('T')[0];
   const now       = Date.now();
 
-  // ── Smart cache: 3 min when live games are on, 30 min when not ───────────
-  // Keeps daily API usage well under the 100-request free tier limit.
+  // ── STEP 1: Check local localStorage cache first (instant, no network) ───
   try {
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
@@ -207,7 +206,32 @@ async function fetchLiveScores() {
     }
   } catch(_) {}
 
-  // ── Fetch from API ────────────────────────────────────────────────────────
+  // ── STEP 2: Check Firebase shared cache — 1 API call serves ALL users ────
+  // If any user already fetched scores recently, read from Firebase.
+  // Only the first user (or after TTL expires) hits the real API.
+  try {
+    const fsApi = window._psFs;
+    const db    = window._psDb;
+    if (fsApi && db && fsApi.doc && fsApi.getDoc) {
+      const { doc, getDoc } = fsApi;
+      const snap = await getDoc(doc(db, 'livescores_cache', today));
+      if (snap.exists()) {
+        const d = snap.data();
+        const age = now - (d.timestamp || 0);
+        const TTL = d.hasLive ? 3 * 60 * 1000 : 30 * 60 * 1000;
+        if (age < TTL && d.data && d.data.length) {
+          console.log('[PitchSide] Live scores served from Firebase shared cache');
+          lsData = d.data;
+          renderLiveScores(lsData, lsCurrentFilter);
+          liveScoresLastUpdate = d.timestamp;
+          _lsSaveCache(d.data, d.hasLive, today);
+          return;
+        }
+      }
+    }
+  } catch(_) {}
+
+  // ── STEP 3: Fetch from API — only runs when cache is stale/empty ─────────
   try {
     console.log('[PitchSide] Fetching live scores from API...');
     const res = await fetch(`/api/football?endpoint=fixtures&date=${today}`, {
@@ -304,10 +328,19 @@ async function fetchLiveScores() {
 }
 
 function _lsSaveCache(data, hasLive, dateKey) {
+  const payload = { timestamp: Date.now(), dateKey, data, hasLive };
+  // Save to localStorage for instant local reads
   try {
-    localStorage.setItem('pitchside_livescores_v3', JSON.stringify({
-      timestamp: Date.now(), dateKey, data, hasLive
-    }));
+    localStorage.setItem('pitchside_livescores_v3', JSON.stringify(payload));
+  } catch(_) {}
+  // Save to Firebase so ALL users share this one API call
+  try {
+    const fsApi = window._psFs;
+    const db    = window._psDb;
+    if (fsApi && db && fsApi.doc && fsApi.setDoc) {
+      const { doc, setDoc } = fsApi;
+      setDoc(doc(db, 'livescores_cache', dateKey), payload).catch(() => {});
+    }
   } catch(_) {}
 }
 
@@ -1976,40 +2009,15 @@ function generateStatsHTML(statistics) {
 }
 
 /* Load Table Function */
+// NOTE: Standings API call removed to preserve API quota.
+// API key is reserved for live scores only.
 async function loadLiveTable(leagueId, season) {
   const container = document.getElementById('live-table-container');
-  container.innerHTML = `<div class="ov-loading"><div class="spinner"></div>Fetching table...</div>`;
-  
-  try {
-    const res = await fetch(`/api/football?endpoint=standings&league=${leagueId}&season=${season}`, {
-      headers: {}
-    });
-    const data = await res.json();
-    const standings = data.response[0]?.league?.standings[0];
-
-    if (!standings) throw new Error("No standings found");
-
-    let html = `
-      <div class="table-row table-hdr">
-        <div class="tr-pos">#</div>
-        <div class="tr-team">Team</div>
-        <div class="tr-stat">P</div>
-        <div class="tr-stat">GD</div>
-        <div class="tr-pts">Pts</div>
-      </div>`;
-
-    html += standings.map(row => `
-      <div class="table-row">
-        <div class="tr-pos">${row.rank}</div>
-        <div class="tr-team"><img src="${row.team.logo}">${row.team.name}</div>
-        <div class="tr-stat">${row.all.played}</div>
-        <div class="tr-stat">${row.goalsDiff}</div>
-        <div class="tr-pts">${row.points}</div>
-      </div>`).join('');
-      
-    container.innerHTML = html;
-  } catch (e) {
-    container.innerHTML = `<div class="empty-state">Table not available for this competition.</div>`;
+  if (container) {
+    container.innerHTML = `<div class="empty-state" style="text-align:center;padding:32px;color:var(--text3);">
+      <div style="font-size:28px;margin-bottom:8px;">📊</div>
+      <div style="font-size:13px;">Table coming soon</div>
+    </div>`;
   }
 }
 
@@ -4500,51 +4508,8 @@ async function handlePlayerSearch(val) {
         return;
       }
 
-      // ── Step 2: Not in Firebase — fall back to API ──
-      const response = await fetch(
-        `/api/football?endpoint=players&search=${encodeURIComponent(query)}&league=332&season=2025`,
-        { signal: AbortSignal.timeout(7000) }
-      );
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      let data = await response.json();
-
-      // Detect API-level errors (quota exceeded, invalid key, etc.)
-      if (data.errors && (data.errors.requests || data.errors.token || Object.keys(data.errors).length)) {
-        const errMsg = data.errors.requests || data.errors.token || JSON.stringify(data.errors);
-        res.innerHTML = `
-          <div class="player-empty">
-            <div class="player-empty-icon">⚠️</div>
-            <div class="player-empty-text">API Error: ${errMsg}</div>
-          </div>`;
-        return;
-      }
-
-      let players = data.response || [];
-
-      // If no results in NPFL, widen search to all leagues
-      if (!players.length) {
-        const r2 = await fetch(
-          `/api/football?endpoint=players&search=${encodeURIComponent(query)}&season=2025`,
-          { signal: AbortSignal.timeout(7000) }
-        );
-        if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
-        const d2 = await r2.json();
-        players = d2.response || [];
-        
-        // Fallback to 2024 if 2025 has no results
-        if (!players.length) {
-          const r3 = await fetch(
-            `/api/football?endpoint=players&search=${encodeURIComponent(query)}&season=2024`,
-            { signal: AbortSignal.timeout(7000) }
-          );
-          if (r3.ok) {
-            const d3 = await r3.json();
-            players = d3.response || [];
-          }
-        }
-      }
-
+      // ── Step 2: Not in Firebase — show not found (API reserved for live scores only) ──
+      const players = [];
       _playerCache[queryLower] = players;
       _renderPlayerResults(players, query);
 
@@ -4869,23 +4834,10 @@ async function openPlayerProfile(playerId, fbName) {
     </div>`;
   overlay.style.display = 'flex';
 
-  // API-Football (for photo)
+  // API-Football call removed — API key reserved for live scores only.
+  // Player profile uses Wikipedia data only.
   if (!_playerDetailCache[playerId]) {
-    try {
-      let url;
-      if (playerId && playerId !== 0) url = `/api/football?endpoint=players&id=${playerId}&season=2025`;
-      else if (fbName) url = `/api/football?endpoint=players&search=${encodeURIComponent(fbName)}&season=2025`;
-      if (url) {
-        const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-        const data = await res.json();
-        let result = data.response?.[0] || null;
-        if (!result) {
-          const res2 = await fetch(url.replace('season=2025','season=2024'), { signal: AbortSignal.timeout(8000) });
-          result = (await res2.json()).response?.[0] || null;
-        }
-        _playerDetailCache[playerId] = result;
-      }
-    } catch(e) { _playerDetailCache[playerId] = null; }
+    _playerDetailCache[playerId] = null;
   }
 
   const entry      = _playerDetailCache[playerId];
