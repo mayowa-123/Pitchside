@@ -6,32 +6,39 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    const { league = '4328', season = '2024-2025' } = req.query;
+    const { league = 'PL' } = req.query;
 
-    const url = `https://www.thesportsdb.com/api/v1/json/123/lookuptable.php?l=${league}&s=${season}`;
-    const response = await fetch(url);
+    const url = `https://api.football-data.org/v4/competitions/${league}/standings`;
+    const response = await fetch(url, {
+      headers: {
+        'X-Auth-Token': process.env.FOOTBALL_DATA_KEY,
+      },
+    });
+
     const data = await response.json();
 
-    if (!data.table || !data.table.length) {
+    if (!data.standings || !data.standings.length) {
       return res.status(404).json({ error: 'No standings found' });
     }
 
-    const standings = data.table.map(t => ({
-      rank: t.intRank,
-      team: t.strTeam,
-      badge: t.strTeamBadge,
-      played: t.intPlayed,
-      won: t.intWin,
-      drawn: t.intDraw,
-      lost: t.intLoss,
-      goalsFor: t.intGoalsFor,
-      goalsAgainst: t.intGoalsAgainst,
-      goalDifference: t.intGoalDifference,
-      points: t.intPoints,
+    const table = data.standings[0].table;
+
+    const standings = table.map(t => ({
+      rank: t.position,
+      team: t.team.name,
+      badge: t.team.crest,
+      played: t.playedGames,
+      won: t.won,
+      drawn: t.draw,
+      lost: t.lost,
+      goalsFor: t.goalsFor,
+      goalsAgainst: t.goalsAgainst,
+      goalDifference: t.goalDifference,
+      points: t.points,
     }));
 
     res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
-    return res.status(200).json({ standings, league, season });
+    return res.status(200).json({ standings });
 
   } catch (err) {
     return res.status(500).json({ error: 'Standings error', detail: err.message });
