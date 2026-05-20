@@ -4322,9 +4322,10 @@ async function loadLeagueStandings(leagueId) {
   const el = document.getElementById('top-standings-body');
   el.innerHTML = _scoresSpinner('Loading standings…');
   try {
-    const res = await fetch(`/api/standings?league=${leagueId}&season=2024-2025`);
-    const data = await res.json();
-    _renderStandingsTable(data.standings, 'top-standings-body');
+    const res = await fetch(`/api/standings?league=${leagueId}`);
+const data = await res.json();
+_renderStandingsTable(data.standings || [], 'top-standings-body');
+return;
   } catch(e) {
     el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load standings</div>';
   }
