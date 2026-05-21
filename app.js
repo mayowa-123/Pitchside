@@ -4390,7 +4390,7 @@ async function _loadU17Standings() {
 
 function initNpfl() {
   // Load top leagues by default
-  loadLeagueStandings('4328');
+  loadLeagueStandings('PL');
   _loadNpflStandings();
   _loadU17Standings();
   if (_scoresRefreshInterval) clearInterval(_scoresRefreshInterval);
