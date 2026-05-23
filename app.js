@@ -190,7 +190,8 @@ async function fetchLiveScores() {
   const today     = new Date().toISOString().split('T')[0];
   const now       = Date.now();
 
-  // ── STEP 1: Check local localStorage cache first (instant, no network) ───
+  // ── Smart cache: 3 min when live games are on, 30 min when not ───────────
+  // Keeps daily API usage well under the 100-request free tier limit.
   try {
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
@@ -206,32 +207,7 @@ async function fetchLiveScores() {
     }
   } catch(_) {}
 
-  // ── STEP 2: Check Firebase shared cache — 1 API call serves ALL users ────
-  // If any user already fetched scores recently, read from Firebase.
-  // Only the first user (or after TTL expires) hits the real API.
-  try {
-    const fsApi = window._psFs;
-    const db    = window._psDb;
-    if (fsApi && db && fsApi.doc && fsApi.getDoc) {
-      const { doc, getDoc } = fsApi;
-      const snap = await getDoc(doc(db, 'livescores_cache', today));
-      if (snap.exists()) {
-        const d = snap.data();
-        const age = now - (d.timestamp || 0);
-        const TTL = d.hasLive ? 3 * 60 * 1000 : 30 * 60 * 1000;
-        if (age < TTL && d.data && d.data.length) {
-          console.log('[PitchSide] Live scores served from Firebase shared cache');
-          lsData = d.data;
-          renderLiveScores(lsData, lsCurrentFilter);
-          liveScoresLastUpdate = d.timestamp;
-          _lsSaveCache(d.data, d.hasLive, today);
-          return;
-        }
-      }
-    }
-  } catch(_) {}
-
-  // ── STEP 3: Fetch from API — only runs when cache is stale/empty ─────────
+  // ── Fetch from API ────────────────────────────────────────────────────────
   try {
     console.log('[PitchSide] Fetching live scores from API...');
     const res = await fetch(`/api/football?endpoint=fixtures&date=${today}`, {
@@ -328,19 +304,10 @@ async function fetchLiveScores() {
 }
 
 function _lsSaveCache(data, hasLive, dateKey) {
-  const payload = { timestamp: Date.now(), dateKey, data, hasLive };
-  // Save to localStorage for instant local reads
   try {
-    localStorage.setItem('pitchside_livescores_v3', JSON.stringify(payload));
-  } catch(_) {}
-  // Save to Firebase so ALL users share this one API call
-  try {
-    const fsApi = window._psFs;
-    const db    = window._psDb;
-    if (fsApi && db && fsApi.doc && fsApi.setDoc) {
-      const { doc, setDoc } = fsApi;
-      setDoc(doc(db, 'livescores_cache', dateKey), payload).catch(() => {});
-    }
+    localStorage.setItem('pitchside_livescores_v3', JSON.stringify({
+      timestamp: Date.now(), dateKey, data, hasLive
+    }));
   } catch(_) {}
 }
 
@@ -2009,15 +1976,40 @@ function generateStatsHTML(statistics) {
 }
 
 /* Load Table Function */
-// NOTE: Standings API call removed to preserve API quota.
-// API key is reserved for live scores only.
 async function loadLiveTable(leagueId, season) {
   const container = document.getElementById('live-table-container');
-  if (container) {
-    container.innerHTML = `<div class="empty-state" style="text-align:center;padding:32px;color:var(--text3);">
-      <div style="font-size:28px;margin-bottom:8px;">📊</div>
-      <div style="font-size:13px;">Table coming soon</div>
-    </div>`;
+  container.innerHTML = `<div class="ov-loading"><div class="spinner"></div>Fetching table...</div>`;
+  
+  try {
+    const res = await fetch(`/api/football?endpoint=standings&league=${leagueId}&season=${season}`, {
+      headers: {}
+    });
+    const data = await res.json();
+    const standings = data.response[0]?.league?.standings[0];
+
+    if (!standings) throw new Error("No standings found");
+
+    let html = `
+      <div class="table-row table-hdr">
+        <div class="tr-pos">#</div>
+        <div class="tr-team">Team</div>
+        <div class="tr-stat">P</div>
+        <div class="tr-stat">GD</div>
+        <div class="tr-pts">Pts</div>
+      </div>`;
+
+    html += standings.map(row => `
+      <div class="table-row">
+        <div class="tr-pos">${row.rank}</div>
+        <div class="tr-team"><img src="${row.team.logo}">${row.team.name}</div>
+        <div class="tr-stat">${row.all.played}</div>
+        <div class="tr-stat">${row.goalsDiff}</div>
+        <div class="tr-pts">${row.points}</div>
+      </div>`).join('');
+      
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state">Table not available for this competition.</div>`;
   }
 }
 
@@ -4390,7 +4382,7 @@ async function _loadU17Standings() {
 
 function initNpfl() {
   // Load top leagues by default
-  loadLeagueStandings('PL');
+  loadLeagueStandings('4328');
   _loadNpflStandings();
   _loadU17Standings();
   if (_scoresRefreshInterval) clearInterval(_scoresRefreshInterval);
@@ -4508,8 +4500,51 @@ async function handlePlayerSearch(val) {
         return;
       }
 
-      // ── Step 2: Not in Firebase — show not found (API reserved for live scores only) ──
-      const players = [];
+      // ── Step 2: Not in Firebase — fall back to API ──
+      const response = await fetch(
+        `/api/football?endpoint=players&search=${encodeURIComponent(query)}&league=332&season=2025`,
+        { signal: AbortSignal.timeout(7000) }
+      );
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      let data = await response.json();
+
+      // Detect API-level errors (quota exceeded, invalid key, etc.)
+      if (data.errors && (data.errors.requests || data.errors.token || Object.keys(data.errors).length)) {
+        const errMsg = data.errors.requests || data.errors.token || JSON.stringify(data.errors);
+        res.innerHTML = `
+          <div class="player-empty">
+            <div class="player-empty-icon">⚠️</div>
+            <div class="player-empty-text">API Error: ${errMsg}</div>
+          </div>`;
+        return;
+      }
+
+      let players = data.response || [];
+
+      // If no results in NPFL, widen search to all leagues
+      if (!players.length) {
+        const r2 = await fetch(
+          `/api/football?endpoint=players&search=${encodeURIComponent(query)}&season=2025`,
+          { signal: AbortSignal.timeout(7000) }
+        );
+        if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
+        const d2 = await r2.json();
+        players = d2.response || [];
+        
+        // Fallback to 2024 if 2025 has no results
+        if (!players.length) {
+          const r3 = await fetch(
+            `/api/football?endpoint=players&search=${encodeURIComponent(query)}&season=2024`,
+            { signal: AbortSignal.timeout(7000) }
+          );
+          if (r3.ok) {
+            const d3 = await r3.json();
+            players = d3.response || [];
+          }
+        }
+      }
+
       _playerCache[queryLower] = players;
       _renderPlayerResults(players, query);
 
@@ -4834,10 +4869,23 @@ async function openPlayerProfile(playerId, fbName) {
     </div>`;
   overlay.style.display = 'flex';
 
-  // API-Football call removed — API key reserved for live scores only.
-  // Player profile uses Wikipedia data only.
+  // API-Football (for photo)
   if (!_playerDetailCache[playerId]) {
-    _playerDetailCache[playerId] = null;
+    try {
+      let url;
+      if (playerId && playerId !== 0) url = `/api/football?endpoint=players&id=${playerId}&season=2025`;
+      else if (fbName) url = `/api/football?endpoint=players&search=${encodeURIComponent(fbName)}&season=2025`;
+      if (url) {
+        const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+        const data = await res.json();
+        let result = data.response?.[0] || null;
+        if (!result) {
+          const res2 = await fetch(url.replace('season=2025','season=2024'), { signal: AbortSignal.timeout(8000) });
+          result = (await res2.json()).response?.[0] || null;
+        }
+        _playerDetailCache[playerId] = result;
+      }
+    } catch(e) { _playerDetailCache[playerId] = null; }
   }
 
   const entry      = _playerDetailCache[playerId];
@@ -6059,46 +6107,118 @@ async function pcPublish() {
   const btn = document.getElementById('pc-pub-btn');
   btn.disabled = true;
 
-  // Show progress overlay
-  const upDiv = document.getElementById('pc-uploading');
+  const upDiv  = document.getElementById('pc-uploading');
   const upProg = document.getElementById('pc-up-progress');
   upDiv.classList.add('show');
-  upProg.textContent = 'Uploading to cloud…';
+  upProg.textContent = 'Preparing upload…';
 
-  try {
-    const resourceType = _pcFile.type.startsWith('video/') ? 'video' : 'image';
-    const formData = new FormData();
-    formData.append('file', _pcFile);
-    formData.append('upload_preset', CLOUDINARY_PRESET);
-    formData.append('cloud_name',    CLOUDINARY_CLOUD);
-    if (_pcFilter !== 'normal') formData.append('tags', 'filter_' + _pcFilter);
+  // ── File size check (warn for large files on slow connections) ──
+  const fileMB = _pcFile.size / (1024 * 1024);
+  if (fileMB > 100) {
+    upDiv.classList.remove('show');
+    btn.disabled = false;
+    showToast('⚠️ File too large (max 100MB). Please trim your video first.');
+    return;
+  }
 
-    const uploadUrl = 'https://api.cloudinary.com/v1_1/' + CLOUDINARY_CLOUD + '/' + resourceType + '/upload';
-    upProg.textContent = 'Uploading… (this may take a moment)';
+  // ── Helper: single upload attempt with progress ──
+  function _doUpload(file, resourceType) {
+    return new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append('file',           file);
+      formData.append('upload_preset',  CLOUDINARY_PRESET);
+      formData.append('cloud_name',     CLOUDINARY_CLOUD);
+      if (_pcFilter !== 'normal') formData.append('tags', 'filter_' + _pcFilter);
 
-    // Upload with real progress tracking via XHR
-    const info = await new Promise((resolve, reject) => {
+      const uploadUrl = 'https://api.cloudinary.com/v1_1/' + CLOUDINARY_CLOUD + '/' + resourceType + '/upload';
       const xhr = new XMLHttpRequest();
-      const timeout = setTimeout(() => { xhr.abort(); reject(new Error('Upload timed out')); }, 90000);
+
+      // Generous timeout: 3 min for large videos on Nigerian networks
+      const TIMEOUT_MS = 3 * 60 * 1000;
+      const timer = setTimeout(() => {
+        xhr.abort();
+        reject(new Error('TIMEOUT'));
+      }, TIMEOUT_MS);
+
       xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
+        if (e.lengthComputable && upProg) {
           const pct = Math.round((e.loaded / e.total) * 100);
-          if (upProg) upProg.textContent = 'Uploading… ' + pct + '%';
+          upProg.textContent = 'Uploading… ' + pct + '%  (' + (fileMB * pct / 100).toFixed(1) + ' / ' + fileMB.toFixed(1) + ' MB)';
         }
       };
+
       xhr.onload = () => {
-        clearTimeout(timeout);
+        clearTimeout(timer);
         try {
           const data = JSON.parse(xhr.responseText);
-          if (data.error) reject(new Error(data.error.message));
-          else resolve(data);
-        } catch(e) { reject(new Error('Upload response error')); }
+          if (data.error) {
+            // Log exact Cloudinary error for debugging
+            console.error('[Cloudinary]', data.error.message);
+            reject(new Error('CLOUDINARY:' + data.error.message));
+          } else {
+            resolve(data);
+          }
+        } catch(e) {
+          reject(new Error('PARSE_ERROR'));
+        }
       };
-      xhr.onerror = () => { clearTimeout(timeout); reject(new Error('Network error during upload')); };
-      xhr.onabort = () => reject(new Error('Upload timed out — check your connection'));
+
+      xhr.onerror = () => { clearTimeout(timer); reject(new Error('NETWORK')); };
+      xhr.onabort = () => reject(new Error('TIMEOUT'));
       xhr.open('POST', uploadUrl);
       xhr.send(formData);
     });
+  }
+
+  // ── Upload with auto-retry (up to 3 attempts) ──
+  const resourceType = _pcFile.type.startsWith('video/') ? 'video' : 'image';
+  let info = null;
+  let lastErr = '';
+  const MAX_ATTEMPTS = 3;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      if (attempt > 1) {
+        upProg.textContent = `Retrying… attempt ${attempt} of ${MAX_ATTEMPTS}`;
+        await new Promise(r => setTimeout(r, 2000 * attempt)); // wait before retry
+      } else {
+        upProg.textContent = 'Uploading… 0%';
+      }
+      info = await _doUpload(_pcFile, resourceType);
+      break; // success — exit retry loop
+    } catch(err) {
+      lastErr = err.message;
+      console.warn(`[PC] Upload attempt ${attempt} failed:`, lastErr);
+
+      if (lastErr.startsWith('CLOUDINARY:')) {
+        // Cloudinary rejected the file — no point retrying (wrong preset, file type, etc.)
+        const friendlyMsg = lastErr.includes('preset') || lastErr.includes('upload_preset')
+          ? '⚠️ Upload config error. Please contact support.'
+          : '⚠️ Cloudinary rejected the file: ' + lastErr.replace('CLOUDINARY:','');
+        upDiv.classList.remove('show');
+        btn.disabled = false;
+        showToast(friendlyMsg);
+        return;
+      }
+
+      if (attempt === MAX_ATTEMPTS) {
+        // All attempts failed
+        upDiv.classList.remove('show');
+        btn.disabled = false;
+        if (lastErr === 'TIMEOUT') {
+          showToast('⏱️ Upload timed out after 3 tries. Check your connection and try a shorter video.');
+        } else if (lastErr === 'NETWORK') {
+          showToast('📡 No internet connection. Please check your network and try again.');
+        } else {
+          showToast('❌ Upload failed after 3 attempts: ' + lastErr);
+        }
+        return;
+      }
+      // else loop continues to next attempt
+    }
+  }
+
+  if (!info) return; // safety guard
 
     upProg.textContent = 'Saving to your feed…';
 
