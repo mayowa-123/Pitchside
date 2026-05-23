@@ -6217,9 +6217,9 @@ async function pcPublish() {
       // else loop continues to next attempt
     }
   }
+if (!info) return; // safety guard
 
-  if (!info) return; // safety guard
-
+  try {
     upProg.textContent = 'Saving to your feed…';
 
     const rawUrl    = info.secure_url;
@@ -6245,7 +6245,7 @@ async function pcPublish() {
           userName: (profileData && profileData.name) || 'PitchSide User',
           cat: 'Trending', likes: 0, comments: 0, userPost: true, playerPost: window._hlIsPlayerPost || false,
           filter: _pcFilter, speed: _pcSpeed, sticker: _pcSticker, music: _pcMusic,
-          taggedMatch: _pcTaggedMatch || null,  // FEATURE 4: match tag
+          taggedMatch: _pcTaggedMatch || null,
           createdAt: serverTimestamp(),
         };
         const docRef = await addDoc(collection(_db, 'posts'), postData);
