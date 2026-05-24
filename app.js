@@ -6129,7 +6129,7 @@ async function pcPublish() {
       formData.append('upload_preset',  CLOUDINARY_PRESET);
       formData.append('cloud_name',     CLOUDINARY_CLOUD);
       if (_pcFilter !== 'normal') formData.append('tags', 'filter_' + _pcFilter);
-
+formData.append('eager', 'c_scale,w_720,q_auto:low');
       const uploadUrl = 'https://api.cloudinary.com/v1_1/' + CLOUDINARY_CLOUD + '/' + resourceType + '/upload';
       const xhr = new XMLHttpRequest();
 
