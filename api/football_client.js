@@ -2,12 +2,11 @@ import axios from 'axios';
 import NodeCache from 'node-cache';
 
 const cache = new NodeCache({ stdTTL: 900 }); // 15 minutes default
-const API_KEY = process.env.APIFOOTBALL_KEY;
-const BASE_URL = 'https://v3.football.api-sports.io';
+const API_KEY = '123'; // Free key
+const BASE_URL = 'https://www.thesportsdb.com/api/v1/json';
 
 const apiClient = axios.create({
-  baseURL: BASE_URL,
-  headers: { 'x-apisports-key': API_KEY },
+  baseURL: `${BASE_URL}/${API_KEY}`,
 });
 
 async function getTeamId(teamName) {
@@ -16,14 +15,15 @@ async function getTeamId(teamName) {
   if (cachedId) return cachedId;
 
   try {
-    const response = await apiClient.get('/teams', { params: { search: teamName } });
-    const teamId = response.data.response?.[0]?.team?.id;
+    // TheSportsDB search is limited in free tier, but let's try
+    const response = await apiClient.get('/searchteams.php', { params: { t: teamName } });
+    const teamId = response.data.teams?.[0]?.idTeam;
     if (teamId) {
       cache.set(cacheKey, teamId);
       return teamId;
     }
   } catch (error) {
-    console.error('Error fetching team ID:', error);
+    console.error('Error fetching team ID from TheSportsDB:', error);
   }
   return null;
 }
@@ -39,35 +39,38 @@ export async function fetchFootballData(intent, entity) {
   try {
     switch (intent) {
       case 'live_match':
-        endpoint = '/fixtures';
-        params = { live: 'all' };
+        // TheSportsDB free tier doesn't have a direct "live all" for free.
+        // We use today's events as a fallback for "live" context in free tier.
+        endpoint = '/eventsday.php';
+        const today = new Date().toISOString().split('T')[0];
+        params = { d: today, s: 'Soccer' };
         break;
       case 'last_match':
         if (!entity) return null;
         const lastTeamId = await getTeamId(entity);
         if (!lastTeamId) return null;
-        endpoint = '/fixtures';
-        params = { team: lastTeamId, last: 1 };
+        endpoint = '/eventslast.php';
+        params = { id: lastTeamId };
         break;
       case 'next_match':
         if (!entity) return null;
         const nextTeamId = await getTeamId(entity);
         if (!nextTeamId) return null;
-        endpoint = '/fixtures';
-        params = { team: nextTeamId, next: 1 };
+        endpoint = '/eventsnext.php';
+        params = { id: nextTeamId };
         break;
       case 'standings':
-        // Defaulting to Premier League (id: 39) if no league entity is found, 
-        // or we could search for league ID similarly to team ID.
-        endpoint = '/standings';
-        params = { league: 39, season: 2024 }; // Simplified for now
+        // Defaulting to Premier League (id: 4328)
+        endpoint = '/lookuptable.php';
+        params = { l: 4328, s: '2023-2024' }; 
         break;
       default:
         return null;
     }
 
     const response = await apiClient.get(endpoint, { params });
-    const data = response.data.response;
+    // TheSportsDB returns different keys based on endpoint
+    const data = response.data.events || response.data.table || response.data.results;
     
     if (data && data.length > 0) {
       cache.set(cacheKey, data);
@@ -75,7 +78,7 @@ export async function fetchFootballData(intent, entity) {
     }
     return null;
   } catch (error) {
-    console.error('API-FOOTBALL fetch error:', error);
+    console.error('TheSportsDB fetch error:', error);
     return null;
   }
 }
