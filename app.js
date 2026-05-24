@@ -2900,8 +2900,8 @@ function handleFileUpload(e) {
   const videoFile = files.find(f => f.type.startsWith('video'));
   if (videoFile) {
     const isPlayer = window._hlIsPlayerPost || false;
-    const maxSecs  = isPlayer ? 90 : 30;
-    const maxLabel = isPlayer ? '1 min 30 secs' : '30 seconds';
+    const maxSecs  = isPlayer ? 120 : 60;
+    const maxLabel = isPlayer ? '2 minutes' : '1 minute';
     const tempVid  = document.createElement('video');
     tempVid.preload = 'metadata';
     tempVid.src = URL.createObjectURL(videoFile);
@@ -6114,10 +6114,10 @@ async function pcPublish() {
 
   // ── File size check (warn for large files on slow connections) ──
   const fileMB = _pcFile.size / (1024 * 1024);
-  if (fileMB > 100) {
+  if (fileMB > 200) {
     upDiv.classList.remove('show');
     btn.disabled = false;
-    showToast('⚠️ File too large (max 100MB). Please trim your video first.');
+    showToast('⚠️ File too large (max 200MB). Please trim your video first.');
     return;
   }
 
@@ -6133,8 +6133,8 @@ formData.append('eager', 'c_scale,w_720,q_auto:low');
       const uploadUrl = 'https://api.cloudinary.com/v1_1/' + CLOUDINARY_CLOUD + '/' + resourceType + '/upload';
       const xhr = new XMLHttpRequest();
 
-      // Generous timeout: 3 min for large videos on Nigerian networks
-      const TIMEOUT_MS = 3 * 60 * 1000;
+      // Generous timeout: 10 min for large videos on Nigerian networks
+      const TIMEOUT_MS = 10 * 60 * 1000;
       const timer = setTimeout(() => {
         xhr.abort();
         reject(new Error('TIMEOUT'));
