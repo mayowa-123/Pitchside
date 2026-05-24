@@ -180,7 +180,7 @@ function initLiveScores() {
 // Auto-refresh configuration
 let liveScoresRefreshInterval = null;
 let liveScoresLastUpdate = 0;
-const LIVESCORE_REFRESH_INTERVAL = 15000; // 15 seconds
+const LIVESCORE_REFRESH_INTERVAL = 300000; // 15 seconds
 
 async function fetchLiveScores() {
   // Never fetch global API data when the user is on the NPFL page
