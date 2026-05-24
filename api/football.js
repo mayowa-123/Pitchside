@@ -18,6 +18,9 @@ export default async function handler(req, res) {
 
   // ── API Key ───────────────────────────────────────────────
   // Add  HIGHLIGHTLY_KEY=your_key  to your Netlify/Vercel env vars
+  // Supports BOTH sources:
+  //   - RapidAPI key  → uses football-highlights-api.p.rapidapi.com
+  //   - Highlightly direct key → uses soccer.highlightly.net
   const apiKey = process.env.HIGHLIGHTLY_KEY;
   if (!apiKey) {
     console.error('[football.js] HIGHLIGHTLY_KEY env var is not set!');
@@ -26,6 +29,11 @@ export default async function handler(req, res) {
       response: []
     });
   }
+
+  // RapidAPI keys are long alphanumeric strings (50+ chars).
+  // Highlightly direct keys are shorter. We default to RapidAPI
+  // since that's what your screenshot shows you are using.
+  const USE_RAPIDAPI = true; // set to false if you have a direct Highlightly key
 
   // ── Parse request ─────────────────────────────────────────
   const params   = { ...req.query };
@@ -37,13 +45,13 @@ export default async function handler(req, res) {
   try {
     // ── Route to the right Highlightly handler ────────────
     if (endpoint === 'fixtures') {
-      return await handleFixtures(params, apiKey, res);
+      return await handleFixtures(params, apiKey, USE_RAPIDAPI, res);
     }
     if (endpoint === 'standings') {
-      return await handleStandings(params, apiKey, res);
+      return await handleStandings(params, apiKey, USE_RAPIDAPI, res);
     }
     if (endpoint === 'players') {
-      return await handlePlayers(params, apiKey, res);
+      return await handlePlayers(params, apiKey, USE_RAPIDAPI, res);
     }
     // Everything else — return empty so the app doesn't crash
     return res.status(200).json({ response: [], errors: {} });
@@ -61,10 +69,14 @@ export default async function handler(req, res) {
 //    /api/football?endpoint=fixtures&live=all
 //    /api/football?endpoint=fixtures&id=12345
 // ============================================================
-async function handleFixtures(params, apiKey, res) {
+async function handleFixtures(params, apiKey, useRapidApi, res) {
 
-  const BASE = 'https://soccer.highlightly.net';
-  const headers = { 'x-rapidapi-key': apiKey };
+  const BASE    = useRapidApi
+    ? 'https://football-highlights-api.p.rapidapi.com'
+    : 'https://soccer.highlightly.net';
+  const headers = useRapidApi
+    ? { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': 'football-highlights-api.p.rapidapi.com' }
+    : { 'x-rapidapi-key': apiKey };
 
   // ── Single fixture by id ──────────────────────────────────
   if (params.id) {
@@ -114,7 +126,7 @@ async function handleFixtures(params, apiKey, res) {
 //  STANDINGS
 //  app.js sends: /api/football?endpoint=standings&league=39&season=2025
 // ============================================================
-async function handleStandings(params, apiKey, res) {
+async function handleStandings(params, apiKey, useRapidApi, res) {
   // Map common API-Football league IDs → Highlightly league IDs
   const LEAGUE_MAP = {
     '39':  39,   // Premier League
@@ -136,8 +148,12 @@ async function handleStandings(params, apiKey, res) {
     return res.status(200).json({ response: [] });
   }
 
-  const BASE    = 'https://soccer.highlightly.net';
-  const headers = { 'x-rapidapi-key': apiKey };
+  const BASE    = useRapidApi
+    ? 'https://football-highlights-api.p.rapidapi.com'
+    : 'https://soccer.highlightly.net';
+  const headers = useRapidApi
+    ? { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': 'football-highlights-api.p.rapidapi.com' }
+    : { 'x-rapidapi-key': apiKey };
   const url     = `${BASE}/standings?leagueId=${hlLeague || leagueId}&season=${season}`;
   console.log('[football.js] Fetching standings:', url);
 
@@ -180,9 +196,13 @@ async function handleStandings(params, apiKey, res) {
 //  PLAYERS
 //  app.js sends: /api/football?endpoint=players&search=Osimhen
 // ============================================================
-async function handlePlayers(params, apiKey, res) {
-  const BASE    = 'https://soccer.highlightly.net';
-  const headers = { 'x-rapidapi-key': apiKey };
+async function handlePlayers(params, apiKey, useRapidApi, res) {
+  const BASE    = useRapidApi
+    ? 'https://football-highlights-api.p.rapidapi.com'
+    : 'https://soccer.highlightly.net';
+  const headers = useRapidApi
+    ? { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': 'football-highlights-api.p.rapidapi.com' }
+    : { 'x-rapidapi-key': apiKey };
 
   if (params.id) {
     const url = `${BASE}/players/${params.id}`;
