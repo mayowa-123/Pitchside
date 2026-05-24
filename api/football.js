@@ -79,7 +79,7 @@ async function handleFixtures(params, BASE, HEADERS, res) {
   const date  = params.date || today;
 
   // Highlightly matches endpoint — correct query params from docs
-  const url = `${BASE}/matches?date=${date}&limit=200`;
+  const url = `${BASE}/matches?date=${date}`;
   console.log('[football.js] Matches URL:', url);
 
   const r = await safeFetch(url, HEADERS);
