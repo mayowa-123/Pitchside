@@ -1,0 +1,22 @@
+name: YouTube Highlights Bot
+
+on:
+  schedule:
+    - cron: '0 6,8,10,12,14,16,18,20,22,23 * * *'
+  workflow_dispatch:
+
+jobs:
+  fetch-highlights:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm install node-fetch firebase-admin
+      - run: node scripts/youtube-highlights-bot.js
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
