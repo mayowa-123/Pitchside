@@ -1,15 +1,15 @@
-const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
-const admin = require('firebase-admin');
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
-admin.initializeApp({
-  credential: admin.credential.cert({
+initializeApp({
+  credential: cert({
     projectId: process.env.FIREBASE_PROJECT_ID,
     clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
     privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
   }),
 });
 
-const db = admin.firestore();
+const db = getFirestore();
 
 const CHANNELS = [
   { id: 'UCqZQlzSHbVJrwrn5XvzrzcA', name: 'Premier League' },
@@ -63,12 +63,10 @@ async function run() {
 
   const colRef = db.collection('highlights');
 
-  // Get existing count
   const existing = await colRef.orderBy('fetchedAt', 'asc').get();
   const existingCount = existing.size;
   const totalAfterAdd = existingCount + allVideos.length;
 
-  // Delete oldest if over limit
   if (totalAfterAdd > MAX_VIDEOS) {
     const toDelete = totalAfterAdd - MAX_VIDEOS;
     const batch = db.batch();
@@ -77,7 +75,6 @@ async function run() {
     console.log(`Deleted ${toDelete} old videos`);
   }
 
-  // Add new videos
   const addBatch = db.batch();
   allVideos.forEach(video => {
     const ref = colRef.doc(`yt_${video.videoId}`);
