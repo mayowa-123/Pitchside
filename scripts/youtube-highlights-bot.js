@@ -1,12 +1,10 @@
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
 initializeApp({
-  credential: cert({
-    projectId: process.env.FIREBASE_PROJECT_ID,
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-  }),
+  credential: cert(serviceAccount),
 });
 
 const db = getFirestore();
@@ -30,7 +28,10 @@ async function fetchFromChannel(channelId) {
   const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&q=highlights&type=video&order=date&maxResults=${VIDEOS_PER_CHANNEL}&key=${YOUTUBE_API_KEY}`;
   const res = await fetch(url);
   const data = await res.json();
-  if (!data.items) return [];
+  if (!data.items) {
+    console.log(`No items returned for channel ${channelId}:`, JSON.stringify(data));
+    return [];
+  }
   return data.items.map(item => ({
     videoId: item.id.videoId,
     title: item.snippet.title,
