@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   const API_KEY = '123'; // TheSportsDB Free Key
   const BASE_URL = 'https://www.thesportsdb.com/api/v1/json';
 
-  // Popular football leagues to cover
+  // Popular football leagues to cover (expanded with MLS and Mexican league)
   const LEAGUE_IDS = [
     4328, // English Premier League
     4335, // Spanish La Liga
@@ -38,6 +38,8 @@ export default async function handler(req, res) {
     4360, // Scottish Premiership
     4361, // Welsh Premier League
     4362, // Northern Irish Premiership
+    4391, // MLS (Major League Soccer)
+    4392, // Mexican Liga MX
   ];
 
   try {
@@ -47,49 +49,62 @@ export default async function handler(req, res) {
     let allEvents = [];
     const eventIds = new Set(); // Track unique events to avoid duplicates
 
+    // Helper function to add events without duplicates
+    const addEvents = (events) => {
+      if (events && Array.isArray(events)) {
+        events.forEach(e => {
+          if (e.idEvent && !eventIds.has(e.idEvent)) {
+            allEvents.push(e);
+            eventIds.add(e.idEvent);
+          }
+        });
+      }
+    };
+
     // ── Fetch today's matches from all sports ───────────────────────────
-    console.log('[football-enhanced.js] Fetching today\'s soccer matches...');
+    console.log('[football-v2.js] Fetching today\'s soccer matches...');
     try {
       const todayUrl = `${BASE_URL}/${API_KEY}/eventsday.php?d=${date}&s=Soccer`;
       const todayRes = await fetch(todayUrl);
       if (todayRes.ok) {
         const todayData = await todayRes.json();
-        if (todayData.events && Array.isArray(todayData.events)) {
-          todayData.events.forEach(e => {
-            if (e.idEvent && !eventIds.has(e.idEvent)) {
-              allEvents.push(e);
-              eventIds.add(e.idEvent);
-            }
-          });
-        }
+        addEvents(todayData.events);
       }
     } catch (err) {
-      console.warn('[football-enhanced.js] Today\'s matches fetch failed:', err.message);
+      console.warn('[football-v2.js] Today\'s matches fetch failed:', err.message);
+    }
+
+    // ── Fetch last matches from each league (to catch ongoing/finished matches) ───
+    console.log('[football-v2.js] Fetching last matches from major leagues...');
+    for (const leagueId of LEAGUE_IDS) {
+      try {
+        const lastUrl = `${BASE_URL}/${API_KEY}/eventslastleague.php?id=${leagueId}`;
+        const lastRes = await fetch(lastUrl);
+        if (lastRes.ok) {
+          const lastData = await lastRes.json();
+          addEvents(lastData.events);
+        }
+      } catch (err) {
+        console.warn(`[football-v2.js] League ${leagueId} last matches fetch failed:`, err.message);
+      }
     }
 
     // ── Fetch next matches from major leagues ───────────────────────────
-    console.log('[football-enhanced.js] Fetching next matches from major leagues...');
+    console.log('[football-v2.js] Fetching next matches from major leagues...');
     for (const leagueId of LEAGUE_IDS) {
       try {
-        const leagueUrl = `${BASE_URL}/${API_KEY}/eventsnextleague.php?id=${leagueId}`;
-        const leagueRes = await fetch(leagueUrl);
-        if (leagueRes.ok) {
-          const leagueData = await leagueRes.json();
-          if (leagueData.events && Array.isArray(leagueData.events)) {
-            leagueData.events.forEach(e => {
-              if (e.idEvent && !eventIds.has(e.idEvent)) {
-                allEvents.push(e);
-                eventIds.add(e.idEvent);
-              }
-            });
-          }
+        const nextUrl = `${BASE_URL}/${API_KEY}/eventsnextleague.php?id=${leagueId}`;
+        const nextRes = await fetch(nextUrl);
+        if (nextRes.ok) {
+          const nextData = await nextRes.json();
+          addEvents(nextData.events);
         }
       } catch (err) {
-        console.warn(`[football-enhanced.js] League ${leagueId} fetch failed:`, err.message);
+        console.warn(`[football-v2.js] League ${leagueId} next matches fetch failed:`, err.message);
       }
     }
 
-    console.log(`[football-enhanced.js] Total unique events collected: ${allEvents.length}`);
+    console.log(`[football-v2.js] Total unique events collected: ${allEvents.length}`);
 
     if (allEvents.length === 0) {
       return res.status(200).json({ response: [] });
@@ -97,30 +112,33 @@ export default async function handler(req, res) {
 
     // ── Map TheSportsDB events to API-Football format ────────────────────
     const mappedResponse = allEvents.map(event => {
-      // Determine if match is finished
-      const isFinished = event.strStatus === 'Match Finished' || 
-                        (event.intHomeScore !== null && event.intAwayScore !== null && 
-                         event.strStatus && event.strStatus.toLowerCase().includes('finished'));
+      // Parse status more robustly
+      const statusStr = (event.strStatus || '').toLowerCase();
+      const hasScores = event.intHomeScore !== null && event.intAwayScore !== null;
       
       // Determine status short code
       let statusShort = 'NS'; // Default: Not Started
-      if (isFinished) {
+      
+      if (statusStr.includes('finished') || statusStr.includes('ft') || statusStr.includes('full time')) {
         statusShort = 'FT';
-      } else if (event.intHomeScore !== null && event.intAwayScore !== null) {
-        // If scores exist but not marked as finished, it's live
+      } else if (statusStr.includes('halftime') || statusStr.includes('ht') || statusStr.includes('half time')) {
+        statusShort = 'HT';
+      } else if (hasScores && !statusStr.includes('finished')) {
+        // If scores exist and not marked as finished, it's live
+        statusShort = 'LIVE';
+      } else if (statusStr.includes('live') || statusStr.includes('in progress')) {
         statusShort = 'LIVE';
       }
 
-      // Calculate elapsed time if live
+      // Calculate elapsed time if live or halftime
       let elapsed = 0;
-      if (statusShort === 'LIVE' && event.strTime) {
-        // Try to estimate elapsed time from event time
+      if ((statusShort === 'LIVE' || statusShort === 'HT') && event.strTime) {
         try {
           const eventTime = new Date(`${event.dateEvent}T${event.strTime}`);
           const now = new Date();
           elapsed = Math.floor((now - eventTime) / 60000); // Minutes
           if (elapsed < 0) elapsed = 0;
-          if (elapsed > 90) elapsed = 90;
+          if (elapsed > 120) elapsed = 90; // Cap at 90 for display
         } catch (e) {
           elapsed = 0;
         }
@@ -158,13 +176,33 @@ export default async function handler(req, res) {
       };
     });
 
-    // ── Sort by date ────────────────────────────────────────────────────
-    mappedResponse.sort((a, b) => new Date(a.fixture.date) - new Date(b.fixture.date));
+    // ── Sort by date (most recent first for today's matches) ────────────
+    mappedResponse.sort((a, b) => {
+      const dateA = new Date(a.fixture.date);
+      const dateB = new Date(b.fixture.date);
+      // For today's matches, show live/finished first, then upcoming
+      const now = new Date();
+      const isAToday = dateA.toDateString() === now.toDateString();
+      const isBToday = dateB.toDateString() === now.toDateString();
+      
+      if (isAToday && !isBToday) return -1;
+      if (!isAToday && isBToday) return 1;
+      
+      // Within the same day, sort by status priority: LIVE > HT > FT > NS
+      const statusPriority = { 'LIVE': 0, 'HT': 1, 'FT': 2, 'NS': 3 };
+      const priorityA = statusPriority[a.fixture.status.short] ?? 4;
+      const priorityB = statusPriority[b.fixture.status.short] ?? 4;
+      
+      if (priorityA !== priorityB) return priorityA - priorityB;
+      
+      // Then sort by date
+      return dateA - dateB;
+    });
 
     return res.status(200).json({ response: mappedResponse });
 
   } catch (err) {
-    console.error('[football-enhanced.js] Error:', err.message);
+    console.error('[football-v2.js] Error:', err.message);
     return res.status(500).json({ error: err.message, response: [] });
   }
 }
