@@ -9,9 +9,7 @@ let _sbFiltered = [];
 
 async function loadSBHighlights(filter) {
   _sbCurrentFilter = filter;
-  _sbAllVideos = [];
   _sbPage = 0;
-
   document.querySelectorAll('[id^="sb-btn-"]').forEach(btn => {
     btn.style.background = 'var(--bg2)';
     btn.style.color = 'var(--text)';
@@ -24,53 +22,37 @@ async function loadSBHighlights(filter) {
   const activeId = 'sb-btn-' + (btnMap[filter] || 'all');
   const activeBtn = document.getElementById(activeId);
   if (activeBtn) { activeBtn.style.background = 'var(--green)'; activeBtn.style.color = '#fff'; }
-
   const grid = document.getElementById('sb-video-grid');
   grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);"><div style="font-size:28px;">⚽</div><div style="margin-top:8px;font-size:14px;">Loading highlights...</div></div>';
-
-  try {
+  let filtered = VIDEOS.filter(v => !v.userPost);
+  if (filter !== 'all') {
     const leagueMap = {
-      'ENGLAND: Premier League': 'Premier League highlights',
-      'SPAIN: La Liga': 'La Liga highlights',
-      'ITALY: Serie A': 'Serie A highlights',
-      'GERMANY: Bundesliga': 'Bundesliga highlights',
-      'UEFA: Champions League': 'Champions League highlights',
-      'FRANCE: Ligue 1': 'Ligue 1 highlights',
+      'ENGLAND: Premier League': 'premier',
+      'SPAIN: La Liga': 'la liga',
+      'ITALY: Serie A': 'serie a',
+      'GERMANY: Bundesliga': 'bundesliga',
+      'UEFA: Champions League': 'champions',
+      'FRANCE: Ligue 1': 'ligue',
     };
-const query = filter === 'all' ? '' : (leagueMap[filter] || filter);
-const cacheKey = `ps_hl_${query}`;
-try {
-  const cached = localStorage.getItem(cacheKey);
-  if (cached) {
-    const { videos, cachedAt } = JSON.parse(cached);
-    const age = Date.now() - cachedAt;
-    if (age < 2 * 60 * 60 * 1000 && videos && videos.length > 0) {
-      _sbAllVideos = videos;
-      _sbFiltered = _sbAllVideos;
-      renderSBPage(true);
-      return;
-    }
+    const keyword = leagueMap[filter] || filter.toLowerCase();
+    filtered = filtered.filter(v =>
+      (v.title || '').toLowerCase().includes(keyword) ||
+      (v.channelTitle || '').toLowerCase().includes(keyword) ||
+      (v.competition || '').toLowerCase().includes(keyword)
+    );
   }
-} catch(e) {
-  localStorage.removeItem(cacheKey);
+  _sbAllVideos = filtered;
+  _sbFiltered = filtered;
+  if (!_sbFiltered.length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">No highlights found right now.</div>';
+    return;
+  }
+  renderSBPage(true);
 }
-const res = await fetch(`/api/highlights?query=${encodeURIComponent(query)}`);
-const data = await res.json();
-_sbAllVideos = data.videos || [];
-_sbFiltered = _sbAllVideos;
-if (_sbAllVideos.length > 0) {
-  localStorage.setItem(cacheKey, JSON.stringify({
-    videos: _sbAllVideos,
-    cachedAt: data.cachedAt || Date.now()
-  }));
-}
-    if (!_sbFiltered.length) {
-      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">No highlights found right now.</div>';
-      return;
-    }
-    renderSBPage(true);
-  } catch(e) {
-    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">Could not load highlights. Please try again.</div>`;
+
+function _renderHighlightsFromVideos() {
+  if (typeof _sbCurrentFilter !== 'undefined') {
+    loadSBHighlights(_sbCurrentFilter);
   }
 }
 
