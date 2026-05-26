@@ -168,7 +168,7 @@ async function fetchLiveScores() {
   // Never fetch global API data when the user is on the NPFL page
   if (currentPage === 'npfl') return;
 
-  const CACHE_KEY = 'pitchside_livescores_v3';
+  const CACHE_KEY = 'pitchside_livescores_v4';
   const today     = new Date().toISOString().split('T')[0];
   const now       = Date.now();
 
@@ -287,7 +287,7 @@ async function fetchLiveScores() {
 
 function _lsSaveCache(data, hasLive, dateKey) {
   try {
-    localStorage.setItem('pitchside_livescores_v3', JSON.stringify({
+    localStorage.setItem('pitchside_livescores_v4', JSON.stringify({
       timestamp: Date.now(), dateKey, data, hasLive
     }));
   } catch(_) {}
@@ -295,7 +295,7 @@ function _lsSaveCache(data, hasLive, dateKey) {
 
 function _lsUseStaleCache() {
   try {
-    const raw = localStorage.getItem('pitchside_livescores_v3');
+    const raw = localStorage.getItem('pitchside_livescores_v4');
     if (raw) {
       const { data } = JSON.parse(raw);
       if (data) { lsData = data; renderLiveScores(lsData, lsCurrentFilter); }
