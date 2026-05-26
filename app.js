@@ -6453,3 +6453,113 @@ function openNewsExternal() {
 if (typeof currentPage !== 'undefined' && currentPage === 'explore') {
   initExplore();
 }
+
+
+/* ═══════════════════════════════════════════
+   ABOUT THE DEVELOPER
+═══════════════════════════════════════════ */
+function openAboutDeveloper() {
+  const overlay = document.getElementById('about-developer-overlay');
+  overlay.classList.add('open');
+  // Reset to Meet tab
+  switchAboutTab('meet');
+}
+
+function closeAboutDeveloper() {
+  const overlay = document.getElementById('about-developer-overlay');
+  overlay.classList.remove('open');
+}
+
+function switchAboutTab(tabName) {
+  // Hide all tabs
+  document.querySelectorAll('.ad-tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.ad-tab').forEach(t => t.classList.remove('active'));
+  
+  // Show selected tab
+  const tabContent = document.getElementById('about-' + tabName);
+  if (tabContent) {
+    tabContent.classList.add('active');
+  }
+  
+  // Mark tab button as active
+  event.target.classList.add('active');
+}
+
+function openSupportOption(type) {
+  const modal = document.getElementById('support-modal');
+  const title = document.getElementById('support-modal-title');
+  const textarea = document.getElementById('support-message');
+  
+  const titles = {
+    'bug': '🐛 Report a Bug',
+    'feature': '✨ Feature Request',
+    'feedback': '💬 Send Feedback',
+    'email': '📧 Email Support'
+  };
+  
+  title.textContent = titles[type] || 'Support';
+  textarea.value = '';
+  textarea.placeholder = type === 'bug' 
+    ? 'Describe the issue you encountered...' 
+    : type === 'feature'
+    ? 'Tell us what feature you\'d like to see...'
+    : 'Share your thoughts with us...';
+  
+  modal.style.display = 'flex';
+  setTimeout(() => textarea.focus(), 300);
+}
+
+function closeSupportModal() {
+  document.getElementById('support-modal').style.display = 'none';
+}
+
+function submitSupport() {
+  const message = document.getElementById('support-message').value.trim();
+  if (!message) {
+    showToast('Please write something first');
+    return;
+  }
+  
+  // Create mailto link with the message
+  const subject = encodeURIComponent('Pitchside Support');
+  const body = encodeURIComponent(message + '\n\n---\nSent from Pitchside App');
+  const mailtoLink = `mailto:pitchside145@gmail.com?subject=${subject}&body=${body}`;
+  
+  // Open email client
+  window.location.href = mailtoLink;
+  
+  // Close modal and show toast
+  setTimeout(() => {
+    closeSupportModal();
+    showToast('Opening email client...');
+  }, 100);
+}
+
+function copyToClipboard(text, message) {
+  navigator.clipboard.writeText(text).then(() => {
+    showToast(message || 'Copied to clipboard!');
+  }).catch(() => {
+    showToast('Failed to copy');
+  });
+}
+
+// Character counter for support textarea
+document.addEventListener('DOMContentLoaded', () => {
+  const textarea = document.getElementById('support-message');
+  if (textarea) {
+    textarea.addEventListener('input', function() {
+      const charCount = document.getElementById('char-count');
+      if (charCount) {
+        charCount.textContent = this.value.length + '/500';
+      }
+    });
+  }
+});
+
+// Close support modal when clicking outside
+document.addEventListener('click', function(event) {
+  const modal = document.getElementById('support-modal');
+  if (event.target === modal) {
+    closeSupportModal();
+  }
+});

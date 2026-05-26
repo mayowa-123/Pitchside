@@ -572,6 +572,11 @@
           <div class="pmenu-label">Privacy & Data</div>
           <div class="pmenu-arrow">›</div>
         </div>
+        <div class="pmenu-item" onclick="openAboutDeveloper()">
+          <div class="pmenu-icon">👨‍💻</div>
+          <div class="pmenu-label">About the Developer</div>
+          <div class="pmenu-arrow">›</div>
+        </div>
         <div class="pmenu-item danger" onclick="confirmSignOut()">
           <div class="pmenu-icon">🚪</div>
           <div class="pmenu-label">Sign Out</div>
@@ -1265,6 +1270,369 @@
     <button class="nr-open-btn" onclick="openNewsExternal()">Full Article</button>
   </div>
   <div class="nr-body" id="nr-body"></div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     ABOUT THE DEVELOPER OVERLAY
+═══════════════════════════════════════ -->
+<style>
+#about-developer-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: var(--bg);
+  flex-direction: column;
+  animation: slideUp 0.3s ease-out;
+}
+#about-developer-overlay.open { display: flex; }
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.ad-hdr {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg2);
+}
+
+.ad-back {
+  background: var(--bg3);
+  border: none;
+  color: var(--text);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ad-hdr-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text2);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ad-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 20px 16px 40px;
+}
+
+.ad-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.ad-tab {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text3);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.ad-tab.active {
+  color: var(--green);
+  border-bottom-color: var(--green);
+}
+
+.ad-tab-content {
+  display: none;
+}
+
+.ad-tab-content.active {
+  display: block;
+}
+
+.ad-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 12px;
+  margin-top: 16px;
+}
+
+.ad-section-title:first-child {
+  margin-top: 0;
+}
+
+.ad-bio {
+  font-size: 14px;
+  color: var(--text2);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+
+.ad-highlight {
+  background: rgba(16, 185, 129, 0.1);
+  border-left: 3px solid var(--green);
+  padding: 12px;
+  border-radius: 8px;
+  margin: 12px 0;
+  font-size: 13px;
+  color: var(--text2);
+}
+
+.ad-support-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg2);
+  border-radius: 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ad-support-item:active {
+  background: var(--bg3);
+  transform: scale(0.98);
+}
+
+.ad-support-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.ad-support-text {
+  flex: 1;
+}
+
+.ad-support-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.ad-support-desc {
+  font-size: 12px;
+  color: var(--text3);
+}
+
+.ad-contact-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg2);
+  border-radius: 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ad-contact-item:active {
+  background: var(--bg3);
+  transform: scale(0.98);
+}
+
+.ad-contact-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.ad-contact-info {
+  flex: 1;
+}
+
+.ad-contact-label {
+  font-size: 12px;
+  color: var(--text3);
+  margin-bottom: 2px;
+}
+
+.ad-contact-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.ad-faq-item {
+  margin-bottom: 12px;
+}
+
+.ad-faq-question {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 12px;
+  background: var(--bg2);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ad-faq-question:active {
+  background: var(--bg3);
+}
+
+.ad-faq-answer {
+  font-size: 13px;
+  color: var(--text2);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  margin-top: 4px;
+  display: none;
+  line-height: 1.5;
+}
+
+.ad-faq-answer.show {
+  display: block;
+}
+
+.ad-faq-toggle {
+  font-size: 12px;
+  color: var(--green);
+  transition: transform 0.2s;
+}
+
+.ad-faq-toggle.open {
+  transform: rotate(180deg);
+}
+</style>
+
+<div id="about-developer-overlay">
+  <div class="ad-hdr">
+    <button class="ad-back" onclick="closeAboutDeveloper()">‹</button>
+    <div class="ad-hdr-title">About the Developer</div>
+  </div>
+  <div class="ad-body">
+    <div class="ad-tabs">
+      <button class="ad-tab active" onclick="switchAboutTab('meet')">Meet</button>
+      <button class="ad-tab" onclick="switchAboutTab('support')">Support</button>
+      <button class="ad-tab" onclick="switchAboutTab('contact')">Contact</button>
+    </div>
+
+    <!-- MEET THE DEVELOPER TAB -->
+    <div class="ad-tab-content active" id="about-meet">
+      <div class="ad-section-title">👨‍💻 Meet Abass Oluwamayowa</div>
+      <div class="ad-bio">
+        Abass is a 100-level Computer Science student at Adekunle Ajasin University with an unwavering passion for football, technology, and digital innovation. His vision is to make football experiences faster, simpler, and more engaging for fans worldwide.
+      </div>
+
+      <div class="ad-highlight">
+        <strong>🎯 The Vision</strong><br>
+        Pitchside was born from a desire to bridge the gap between football lovers and real-time information. Abass built this platform to help fans easily follow live scores, match updates, and football activities in real time—all in one place.
+      </div>
+
+      <div class="ad-section-title">🚀 What Drives Him</div>
+      <div class="ad-bio">
+        As a self-driven developer, Abass is constantly learning, experimenting, and pushing the boundaries of what's possible in mobile app development, UI/UX design, and modern web technologies. He believes that great ideas are built from passion, hard work, and consistency.
+      </div>
+
+      <div class="ad-highlight">
+        <strong>💡 The Philosophy</strong><br>
+        Pitchside represents creativity, dedication, and the belief that meaningful digital solutions can come from genuine passion. Despite being early in his academic journey, Abass continues to build real-world projects and explore innovative ideas in tech.
+      </div>
+
+      <div class="ad-section-title">🌍 The Goal</div>
+      <div class="ad-bio">
+        Abass aims to grow Pitchside into a trusted football platform for fans across different countries while continuing to develop impactful digital solutions that are modern, user-friendly, and valuable to the community.
+      </div>
+    </div>
+
+    <!-- SUPPORT TAB -->
+    <div class="ad-tab-content" id="about-support">
+      <div class="ad-section-title">How Can We Help?</div>
+      <div class="ad-bio" style="margin-bottom: 8px;">We're here to support you. Choose how you'd like to help improve Pitchside:</div>
+
+      <div class="ad-support-item" onclick="openSupportOption('bug')">
+        <div class="ad-support-icon">🐛</div>
+        <div class="ad-support-text">
+          <div class="ad-support-title">Report a Bug</div>
+          <div class="ad-support-desc">Found an issue? Let us know so we can fix it</div>
+        </div>
+      </div>
+
+      <div class="ad-support-item" onclick="openSupportOption('feature')">
+        <div class="ad-support-icon">✨</div>
+        <div class="ad-support-text">
+          <div class="ad-support-title">Feature Request</div>
+          <div class="ad-support-desc">Have an idea to make Pitchside better?</div>
+        </div>
+      </div>
+
+      <div class="ad-support-item" onclick="openSupportOption('feedback')">
+        <div class="ad-support-icon">💬</div>
+        <div class="ad-support-text">
+          <div class="ad-support-title">Send Feedback</div>
+          <div class="ad-support-desc">Share your thoughts and suggestions</div>
+        </div>
+      </div>
+
+      <div class="ad-support-item" onclick="openSupportOption('email')">
+        <div class="ad-support-icon">📧</div>
+        <div class="ad-support-text">
+          <div class="ad-support-title">Email Support</div>
+          <div class="ad-support-desc">Contact us directly for assistance</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONTACT TAB -->
+    <div class="ad-tab-content" id="about-contact">
+      <div class="ad-section-title">Get in Touch</div>
+      <div class="ad-bio" style="margin-bottom: 8px;">Connect with Abass and stay updated with Pitchside:</div>
+
+      <div class="ad-contact-item" onclick="copyToClipboard('pitchside145@gmail.com', 'Email copied!')">
+        <div class="ad-contact-icon">📧</div>
+        <div class="ad-contact-info">
+          <div class="ad-contact-label">Email</div>
+          <div class="ad-contact-value">pitchside145@gmail.com</div>
+        </div>
+      </div>
+
+      <div class="ad-highlight">
+        <strong>💌 Quick Tip</strong><br>
+        Tap the email above to copy it to your clipboard, then send us your feedback, bug reports, or feature requests!
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Support Modal -->
+<div id="support-modal" style="display:none;position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,0.6);flex-direction:column;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:var(--bg2);border-radius:16px;padding:20px;max-width:320px;width:100%;max-height:80vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div id="support-modal-title" style="font-size:16px;font-weight:700;color:var(--text);">Support</div>
+      <button onclick="closeSupportModal()" style="background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;">×</button>
+    </div>
+    <textarea id="support-message" placeholder="Tell us what's on your mind..." style="width:100%;min-height:120px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;resize:vertical;" maxlength="500"></textarea>
+    <div style="font-size:11px;color:var(--text3);margin-top:6px;text-align:right;" id="char-count">0/500</div>
+    <button onclick="submitSupport()" style="width:100%;margin-top:12px;padding:12px;background:var(--green);border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;">Send to pitchside145@gmail.com</button>
+  </div>
 </div>
 
 <!-- ═══════════════════════════════════════
