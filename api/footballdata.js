@@ -5,7 +5,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const API_KEY = process.env.FOOTBALLDATA_API_KEY || 'YOUR_FOOTBALLDATA_API_KEY'; // Replace with actual API key
+   const API_KEY = process.env.FOOTBALLDATA_KEY;// Replace with actual API key
   const BASE_URL = 'https://api.football-data.org/v4';
 
   try {
