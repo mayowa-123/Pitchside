@@ -2,10 +2,15 @@ import admin from 'firebase-admin';
 
 if (!admin.apps.length) {
   try {
+    if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+      throw new Error('FIREBASE_SERVICE_ACCOUNT environment variable is missing');
+    }
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    console.log('✅ Firebase Admin Initialized successfully in API');
   } catch (e) {
-    console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT in API.');
+    console.error('❌ Firebase Init Error:', e.message);
+    // We don't exit(1) here because it's a serverless function, but we log it
   }
 }
 
