@@ -1963,13 +1963,14 @@ async function loadLiveTable(leagueId, season) {
   container.innerHTML = `<div class="ov-loading"><div class="spinner"></div>Fetching table...</div>`;
   
   try {
-    const res = await fetch(`/api/football?endpoint=standings&league=${leagueId}&season=${season}`, {
+    // Use the new footballdata.js API endpoint
+    const res = await fetch(`/api/footballdata?endpoint=competitions/${leagueId}/standings&season=${season}`, {
       headers: {}
     });
     const data = await res.json();
-    const standings = data.response[0]?.league?.standings[0];
+    const standings = data.standings?.[0]?.table;
 
-    if (!standings) throw new Error("No standings found");
+    if (!standings || !Array.isArray(standings)) throw new Error("No standings found");
 
     let html = `
       <div class="table-row table-hdr">
@@ -1982,15 +1983,16 @@ async function loadLiveTable(leagueId, season) {
 
     html += standings.map(row => `
       <div class="table-row">
-        <div class="tr-pos">${row.rank}</div>
-        <div class="tr-team"><img src="${row.team.logo}">${row.team.name}</div>
-        <div class="tr-stat">${row.all.played}</div>
-        <div class="tr-stat">${row.goalsDiff}</div>
-        <div class="tr-pts">${row.points}</div>
+        <div class="tr-pos">${row.position}</div>
+        <div class="tr-team"><img src="${row.team?.crest || ''}" onerror="this.src='⚽'">${row.team?.name || 'Unknown'}</div>
+        <div class="tr-stat">${row.playedGames || 0}</div>
+        <div class="tr-stat">${row.goalDifference || 0}</div>
+        <div class="tr-pts">${row.points || 0}</div>
       </div>`).join('');
       
     container.innerHTML = html;
   } catch (e) {
+    console.error('Error loading standings:', e);
     container.innerHTML = `<div class="empty-state">Table not available for this competition.</div>`;
   }
 }
@@ -4482,48 +4484,88 @@ async function handlePlayerSearch(val) {
         return;
       }
 
-      // ── Step 2: Not in Firebase — fall back to API ──
-      const response = await fetch(
-        `/api/football?endpoint=players&search=${encodeURIComponent(query)}&league=332&season=2025`,
-        { signal: AbortSignal.timeout(7000) }
-      );
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      let data = await response.json();
-
-      // Detect API-level errors (quota exceeded, invalid key, etc.)
-      if (data.errors && (data.errors.requests || data.errors.token || Object.keys(data.errors).length)) {
-        const errMsg = data.errors.requests || data.errors.token || JSON.stringify(data.errors);
-        res.innerHTML = `
-          <div class="player-empty">
-            <div class="player-empty-icon">⚠️</div>
-            <div class="player-empty-text">API Error: ${errMsg}</div>
-          </div>`;
-        return;
-      }
-
-      let players = data.response || [];
-
-      // If no results in NPFL, widen search to all leagues
-      if (!players.length) {
-        const r2 = await fetch(
-          `/api/football?endpoint=players&search=${encodeURIComponent(query)}&season=2025`,
+      // ── Step 2: Try Sportmonks API first ──
+      let players = [];
+      try {
+        const sportmonksRes = await fetch(
+          `/api/sportmonks?endpoint=players&filters[name]=${encodeURIComponent(query)}&include=team`,
           { signal: AbortSignal.timeout(7000) }
         );
-        if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
-        const d2 = await r2.json();
-        players = d2.response || [];
-        
-        // Fallback to 2024 if 2025 has no results
-        if (!players.length) {
-          const r3 = await fetch(
-            `/api/football?endpoint=players&search=${encodeURIComponent(query)}&season=2024`,
+        if (sportmonksRes.ok) {
+          const sportmonksData = await sportmonksRes.json();
+          if (sportmonksData.data && Array.isArray(sportmonksData.data)) {
+            players = sportmonksData.data.slice(0, 10).map(p => ({
+              player: {
+                id: p.id,
+                firstname: p.first_name || '',
+                lastname: p.last_name || '',
+                photo: p.image_path || '',
+                nationality: p.nationality || '—',
+                age: p.date_of_birth ? new Date().getFullYear() - new Date(p.date_of_birth).getFullYear() : null,
+                position: p.position?.name || '—'
+              },
+              statistics: [{
+                team: { name: p.team?.name || '—', logo: p.team?.image_path || '' },
+                games: { position: p.position?.name || '—', appearences: null, rating: null },
+                goals: { total: null, assists: null }
+              }]
+            }));
+          }
+        }
+      } catch(e) {
+        console.warn('Sportmonks API failed:', e);
+      }
+
+      // ── Step 3: Fall back to original football API ──
+      if (!players.length) {
+        try {
+          const response = await fetch(
+            `/api/football?endpoint=players&search=${encodeURIComponent(query)}&league=332&season=2025`,
             { signal: AbortSignal.timeout(7000) }
           );
-          if (r3.ok) {
-            const d3 = await r3.json();
-            players = d3.response || [];
+
+          if (response.ok) {
+            let data = await response.json();
+            
+            // Detect API-level errors
+            if (data.errors && (data.errors.requests || data.errors.token || Object.keys(data.errors).length)) {
+              const errMsg = data.errors.requests || data.errors.token || JSON.stringify(data.errors);
+              res.innerHTML = `
+                <div class="player-empty">
+                  <div class="player-empty-icon">⚠️</div>
+                  <div class="player-empty-text">API Error: ${errMsg}</div>
+                </div>`;
+              return;
+            }
+
+            players = data.response || [];
+
+            // If no results in NPFL, widen search to all leagues
+            if (!players.length) {
+              const r2 = await fetch(
+                `/api/football?endpoint=players&search=${encodeURIComponent(query)}&season=2025`,
+                { signal: AbortSignal.timeout(7000) }
+              );
+              if (r2.ok) {
+                const d2 = await r2.json();
+                players = d2.response || [];
+                
+                // Fallback to 2024 if 2025 has no results
+                if (!players.length) {
+                  const r3 = await fetch(
+                    `/api/football?endpoint=players&search=${encodeURIComponent(query)}&season=2024`,
+                    { signal: AbortSignal.timeout(7000) }
+                  );
+                  if (r3.ok) {
+                    const d3 = await r3.json();
+                    players = d3.response || [];
+                  }
+                }
+              }
+            }
           }
+        } catch(e) {
+          console.warn('Football API also failed:', e);
         }
       }
 
