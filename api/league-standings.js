@@ -35,9 +35,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Invalid league ID' });
     }
 
+    console.log(`Fetching collection: ${collectionName}`);
     const snap = await db.collection(collectionName).get();
 
     if (snap.empty) {
+      console.warn(`Collection ${collectionName} is empty.`);
       return res.status(404).json({ error: `No standings found for league ${league}` });
     }
 
