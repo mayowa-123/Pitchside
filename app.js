@@ -4389,7 +4389,7 @@ async function _loadU17Standings() {
 
 function initNpfl() {
   // Load top leagues by default
-  loadLeagueStandings('4328');
+  setTimeout(() => loadLeagueStandings('4328'), 2000);
   _loadNpflStandings();
   _loadU17Standings();
   if (_scoresRefreshInterval) clearInterval(_scoresRefreshInterval);
