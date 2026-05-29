@@ -4305,37 +4305,16 @@ function _renderStandingsTable(standings, container) {
 async function loadLeagueStandings(leagueId) {
   const el = document.getElementById('top-standings-body');
   el.innerHTML = _scoresSpinner('Loading standings…');
-
-  // Map league IDs to Firestore collection names
-  const leagueCollectionMap = {
-    '39': 'pl_standings',
-    '4328': 'pl_standings',
-    '140': 'laliga_standings',
-    '135': 'seriea_standings',
-    '78': 'bundesliga_standings',
-    '61': 'ligue1_standings',
-    '2': 'cl_standings',
-  };
-
   try {
-    const collectionName = leagueCollectionMap[String(leagueId)] || 'pl_standings';
-    const { collection, getDocs, db } = await waitForFs();
-    const snap = await getDocs(collection(db, collectionName));
-
-    if (snap.empty) {
-      el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">No standings available</div>';
-      return;
-    }
-
-    const standings = snap.docs
-      .map(d => d.data())
-      .sort((a, b) => parseInt(a.rank) - parseInt(b.rank));
-
-    _renderStandingsTable(standings, 'top-standings-body');
-
-   } catch(e) {
+    const res = await fetch(`/api/standings?league=${leagueId}`);
+const data = await res.json();
+_renderStandingsTable(data.standings || [], 'top-standings-body');
+return;
+  } catch(e) {
     el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load standings</div>';
   }
+}
+
 async function _loadNpflStandings() {
   const el = document.getElementById('npfl-standings-body');
   if (!el) return;
