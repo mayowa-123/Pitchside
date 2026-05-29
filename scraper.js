@@ -49,6 +49,66 @@ function makeDocId(name) {
         .replace(/^_|_$/g, '');
 }
 
+const LEAGUE_SOURCES = [
+    { id: 'pl_standings', name: 'Premier League', url: 'https://www.bbc.com/sport/football/premier-league/table' },
+    { id: 'laliga_standings', name: 'La Liga', url: 'https://www.bbc.com/sport/football/la-liga/table' },
+    { id: 'seriea_standings', name: 'Serie A', url: 'https://www.bbc.com/sport/football/serie-a/table' },
+    { id: 'bundesliga_standings', name: 'Bundesliga', url: 'https://www.bbc.com/sport/football/bundesliga/table' },
+    { id: 'ligue1_standings', name: 'Ligue 1', url: 'https://www.bbc.com/sport/football/ligue-one/table' },
+];
+
+async function scrapeLeagueStandings() {
+    console.log('\n🌍 Scraping TOP LEAGUE STANDINGS from BBC Sport...');
+
+    for (const league of LEAGUE_SOURCES) {
+        try {
+            const { data: html } = await HTTP.get(league.url);
+            const $ = cheerio.load(html);
+            const standings = [];
+
+            $('table tbody tr').each((i, el) => {
+                const cols = $(el).find('td');
+                if (cols.length < 9) return;
+                standings.push({
+                    rank: $(cols[0]).text().trim(),
+                    team: $(cols[1]).text().trim(),
+                    played: $(cols[2]).text().trim(),
+                    won: $(cols[3]).text().trim(),
+                    drawn: $(cols[4]).text().trim(),
+                    lost: $(cols[5]).text().trim(),
+                    goalsFor: $(cols[6]).text().trim(),
+                    goalsAgainst: $(cols[7]).text().trim(),
+                    goalDifference: $(cols[8]).text().trim(),
+                    points: $(cols[9]).text().trim(),
+                    lastUpdated: new Date().toISOString(),
+                    source: 'bbc.com/sport',
+                });
+            });
+
+            if (standings.length === 0) {
+                console.warn(`⚠️ No standings found for ${league.name}`);
+                continue;
+            }
+
+            const oldDocs = await db.collection(league.id).listDocuments();
+            if (oldDocs.length > 0) {
+                const delBatch = db.batch();
+                oldDocs.forEach(ref => delBatch.delete(ref));
+                await delBatch.commit();
+            }
+
+            const batch = db.batch();
+            standings.forEach((t, i) => {
+                batch.set(db.collection(league.id).doc(`team_${i + 1}`), t);
+            });
+            await batch.commit();
+            console.log(`✅ ${league.name}: ${standings.length} teams saved → ${league.id}`);
+
+        } catch (err) {
+            console.error(`❌ Failed ${league.name}:`, err.message);
+        }
+    }
+}
 async function scrapeStandings() {
     console.log('\n📋 [1/2] Scraping STANDINGS...');
     let html;
@@ -65,9 +125,9 @@ async function scrapeStandings() {
         return;
     }
 
-    const $         = cheerio.load(html);
+    const $ = cheerio.load(html);
     const standings = [];
-    const skipped   = [];
+    const skipped = [];
 
     $('table tbody tr').each((i, el) => {
         const cols = $(el).find('td');
@@ -76,31 +136,29 @@ async function scrapeStandings() {
         if (!isNPFLTeam(team)) { skipped.push(team || `row${i}`); return; }
 
         standings.push({
-            rank:         $(cols[0]).text().trim(),
+            rank: $(cols[0]).text().trim(),
             team,
-            played:       $(cols[2]).text().trim(),
-            won:          $(cols[3]).text().trim(),
-            drawn:        $(cols[4]).text().trim(),
-            lost:         $(cols[5]).text().trim(),
-            goalsFor:     $(cols[6]).text().trim(),
+            played: $(cols[2]).text().trim(),
+            won: $(cols[3]).text().trim(),
+            drawn: $(cols[4]).text().trim(),
+            lost: $(cols[5]).text().trim(),
+            goalsFor: $(cols[6]).text().trim(),
             goalsAgainst: $(cols[7]).text().trim(),
-            points:       $(cols[9]).text().trim() || $(cols[8]).text().trim(),
-            lastUpdated:  new Date().toISOString(),
-            source:       'npfl.com.ng',
+            points: $(cols[9]).text().trim() || $(cols[8]).text().trim(),
+            lastUpdated: new Date().toISOString(),
+            source: 'npfl.com.ng',
         });
     });
 
     if (skipped.length) console.warn(`   ⚠️  Skipped: ${skipped.join(' | ')}`);
     if (standings.length === 0) { console.error('❌ No standings found.'); return; }
 
-    // Clear old standings first
     try {
         const oldDocs = await db.collection('npfl_standings').listDocuments();
         if (oldDocs.length > 0) {
             const delBatch = db.batch();
             oldDocs.forEach(ref => delBatch.delete(ref));
             await delBatch.commit();
-            console.log(`   🗑️  Cleared ${oldDocs.length} old standing docs.`);
         }
     } catch (err) {
         console.warn('   ⚠️  Could not clear old standings:', err.message);
@@ -115,7 +173,7 @@ async function scrapeStandings() {
 }
 
 async function scrapeFixturesAndResults() {
-    console.log('\n⚽ [2/2] Scraping FIXTURES + RESULTS from npfl.com.ng/fixtures/...');
+    console.log('\n⚽ [2/2] Scraping FIXTURES + RESULTS...');
 
     let html;
     try {
@@ -126,19 +184,19 @@ async function scrapeFixturesAndResults() {
         return;
     }
 
-    const $       = cheerio.load(html);
-    const today   = new Date();
+    const $ = cheerio.load(html);
+    const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const allFixtures = [];
-    const allResults  = [];
+    const allResults = [];
 
     $('table tbody tr').each((i, el) => {
-        const cols     = $(el).find('td');
+        const cols = $(el).find('td');
         if (cols.length < 3) return;
 
-        const rawDate  = $(cols[0]).text().trim();
-        const home     = $(cols[1]).text().trim();
+        const rawDate = $(cols[0]).text().trim();
+        const home = $(cols[1]).text().trim();
         const scoreRaw = $(cols[2]).text().trim();
 
         if (!isNPFLTeam(home)) return;
@@ -150,30 +208,30 @@ async function scrapeFixturesAndResults() {
         }
         if (!away) return;
 
-        const datePart  = (rawDate.match(/(\d{4}-\d{2}-\d{2})/) || [])[1] || '';
+        const datePart = (rawDate.match(/(\d{4}-\d{2}-\d{2})/) || [])[1] || '';
         const timeMatch = rawDate.match(/(\d{1,2}:\d{2})/);
-        const timePart  = timeMatch ? timeMatch[1] : '16:00';
+        const timePart = timeMatch ? timeMatch[1] : '16:00';
         if (!datePart) return;
         const [yr, mo, dy] = datePart.split('-').map(Number);
-        const matchDate    = new Date(yr, mo - 1, dy);
+        const matchDate = new Date(yr, mo - 1, dy);
 
         const scoreMatch = scoreRaw.match(/(\d+)\s*[-:]\s*(\d+)/);
-        const hasScore   = !!scoreMatch;
-        const isPast     = matchDate < today;
+        const hasScore = !!scoreMatch;
+        const isPast = matchDate < today;
 
         const entry = {
-            homeTeam:    home,
-            awayTeam:    away,
-            date:        datePart,
-            time:        timePart,
+            homeTeam: home,
+            awayTeam: away,
+            date: datePart,
+            time: timePart,
             lastUpdated: new Date().toISOString(),
-            source:      'npfl.com.ng',
+            source: 'npfl.com.ng',
         };
 
         if (hasScore && isPast) {
             entry.homeScore = scoreMatch[1];
             entry.awayScore = scoreMatch[2];
-            entry.status    = 'FT';
+            entry.status = 'FT';
             allResults.push({ ...entry, _matchDate: matchDate });
         } else if (!hasScore) {
             entry.status = 'NS';
@@ -187,30 +245,23 @@ async function scrapeFixturesAndResults() {
     allResults.sort((a, b) => b._matchDate - a._matchDate);
     const results = allResults.slice(0, 15).map(({ _matchDate, ...r }) => r);
 
-    console.log(`   Found: ${allFixtures.length} upcoming, ${allResults.length} finished`);
-    console.log(`   Saving: ${fixtures.length} fixtures, ${results.length} results`);
-
-    // Clear old fixtures
     try {
         const oldDocs = await db.collection('npfl_fixtures').listDocuments();
         if (oldDocs.length > 0) {
             const delBatch = db.batch();
             oldDocs.forEach(ref => delBatch.delete(ref));
             await delBatch.commit();
-            console.log(`   🗑️  Cleared ${oldDocs.length} old fixture docs.`);
         }
     } catch (err) {
         console.warn('   ⚠️  Could not clear old fixtures:', err.message);
     }
 
-    // Clear old results
     try {
         const oldDocs = await db.collection('npfl_results').listDocuments();
         if (oldDocs.length > 0) {
             const delBatch = db.batch();
             oldDocs.forEach(ref => delBatch.delete(ref));
             await delBatch.commit();
-            console.log(`   🗑️  Cleared ${oldDocs.length} old result docs.`);
         }
     } catch (err) {
         console.warn('   ⚠️  Could not clear old results:', err.message);
@@ -223,9 +274,7 @@ async function scrapeFixturesAndResults() {
             batch.set(db.collection('npfl_fixtures').doc(id), f);
         });
         await batch.commit();
-        console.log(`✅ Fixtures: ${fixtures.length} matches → npfl_fixtures`);
-    } else {
-        console.warn('   ⚠️  No upcoming fixtures found.');
+        console.log(`✅ Fixtures: ${fixtures.length} saved.`);
     }
 
     if (results.length > 0) {
@@ -235,18 +284,17 @@ async function scrapeFixturesAndResults() {
             batch.set(db.collection('npfl_results').doc(id), r);
         });
         await batch.commit();
-        console.log(`✅ Results: ${results.length} matches → npfl_results`);
-    } else {
-        console.warn('   ⚠️  No results found.');
+        console.log(`✅ Results: ${results.length} saved.`);
     }
 }
 
 async function main() {
-    console.log('🚀 NPFL Scraper —', new Date().toUTCString());
+    console.log('🚀 PitchSide Scraper —', new Date().toUTCString());
 
     const jobs = await Promise.allSettled([
         scrapeStandings(),
         scrapeFixturesAndResults(),
+        scrapeLeagueStandings(),
     ]);
 
     jobs.forEach((j, i) => {
