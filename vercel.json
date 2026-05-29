@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/api/league-standings", "destination": "/api/league-standings.js" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
