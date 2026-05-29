@@ -4332,12 +4332,9 @@ async function loadLeagueStandings(leagueId) {
       .sort((a, b) => parseInt(a.rank) - parseInt(b.rank));
 
     _renderStandingsTable(standings, 'top-standings-body');
-
-  } catch(e) {
-    el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load standings</div>';
+} catch(e) {
+    el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Error: ' + e.message + '</div>';
   }
-}
-
 async function _loadNpflStandings() {
   const el = document.getElementById('npfl-standings-body');
   if (!el) return;
