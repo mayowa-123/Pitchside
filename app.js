@@ -4304,12 +4304,18 @@ function _renderStandingsTable(standings, container) {
 
 async function loadLeagueStandings(leagueId) {
   const el = document.getElementById('top-standings-body');
+  if (!el) return;
   el.innerHTML = _scoresSpinner('Loading standings…');
   try {
     const res = await fetch(`/api/league-standings?league=${leagueId}`);
     const data = await res.json();
-    _renderStandingsTable(data.standings || [], 'top-standings-body');
+    if (data.standings && data.standings.length) {
+      _renderStandingsTable(data.standings, 'top-standings-body');
+    } else {
+      el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">No standings data available</div>';
+    }
   } catch(e) {
+    console.error('Error loading league standings:', e);
     el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load standings</div>';
   }
 }

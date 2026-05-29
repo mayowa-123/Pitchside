@@ -21,7 +21,6 @@ const HTTP = axios.create({
         'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
         'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Referer':         'https://npfl.com.ng/',
     },
 });
 
@@ -50,15 +49,15 @@ function makeDocId(name) {
 }
 
 const LEAGUE_SOURCES = [
-    { id: 'pl_standings', name: 'Premier League', url: 'https://www.bbc.com/sport/football/premier-league/table' },
-    { id: 'laliga_standings', name: 'La Liga', url: 'https://www.bbc.com/sport/football/la-liga/table' },
-    { id: 'seriea_standings', name: 'Serie A', url: 'https://www.bbc.com/sport/football/serie-a/table' },
-    { id: 'bundesliga_standings', name: 'Bundesliga', url: 'https://www.bbc.com/sport/football/bundesliga/table' },
-    { id: 'ligue1_standings', name: 'Ligue 1', url: 'https://www.bbc.com/sport/football/ligue-one/table' },
+    { id: 'pl_standings', name: 'Premier League', url: 'https://www.skysports.com/premier-league-table' },
+    { id: 'laliga_standings', name: 'La Liga', url: 'https://www.skysports.com/la-liga-table' },
+    { id: 'seriea_standings', name: 'Serie A', url: 'https://www.skysports.com/serie-a-table' },
+    { id: 'bundesliga_standings', name: 'Bundesliga', url: 'https://www.skysports.com/bundesliga-table' },
+    { id: 'ligue1_standings', name: 'Ligue 1', url: 'https://www.skysports.com/ligue-1-table' },
 ];
 
 async function scrapeLeagueStandings() {
-    console.log('\n🌍 Scraping TOP LEAGUE STANDINGS from BBC Sport...');
+    console.log('\n🌍 Scraping TOP LEAGUE STANDINGS from Sky Sports...');
 
     for (const league of LEAGUE_SOURCES) {
         try {
@@ -66,12 +65,18 @@ async function scrapeLeagueStandings() {
             const $ = cheerio.load(html);
             const standings = [];
 
-            $('table tbody tr').each((i, el) => {
+            // Sky Sports uses table.sdc-site-table
+            $('table.sdc-site-table tbody tr').each((i, el) => {
                 const cols = $(el).find('td');
-                if (cols.length < 9) return;
+                if (cols.length < 10) return;
+                
+                // Sky Sports table structure:
+                // 0: Rank, 1: Team, 2: Played, 3: Won, 4: Drawn, 5: Lost, 6: For, 7: Against, 8: GD, 9: Pts
+                const teamName = $(cols[1]).find('a').text().trim() || $(cols[1]).text().trim();
+                
                 standings.push({
                     rank: $(cols[0]).text().trim(),
-                    team: $(cols[1]).text().trim(),
+                    team: teamName,
                     played: $(cols[2]).text().trim(),
                     won: $(cols[3]).text().trim(),
                     drawn: $(cols[4]).text().trim(),
@@ -81,7 +86,7 @@ async function scrapeLeagueStandings() {
                     goalDifference: $(cols[8]).text().trim(),
                     points: $(cols[9]).text().trim(),
                     lastUpdated: new Date().toISOString(),
-                    source: 'bbc.com/sport',
+                    source: 'skysports.com',
                 });
             });
 
@@ -109,6 +114,7 @@ async function scrapeLeagueStandings() {
         }
     }
 }
+
 async function scrapeStandings() {
     console.log('\n📋 [1/2] Scraping STANDINGS...');
     let html;
