@@ -4334,7 +4334,7 @@ async function loadLeagueStandings(leagueId) {
     _renderStandingsTable(standings, 'top-standings-body');
 
 } catch(e) {
-    el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Error: ' + e.message + '</div>';
+    el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3);font-size:13px;">⚠️ Could not load standings</div>';
   }
 
 async function _loadNpflStandings() {
