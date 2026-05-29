@@ -343,10 +343,11 @@ function renderLiveScores(groups, filter) {
 
   groups.forEach(group => {
     const filtered = group.matches.filter(m => {
-      const st = m.status;
+      const st = m.statusShort || m.status;
       if (filter === 'all') return true;
-      if (filter === 'live') return st !== 'FT' && st !== 'NS' && st !== 'Canc.';
-      if (filter === 'finished') return st === 'FT';
+      // Live matches: 1H, 2H, ET, HT, P, INT, LIVE (but not finished or not started)
+      if (filter === 'live') return ['1H','2H','ET','HT','P','INT','LIVE'].includes(st);
+      if (filter === 'finished') return ['FT','AET','PEN'].includes(st);
       if (filter === 'upcoming') return st === 'NS';
       return true;
     });
@@ -368,7 +369,7 @@ function renderLiveScores(groups, filter) {
       const st = m.statusShort || m.status;
       const isFT = ['FT', 'AET', 'PEN'].includes(st);
       const isNS = st === 'NS';
-      const isLive = m.isLive;
+      const isLive = ['1H','2H','ET','HT','P','INT','LIVE'].includes(st);
       const hasScore = m.scoreH !== null && m.scoreA !== null;
 
       const homeWin = hasScore && m.scoreH > m.scoreA;
@@ -376,9 +377,13 @@ function renderLiveScores(groups, filter) {
 
       let timeCol = '';
       if (isLive) {
-        timeCol = `<span class="ls-live-dot"></span><span class="ls-live-min">${m.status}</span>`;
+        // Display elapsed time or status for live matches
+        const displayStatus = m.minute ? `${m.minute}'` : (st === 'HT' ? 'HT' : 'LIVE');
+        timeCol = `<span class="ls-live-dot"></span><span class="ls-live-min">${displayStatus}</span>`;
       } else if (isFT) {
         timeCol = `<span class="ls-finished">FT</span>`;
+      } else if (st === 'PST') {
+        timeCol = `<span class="ls-postponed">PST</span>`;
       } else {
         timeCol = `<span class="ls-time">${m.time}</span>`;
       }
@@ -1036,15 +1041,16 @@ function renderTicker(matches) {
   const container = document.getElementById('ticker-row');
   if (!container) return;
   container.innerHTML = matches.map(m => {
-    const isLive = m.status === 'LIVE' || m.status === '1H' || m.status === '2H' || m.status === 'ET' || m.status === 'P';
-    const isHT   = m.status === 'HT';
-    const active = isLive || isHT;
-    const displayStatus = isLive && m.minute ? `${m.minute}'` : (isHT ? 'HT' : m.status);
+    const st = m.status || 'NS';
+    const isLive = ['1H','2H','ET','HT','P','INT','LIVE'].includes(st);
+    const isHT   = st === 'HT';
+    const active = isLive;
+    const displayStatus = isLive && m.minute ? `${m.minute}'` : (isHT ? 'HT' : st);
     return `
       <div class="t-card" onclick="openMatchDetail('${m.matchId}', '${m.home} vs ${m.away}')">
         <div class="t-teams"><div>${m.home}</div><div>${m.away}</div></div>
         <div class="t-score">${m.score}</div>
-        <div class="t-live" style="background:${active ? '#fde047' : '#333'}; color:${active ? '#b91c1c' : '#999'};">
+        <div class="t-live" style="background:${active ? '#10b981' : '#333'}; color:${active ? '#fff' : '#999'};">
           ${displayStatus}
         </div>
       </div>`;
@@ -1791,9 +1797,10 @@ function fallbackToScoreAxis(matchId, body) {
 
 function buildRealMatchDetailCard(d) {
   const statusShort = d.fixture.status.short;
-  const isLive = ['1H','2H','ET','BT','P','INT'].includes(statusShort);
-  const statusClass = isLive ? 'match-status-live' : (statusShort === 'HT' ? 'match-status-ht' : (statusShort === 'FT' ? 'match-status-ft' : 'match-status-upcoming'));
-  const statusLabel = isLive ? `${d.fixture.status.elapsed}'` : statusShort;
+  const isLive = ['1H','2H','ET','HT','P','INT','LIVE'].includes(statusShort);
+  const isFT = ['FT','AET','PEN'].includes(statusShort);
+  const statusClass = isLive ? 'match-status-live' : (statusShort === 'HT' ? 'match-status-ht' : (isFT ? 'match-status-ft' : 'match-status-upcoming'));
+  const statusLabel = isLive ? `${d.fixture.status.elapsed || 0}'` : statusShort;
   
   const scoreH = d.goals.home ?? '-';
   const scoreA = d.goals.away ?? '-';

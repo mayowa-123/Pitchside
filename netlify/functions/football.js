@@ -32,7 +32,10 @@ export default async function handler(req, res) {
 
   try {
     const params = { ...req.query };
+    const endpoint = params.endpoint || 'fixtures';
     const date = params.date || new Date().toISOString().split('T')[0];
+    const fixtureId = params.id;
+    const liveFilter = params.live; // 'all' for live matches only
     
     let allEvents = [];
     const eventIds = new Set();
@@ -48,53 +51,48 @@ export default async function handler(req, res) {
       }
     };
 
-    // 1. Fetch today's matches
-    try {
-      const todayRes = await fetch(`${BASE_URL}/${API_KEY}/eventsday.php?d=${date}&s=Soccer`);
-      if (todayRes.ok) {
-        const todayData = await todayRes.json();
-        addEvents(todayData.events);
+    // Helper function to determine if a match is currently live
+    const isMatchLive = (event) => {
+      const statusStr = (event.strStatus || '').toLowerCase();
+      const hasScores = event.intHomeScore !== null && event.intAwayScore !== null;
+      
+      // Check for explicit live indicators
+      if (statusStr.includes('live') || statusStr.includes('progress') || 
+          statusStr.includes('in play') || statusStr.includes('halftime')) {
+        return true;
       }
-    } catch (e) {}
+      
+      // If scores are present but not finished, likely live
+      if (hasScores && !statusStr.includes('finished') && !statusStr.includes('ft')) {
+        return true;
+      }
+      
+      return false;
+    };
 
-    // 2. Fetch from specific leagues (Last & Next)
-    // To keep it fast and stay within rate limits, we'll pick a subset of major leagues for detailed fetching
-    const majorLeagues = [4328, 4335, 4334, 4331, 4336, 4337, 4391, 4392];
-    for (const id of majorLeagues) {
-      try {
-        const [last, next] = await Promise.all([
-          fetch(`${BASE_URL}/${API_KEY}/eventslastleague.php?id=${id}`).then(r => r.json()),
-          fetch(`${BASE_URL}/${API_KEY}/eventsnextleague.php?id=${id}`).then(r => r.json())
-        ]);
-        addEvents(last.events);
-        addEvents(next.events);
-      } catch (e) {}
-    }
-
-    if (allEvents.length === 0) {
-      return res.status(200).json({ response: [] });
-    }
-
-    // Map to API-Football format
-    const mappedResponse = allEvents.map(event => {
+    // Helper function to map event to API-Football format
+    const mapEvent = (event) => {
       const statusStr = (event.strStatus || '').toLowerCase();
       const hasScores = event.intHomeScore !== null && event.intAwayScore !== null;
       
       let statusShort = 'NS';
       if (statusStr.includes('finished') || statusStr.includes('ft')) statusShort = 'FT';
       else if (statusStr.includes('halftime') || statusStr.includes('ht')) statusShort = 'HT';
-      else if (hasScores || statusStr.includes('live') || statusStr.includes('progress')) statusShort = 'LIVE';
+      else if (statusStr.includes('extra time') || statusStr.includes('et')) statusShort = 'ET';
+      else if (statusStr.includes('penalties') || statusStr.includes('pen')) statusShort = 'PEN';
+      else if (isMatchLive(event)) statusShort = 'LIVE';
+      else if (statusStr.includes('postponed') || statusStr.includes('cancelled')) statusShort = 'PST';
 
       // Estimate elapsed time
       let elapsed = 0;
-      if (statusShort === 'LIVE' || statusShort === 'HT') {
+      if (statusShort === 'LIVE' || statusShort === 'HT' || statusShort === 'ET') {
         try {
           const eventTime = new Date(`${event.dateEvent}T${event.strTime}`);
           elapsed = Math.floor((new Date() - eventTime) / 60000);
           if (elapsed < 0) elapsed = 0;
           if (elapsed > 120) elapsed = 90;
         } catch (e) {}
-      } else if (statusShort === 'FT') {
+      } else if (statusShort === 'FT' || statusShort === 'AET' || statusShort === 'PEN') {
         elapsed = 90;
       }
 
@@ -121,7 +119,66 @@ export default async function handler(req, res) {
           away: event.intAwayScore !== null ? parseInt(event.intAwayScore) : null
         }
       };
-    });
+    };
+
+    // Handle specific fixture ID query
+    if (fixtureId) {
+      try {
+        // TheSportsDB doesn't have a direct fixture ID lookup, so we need to search
+        // For now, return empty as this would require a different approach
+        return res.status(200).json({ response: [] });
+      } catch (e) {}
+    }
+
+    // Handle live=all query (only fetch live matches)
+    if (liveFilter === 'all') {
+      // Fetch from major leagues to get current live matches
+      const majorLeagues = [4328, 4335, 4334, 4331, 4336, 4337, 4391, 4392];
+      for (const id of majorLeagues) {
+        try {
+          const [last, next] = await Promise.all([
+            fetch(`${BASE_URL}/${API_KEY}/eventslastleague.php?id=${id}`).then(r => r.json()),
+            fetch(`${BASE_URL}/${API_KEY}/eventsnextleague.php?id=${id}`).then(r => r.json())
+          ]);
+          addEvents(last.events);
+          addEvents(next.events);
+        } catch (e) {}
+      }
+      
+      // Filter to only live matches
+      allEvents = allEvents.filter(isMatchLive);
+    } else {
+      // Default behavior: fetch today's matches and recent/upcoming from major leagues
+      
+      // 1. Fetch today's matches
+      try {
+        const todayRes = await fetch(`${BASE_URL}/${API_KEY}/eventsday.php?d=${date}&s=Soccer`);
+        if (todayRes.ok) {
+          const todayData = await todayRes.json();
+          addEvents(todayData.events);
+        }
+      } catch (e) {}
+
+      // 2. Fetch from specific leagues (Last & Next)
+      const majorLeagues = [4328, 4335, 4334, 4331, 4336, 4337, 4391, 4392];
+      for (const id of majorLeagues) {
+        try {
+          const [last, next] = await Promise.all([
+            fetch(`${BASE_URL}/${API_KEY}/eventslastleague.php?id=${id}`).then(r => r.json()),
+            fetch(`${BASE_URL}/${API_KEY}/eventsnextleague.php?id=${id}`).then(r => r.json())
+          ]);
+          addEvents(last.events);
+          addEvents(next.events);
+        } catch (e) {}
+      }
+    }
+
+    if (allEvents.length === 0) {
+      return res.status(200).json({ response: [] });
+    }
+
+    // Map all events to API-Football format
+    const mappedResponse = allEvents.map(mapEvent);
 
     return res.status(200).json({ response: mappedResponse });
 
