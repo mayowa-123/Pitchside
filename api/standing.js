@@ -4,49 +4,54 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // Map old numeric IDs and new codes to football-data.org codes
+  // Map league IDs to Highlightly league IDs
   const leagueMap = {
-    '39': 'PL',   // Premier League
-    '140': 'PD',  // La Liga
-    '135': 'SA',  // Serie A
-    '78': 'BL1',  // Bundesliga
-    '61': 'FL1',  // Ligue 1
-    '2': 'CL',    // Champions League
-    '4328': 'PL', // old ID for PL
-    'PL': 'PL', 'PD': 'PD', 'SA': 'SA',
-    'BL1': 'BL1', 'FL1': 'FL1', 'CL': 'CL'
+    '4328': '39',  // Premier League
+    '39': '39',
+    '140': '140',  // La Liga
+    '135': '135',  // Serie A
+    '78': '78',    // Bundesliga
+    '61': '61',    // Ligue 1
+    '2': '2',      // Champions League
+    'PL': '39',
+    'PD': '140',
+    'SA': '135',
+    'BL1': '78',
+    'FL1': '61',
+    'CL': '2'
   };
 
   try {
-    const { league = 'PL' } = req.query;
-    const code = leagueMap[league] || 'PL';
+    const { league = '39', season = '2024' } = req.query;
+    const leagueId = leagueMap[league] || league;
 
-    const url = `https://api.football-data.org/v4/competitions/${code}/standings`;
+    const url = `https://football-highlights-api.p.rapidapi.com/standings?leagueId=${leagueId}&season=${season}`;
+
     const response = await fetch(url, {
-      headers: { 'X-Auth-Token': process.env.FOOTBALLDATA_KEY }
+      headers: {
+        'x-rapidapi-key': process.env.HIGHLIGHTLY_KEY,
+        'x-rapidapi-host': 'football-highlights-api.p.rapidapi.com',
+      },
     });
 
-    if (!response.ok) {
-      const err = await response.text();
-      return res.status(response.status).json({ error: 'Failed to fetch standings', details: err });
+    const data = await response.json();
+
+    if (!data.data || !data.data.length) {
+      return res.status(404).json({ error: 'No standings found', raw: data });
     }
 
-    const data = await response.json();
-    const table = data.standings?.[0]?.table;
-    if (!table) return res.status(404).json({ error: 'No standings found' });
-
-    const standings = table.map(t => ({
-      rank: t.position,
-      team: t.team.name,
-      badge: t.team.crest,
-      played: t.playedGames,
-      won: t.won,
-      drawn: t.draw,
-      lost: t.lost,
-      goalsFor: t.goalsFor,
-      goalsAgainst: t.goalsAgainst,
-      goalDifference: t.goalDifference,
-      points: t.points,
+    const standings = data.data.map(t => ({
+      rank: t.rank || t.position,
+      team: t.team?.name || t.teamName,
+      badge: t.team?.logo || t.teamLogo || '',
+      played: t.played || t.gamesPlayed,
+      won: t.won || t.wins,
+      drawn: t.drawn || t.draws,
+      lost: t.lost || t.losses,
+      goalsFor: t.goalsFor || t.scored,
+      goalsAgainst: t.goalsAgainst || t.conceded,
+      goalDifference: t.goalDifference || t.gd,
+      points: t.points || t.pts,
     }));
 
     res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
