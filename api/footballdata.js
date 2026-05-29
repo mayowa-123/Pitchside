@@ -1,40 +1,46 @@
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-   const API_KEY = process.env.FOOTBALLDATA_KEY;// Replace with actual API key
-  const BASE_URL = 'https://api.football-data.org/v4';
-
   try {
-    const { endpoint, league, season } = req.query;
-    if (!endpoint) {
-      return res.status(400).json({ error: 'Missing endpoint parameter' });
-    }
+    const today = new Date().toISOString().split('T')[0];
 
-    let url = `${BASE_URL}/${endpoint}`;
-    if (league) url += `/competitions/${league}`;
-    if (season) url += `/seasons/${season}`;
+    const url = `https://api.football-data.org/v4/matches?date=${today}`;
 
     const response = await fetch(url, {
       headers: {
-        'X-Auth-Token': API_KEY,
+        'X-Auth-Token': process.env.FOOTBALLDATA_KEY,
       },
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`football-data.org API error: ${response.status} - ${errorText}`);
-      return res.status(response.status).json({ error: 'Failed to fetch data from football-data.org', details: errorText });
+      return res.status(response.status).json({ error: 'Failed to fetch matches', details: errorText });
     }
 
     const data = await response.json();
-    return res.status(200).json(data);
 
-  } catch (error) {
-    console.error('Serverless function error:', error);
-    return res.status(500).json({ error: 'Internal server error', details: error.message });
+    const matches = data.matches.map(m => ({
+      id: m.id,
+      status: m.status,
+      time: m.utcDate,
+      homeTeam: m.homeTeam.name,
+      homeBadge: m.homeTeam.crest,
+      awayTeam: m.awayTeam.name,
+      awayBadge: m.awayTeam.crest,
+      homeScore: m.score.fullTime.home ?? m.score.halfTime.home ?? null,
+      awayScore: m.score.fullTime.away ?? m.score.halfTime.away ?? null,
+      league: m.competition.name,
+      leagueLogo: m.competition.emblem,
+    }));
+
+    res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate');
+    return res.status(200).json({ matches });
+
+  } catch (err) {
+    return res.status(500).json({ error: 'Live scores error', detail: err.message });
   }
 }
