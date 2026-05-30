@@ -32,12 +32,14 @@ async function fetchFromChannel(channelId) {
     console.log(`No items returned for channel ${channelId}:`, JSON.stringify(data));
     return [];
   }
-  return data.items.map(item => ({
+    return data.items.map(item => ({
     videoId: item.id.videoId,
+    youtubeId: item.id.videoId, // Added for compatibility with frontend _firestoreDocToVideo
     title: item.snippet.title,
     thumbnail: item.snippet.thumbnails?.high?.url || item.snippet.thumbnails?.default?.url,
     channelTitle: item.snippet.channelTitle,
     publishedAt: item.snippet.publishedAt,
+    createdAt: new Date().toISOString(), // Added for compatibility with frontend sorting
     source: 'youtube',
     fetchedAt: new Date().toISOString(),
   }));
@@ -64,7 +66,7 @@ async function run() {
 
   const colRef = db.collection('highlights');
 
-  const existing = await colRef.orderBy('fetchedAt', 'asc').get();
+  const existing = await colRef.orderBy('createdAt', 'asc').get();
   const existingCount = existing.size;
   const totalAfterAdd = existingCount + allVideos.length;
 

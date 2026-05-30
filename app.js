@@ -491,6 +491,7 @@ function _firestoreDocToVideo(docSnap) {
     // Use Firestore doc ID directly for TikTok swipe logic
     id,
     firestoreId: id,
+    videoId:     d.videoId || d.youtubeId || id, // Map videoId for Highlights section
 
     title:       d.title       || d.teams  || d.matchTitle || 'Football Highlight',
     description: d.description || d.desc   || d.summary    || '',
