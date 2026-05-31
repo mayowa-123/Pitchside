@@ -1465,6 +1465,10 @@ function renderVideoEmbed(v) {
   }
 
   // Priority 3: Direct MP4 — native <video>, full trim control
+if (v.isImage || v.mediaType === 'image') {
+    container.innerHTML = `<img src="${v.thumbnail}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">`;
+    return;
+  }
   if (v.src && v.src.trim().length > 10) {
     const vid = document.createElement('video');
     vid.setAttribute('playsinline', '');
