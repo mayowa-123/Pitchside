@@ -113,7 +113,16 @@ function openSBPlayer(title, videoId) {
   const overlay = document.getElementById('sb-player-overlay');
   document.getElementById('sb-player-title').textContent = title;
   const body = document.getElementById('sb-player-body');
-  const src = `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
+  
+  let src = videoId;
+  if (!videoId.startsWith('http')) {
+    src = `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
+  }
+  
+  // Use the same cleaning and start-time logic as the main feed for consistency
+  if (typeof cleanEmbedUrl === 'function') src = cleanEmbedUrl(src);
+  if (typeof addStartTime === 'function') src = addStartTime(src);
+
   body.innerHTML = `
     <div style="position:relative;width:100%;height:100%;">
       <iframe src="${src}" width="100%" height="100%" style="border:none;display:block;height:100%;" allowfullscreen allow="autoplay; fullscreen"></iframe>
@@ -491,7 +500,7 @@ function _firestoreDocToVideo(docSnap) {
     // Use Firestore doc ID directly for TikTok swipe logic
     id,
     firestoreId: id,
-    videoId:     d.videoId || d.youtubeId || id, // Map videoId for Highlights section
+    videoId:     d.videoId || d.youtubeId || (String(id).startsWith('yt_') ? id.replace('yt_', '') : id), // Map videoId for Highlights section
 
     title:       d.title       || d.teams  || d.matchTitle || 'Football Highlight',
     description: d.description || d.desc   || d.summary    || '',
