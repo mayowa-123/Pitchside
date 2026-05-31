@@ -6193,7 +6193,13 @@ async function pcPublish() {
   function _doUpload(file, resourceType) {
     return new Promise((resolve, reject) => {
       const formData = new FormData();
-      
+      formData.append('file',           file);
+      formData.append('upload_preset',  CLOUDINARY_PRESET);
+      formData.append('cloud_name',     CLOUDINARY_CLOUD);
+      if (_pcFilter !== 'normal') formData.append('tags', 'filter_' + _pcFilter);
+      const uploadUrl = 'https://api.cloudinary.com/v1_1/' + CLOUDINARY_CLOUD + '/' + resourceType + '/upload';
+      const xhr = new XMLHttpRequest();
+
       // Generous timeout: 10 min for large videos on Nigerian networks
       const TIMEOUT_MS = 10 * 60 * 1000;
       const timer = setTimeout(() => {
