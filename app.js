@@ -66,7 +66,7 @@ function renderSBPage(reset) {
   const cards = slice.map(v => {
     const thumb = v.thumbnail || 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽';
     const title = (v.title || 'Highlight').replace(/'/g, "\\'");
-    const videoId = v.videoId || '';
+    const videoId = v.videoId || v.embedUrl || v.src || '';
     const channel = v.channel || '';
     return `
       <div onclick="openSBPlayer('${title}','${videoId}')" style="cursor:pointer;border-radius:12px;overflow:hidden;background:var(--bg2);box-shadow:var(--shadow-md);">
@@ -500,7 +500,7 @@ function _firestoreDocToVideo(docSnap) {
     // Use Firestore doc ID directly for TikTok swipe logic
     id,
     firestoreId: id,
-    videoId:     d.videoId || d.youtubeId || (String(id).startsWith('yt_') ? id.replace('yt_', '') : id), // Map videoId for Highlights section
+    videoId:     d.videoId || d.youtubeId || d.highlightId || (String(id).startsWith('yt_') ? id.replace('yt_', '') : id), // Map videoId for Highlights section
 
     title:       d.title       || d.teams  || d.matchTitle || 'Football Highlight',
     description: d.description || d.desc   || d.summary    || '',
