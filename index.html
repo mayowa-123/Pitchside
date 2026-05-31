@@ -1020,26 +1020,31 @@
       <button class="pc-close" onclick="closeQuickPost()">✕</button>
     </div>
     <div class="pc-pick-area">
-      <div class="pc-pick-btn" onclick="triggerFilePick()">
-        <div class="pc-pick-icon">🎬</div>
-        <div class="pc-pick-label">Choose Video or Photo</div>
-        <div class="pc-pick-sub">From your gallery or camera<br>MP4 · MOV · JPG · PNG</div>
+  <div id="pc-type-selector" style="width:100%;max-width:320px;">
+    <div style="font-size:13px;color:rgba(255,255,255,0.5);font-weight:600;letter-spacing:.06em;text-align:center;margin-bottom:16px;">WHO ARE YOU?</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+      <div onclick="pcSelectType('fan')" id="pc-type-fan"
+        style="padding:20px 12px;border-radius:16px;border:2px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);cursor:pointer;text-align:center;transition:.2s;">
+        <div style="font-size:36px;margin-bottom:8px;">👥</div>
+        <div style="font-size:13px;font-weight:800;color:rgba(255,255,255,0.7);">FAN CLIP</div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.35);margin-top:4px;">Max 60 seconds</div>
       </div>
-      <div style="font-size:12px;color:rgba(255,255,255,.35);font-weight:600;letter-spacing:.06em;">EDITING TOOLS INCLUDED</div>
-      <div class="pc-ext-row">
-        <div class="pc-ext-btn" onclick="triggerFilePick('stickers')">
-          <div class="pc-ext-icon">✂️</div>
-          <div class="pc-ext-name">STICKERS</div>
-        </div>
-        <div class="pc-ext-btn" onclick="triggerFilePick('filters')">
-          <div class="pc-ext-icon">🎨</div>
-          <div class="pc-ext-name">FILTERS</div>
-        </div>
-        <div class="pc-ext-btn" onclick="triggerFilePick('speed')">
-          <div class="pc-ext-icon">⚡</div>
-          <div class="pc-ext-name">SPEED</div>
-        </div>
+      <div onclick="pcSelectType('player')" id="pc-type-player"
+        style="padding:20px 12px;border-radius:16px;border:2px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);cursor:pointer;text-align:center;transition:.2s;">
+        <div style="font-size:36px;margin-bottom:8px;">⭐</div>
+        <div style="font-size:13px;font-weight:800;color:rgba(255,255,255,0.7);">PLAYER BTS</div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.35);margin-top:4px;">Max 2 minutes</div>
       </div>
+    </div>
+  </div>
+  <div id="pc-file-picker" style="display:none;width:100%;max-width:320px;">
+    <div id="pc-limit-banner" style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:10px 14px;margin-bottom:16px;text-align:center;font-size:12px;color:#10b981;font-weight:600;"></div>
+    <div class="pc-pick-btn" onclick="triggerFilePick()">
+      <div class="pc-pick-icon">🎬</div>
+      <div class="pc-pick-label">Choose Video or Photo</div>
+      <div class="pc-pick-sub">From your gallery or camera<br>MP4 · MOV · JPG · PNG</div>
+    </div>
+  </div>
     </div>
   </div>
 

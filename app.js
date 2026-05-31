@@ -5898,6 +5898,13 @@ let _pcMusic       = '';
 let _pcTaggedMatch = ''; // FEATURE 4: match tagging
 
 function openQuickPost() {
+  document.getElementById('pc-type-selector').style.display = 'block';
+  document.getElementById('pc-file-picker').style.display = 'none';
+  const _fanBtn    = document.getElementById('pc-type-fan');
+  const _playerBtn = document.getElementById('pc-type-player');
+  if (_fanBtn)    { _fanBtn.style.border    = '2px solid rgba(255,255,255,0.1)'; _fanBtn.style.background    = 'rgba(255,255,255,0.04)'; }
+  if (_playerBtn) { _playerBtn.style.border = '2px solid rgba(255,255,255,0.1)'; _playerBtn.style.background = 'rgba(255,255,255,0.04)'; }
+  window._hlIsPlayerPost = false;
   // Reset state
   _pcFile = null; _pcFilter = 'normal'; _pcSticker = ''; _pcSpeed = '1x'; _pcMusic = ''; _pcTaggedMatch = '';
   document.getElementById('post-creator').classList.add('open');
@@ -6627,3 +6634,28 @@ document.addEventListener('click', function(event) {
     closeSupportModal();
   }
 });
+
+function pcSelectType(type) {
+  window._hlIsPlayerPost = (type === 'player');
+  const fanBtn    = document.getElementById('pc-type-fan');
+  const playerBtn = document.getElementById('pc-type-player');
+  if (type === 'fan') {
+    fanBtn.style.border       = '2px solid #10b981';
+    fanBtn.style.background   = 'rgba(16,185,129,0.15)';
+    playerBtn.style.border    = '2px solid rgba(255,255,255,0.1)';
+    playerBtn.style.background= 'rgba(255,255,255,0.04)';
+  } else {
+    playerBtn.style.border    = '2px solid #fbbf24';
+    playerBtn.style.background= 'rgba(251,191,36,0.15)';
+    fanBtn.style.border       = '2px solid rgba(255,255,255,0.1)';
+    fanBtn.style.background   = 'rgba(255,255,255,0.04)';
+  }
+  const banner = document.getElementById('pc-limit-banner');
+  if (banner) {
+    banner.textContent = type === 'fan'
+      ? '👥 Fan Clip — Max 60 seconds'
+      : '⭐ Player BTS — Max 2 minutes';
+  }
+  document.getElementById('pc-file-picker').style.display = 'block';
+}
+window.pcSelectType = pcSelectType;
