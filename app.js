@@ -5898,24 +5898,35 @@ let _pcMusic       = '';
 let _pcTaggedMatch = ''; // FEATURE 4: match tagging
 
 function openQuickPost() {
-  document.getElementById('pc-type-selector').style.display = 'block';
-  document.getElementById('pc-file-picker').style.display = 'none';
+  const ts = document.getElementById('pc-type-selector');
+  const fp = document.getElementById('pc-file-picker');
+  if (ts) ts.style.display = 'block';
+  if (fp) fp.style.display = 'none';
+
   const _fanBtn    = document.getElementById('pc-type-fan');
   const _playerBtn = document.getElementById('pc-type-player');
   if (_fanBtn)    { _fanBtn.style.border    = '2px solid rgba(255,255,255,0.1)'; _fanBtn.style.background    = 'rgba(255,255,255,0.04)'; }
   if (_playerBtn) { _playerBtn.style.border = '2px solid rgba(255,255,255,0.1)'; _playerBtn.style.background = 'rgba(255,255,255,0.04)'; }
   window._hlIsPlayerPost = false;
+
   // Reset state
   _pcFile = null; _pcFilter = 'normal'; _pcSticker = ''; _pcSpeed = '1x'; _pcMusic = ''; _pcTaggedMatch = '';
-  document.getElementById('post-creator').classList.add('open');
-  document.getElementById('pc-step-pick').style.display = 'flex';
-  document.getElementById('pc-step-edit').style.display = 'none';
-  document.getElementById('pc-step-edit').classList.remove('active');
-  _pcBuildFilters();
-  _pcBuildStickers();
-  _pcBuildSpeeds();
-  _pcBuildMusic();
-  _pcBuildHashtags();
+  const pc = document.getElementById('post-creator');
+  if (pc) pc.classList.add('open');
+
+  const psp = document.getElementById('pc-step-pick');
+  const pse = document.getElementById('pc-step-edit');
+  if (psp) psp.style.display = 'flex';
+  if (pse) {
+    pse.style.display = 'none';
+    pse.classList.remove('active');
+  }
+
+  if (typeof _pcBuildFilters === 'function') _pcBuildFilters();
+  if (typeof _pcBuildStickers === 'function') _pcBuildStickers();
+  if (typeof _pcBuildSpeeds === 'function') _pcBuildSpeeds();
+  if (typeof _pcBuildMusic === 'function') _pcBuildMusic();
+  if (typeof _pcBuildHashtags === 'function') _pcBuildHashtags();
 }
 
 function closeQuickPost() {
