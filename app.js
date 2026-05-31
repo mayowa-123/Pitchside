@@ -6318,15 +6318,21 @@ if (!info) return; // safety guard
     }
 
     // Add to local VIDEOS immediately so it appears in feed
-    const localVideo = {
+    const thumbUrl = mediaType === 'video'
+  ? mediaUrl.replace('/upload/', '/upload/so_0,w_400,h_400,c_fill,f_jpg/').replace('.mp4','.jpg')
+  : (info.thumbnail_url || mediaUrl);
+
+const localVideo = {
       id: 'fs_' + docId,
       title: finalTitle,
       date: new Date().toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}),
       cat: 'Trending',
       src: mediaType === 'video' ? mediaUrl : '',
-      thumbnail: info.thumbnail_url || mediaUrl,
-      embed: '', embedUrl: '',
+      thumbnail: thumbUrl,
+      embed: '', embedUrl: mediaType === 'video' ? mediaUrl : '',
       userPost: true,
+      mediaType: mediaType,
+      isImage: mediaType === 'image',
       poster: '@' + ((profileData && profileData.name) || 'pitchside').replace(/\s+/g,'').toLowerCase(),
       avatarSeed: 'user',
       likes: 0, comments: 0,
