@@ -116,7 +116,8 @@ function openSBPlayer(title, videoId) {
   
   let src = videoId;
   if (!videoId.startsWith('http')) {
-    src = `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
+    const cleanId = String(videoId).replace('yt_', '');
+    src = `https://www.youtube.com/embed/${cleanId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
   }
   
   // Use the same cleaning and start-time logic as the main feed for consistency
