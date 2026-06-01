@@ -1640,6 +1640,115 @@
   </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════════
+     FULLSCREEN SWIPEABLE HIGHLIGHTS MODAL
+═══════════════════════════════════════════════════════════════ -->
+<div id="hl-swipe-modal" class="hl-swipe-modal hidden">
+  <!-- Background/Backdrop -->
+  <div class="hl-swipe-backdrop" onclick="closeSwipeModal()"></div>
+
+  <!-- Video Container with swipe area -->
+  <div class="hl-swipe-container">
+    <!-- Top Bar: Back button + Title -->
+    <div class="hl-swipe-topbar">
+      <button class="hl-swipe-back" onclick="closeSwipeModal()">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+      </button>
+      <div class="hl-swipe-title" id="hl-swipe-video-title">Highlight</div>
+      <div style="width:24px;"></div>
+    </div>
+
+    <!-- Video Player Area -->
+    <div class="hl-swipe-player-wrap" id="hl-swipe-player-wrap">
+      <iframe id="hl-swipe-iframe" width="100%" height="100%" style="border:none;display:block;" allowfullscreen allow="autoplay; fullscreen"></iframe>
+      
+      <!-- Bottom User Info (overlaid on video) -->
+      <div class="hl-swipe-bottom-overlay">
+        <div class="hl-swipe-user-info">
+          <div class="hl-swipe-channel-name" id="hl-swipe-channel-name">Channel</div>
+          <div class="hl-swipe-video-desc" id="hl-swipe-video-desc">Football highlight</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Side Actions (TikTok-style) -->
+    <div class="hl-swipe-side-actions" id="hl-swipe-side-actions">
+      <!-- Like Button -->
+      <div class="hl-swipe-action-item">
+        <button class="hl-swipe-action-btn" id="hl-swipe-like-btn" onclick="hlSwipeLike()">
+          <svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+          </svg>
+        </button>
+        <div class="hl-swipe-action-label" id="hl-swipe-like-count">0</div>
+      </div>
+
+      <!-- Comment Button -->
+      <div class="hl-swipe-action-item">
+        <button class="hl-swipe-action-btn" onclick="hlSwipeOpenComments()">
+          <svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+        <div class="hl-swipe-action-label" id="hl-swipe-comment-count">0</div>
+      </div>
+
+      <!-- Share Button -->
+      <div class="hl-swipe-action-item">
+        <button class="hl-swipe-action-btn" onclick="hlSwipeShare()">
+          <svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <circle cx="18" cy="5" r="3"/>
+            <circle cx="6" cy="12" r="3"/>
+            <circle cx="18" cy="19" r="3"/>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+          </svg>
+        </button>
+        <div class="hl-swipe-action-label">Share</div>
+      </div>
+
+      <!-- Download Button -->
+      <div class="hl-swipe-action-item">
+        <button class="hl-swipe-action-btn" onclick="hlSwipeDownload()">
+          <svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+        </button>
+        <div class="hl-swipe-action-label">Save</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Comments Panel (slides up from bottom) -->
+  <div class="hl-swipe-comment-panel" id="hl-swipe-comment-panel">
+    <div class="hl-swipe-comment-sheet">
+      <div class="hl-swipe-comment-hdr">
+        <div class="hl-swipe-comment-title">Comments</div>
+        <button class="hl-swipe-comment-close" onclick="hlSwipeCloseComments()">✕</button>
+      </div>
+      
+      <div class="hl-swipe-comment-list" id="hl-swipe-comment-list">
+        <div style="padding:20px;text-align:center;color:var(--text3);font-size:13px;">
+          No comments yet. Be the first!
+        </div>
+      </div>
+
+      <div class="hl-swipe-comment-input-bar">
+        <input type="text" class="hl-swipe-comment-input" id="hl-swipe-comment-input" placeholder="Add a comment...">
+        <button class="hl-swipe-comment-send-btn" onclick="hlSwipeSendComment()">
+          <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M16.6915026,12.4744748 L3.50612381,13.2599618 C3.19218622,13.2599618 3.03521743,13.4170592 3.03521743,13.5741566 L1.15159189,20.0151496 C0.8376543,20.8006365 0.99,21.89 1.77946707,22.52 C2.40170454,22.99 3.50612381,23.1 4.13399899,22.99 L21.714504,14.0454487 C22.6563168,13.5741566 23.1272231,12.6315722 22.9702544,11.6889879 L4.13399899,1.01662188 C3.50612381,0.9055388622 2.40170454,1.01662188 1.77946707,1.4879139 C0.994623095,2.10604706 0.837654326,3.0486314 1.15159189,3.98565574 L3.03521743,10.4266488 C3.03521743,10.5837461 3.34915502,10.7408435 3.50612381,10.7408435 L16.6915026,11.5263305 C16.6915026,11.5263305 17.1624089,11.5263305 17.1624089,12.0000325 C17.1624089,12.4744748 16.6915026,12.4744748 16.6915026,12.4744748 Z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════════════════════════
      Firebase Auth (ES Module — must stay inline as type="module")
 ═══════════════════════════════════════ -->
