@@ -116,8 +116,7 @@ function openSBPlayer(title, videoId) {
   
   let src = videoId;
   if (!videoId.startsWith('http')) {
-    const cleanId = String(videoId).replace('yt_', '');
-    src = `https://www.youtube.com/embed/${cleanId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
+    src = `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
   }
   
   // Use the same cleaning and start-time logic as the main feed for consistency
@@ -6680,3 +6679,321 @@ function pcSelectType(type) {
   document.getElementById('pc-file-picker').style.display = 'block';
 }
 window.pcSelectType = pcSelectType;
+
+/* ═══════════════════════════════════════════════════════════════
+   FULLSCREEN SWIPEABLE HIGHLIGHTS MODAL
+═══════════════════════════════════════════════════════════════ */
+
+// STATE VARIABLES FOR SWIPE MODAL
+let _hlSwipeCurrentIndex = 0;
+let _hlSwipeVideos = [];
+let _hlSwipeStartY = 0;
+let _hlSwipeCurrentY = 0;
+let _hlSwipeIsAnimating = false;
+let _hlSwipeLikes = {}; // Track likes: { videoId: true/false }
+let _hlSwipeComments = {}; // Track comments: { videoId: [...] }
+
+// OPEN SWIPE MODAL (Called when user clicks highlight)
+function openSwipeModal(startIndex = 0) {
+  const modal = document.getElementById('hl-swipe-modal');
+  if (!modal) {
+    console.error('[PitchSide] Swipe modal not found in DOM');
+    return;
+  }
+
+  // Prepare videos list (filter out user posts, keep only official highlights)
+  _hlSwipeVideos = VIDEOS.filter(v => !v.userPost);
+  if (_hlSwipeVideos.length === 0) {
+    showToast('No highlights available');
+    return;
+  }
+
+  // Set start position
+  _hlSwipeCurrentIndex = Math.min(startIndex, _hlSwipeVideos.length - 1);
+  _hlSwipeStartY = 0;
+  _hlSwipeCurrentY = 0;
+  _hlSwipeIsAnimating = false;
+
+  // Show modal
+  modal.classList.remove('hidden');
+  
+  // Load first video
+  loadSwipeHighlight(_hlSwipeCurrentIndex);
+
+  // Add touch event listeners
+  const playerWrap = document.getElementById('hl-swipe-player-wrap');
+  if (playerWrap) {
+    playerWrap.addEventListener('touchstart', hlSwipeTouchStart, false);
+    playerWrap.addEventListener('touchmove', hlSwipeTouchMove, false);
+    playerWrap.addEventListener('touchend', hlSwipeTouchEnd, false);
+  }
+}
+
+// CLOSE SWIPE MODAL
+function closeSwipeModal() {
+  const modal = document.getElementById('hl-swipe-modal');
+  if (modal) {
+    modal.classList.add('hidden');
+    const playerWrap = document.getElementById('hl-swipe-player-wrap');
+    if (playerWrap) {
+      playerWrap.removeEventListener('touchstart', hlSwipeTouchStart);
+      playerWrap.removeEventListener('touchmove', hlSwipeTouchMove);
+      playerWrap.removeEventListener('touchend', hlSwipeTouchEnd);
+    }
+  }
+}
+
+// LOAD VIDEO INTO SWIPE MODAL
+function loadSwipeHighlight(index) {
+  if (index < 0 || index >= _hlSwipeVideos.length) return;
+
+  _hlSwipeCurrentIndex = index;
+  const video = _hlSwipeVideos[index];
+
+  // Update title and info
+  document.getElementById('hl-swipe-video-title').textContent = 
+    (video.title || 'Highlight').substring(0, 30);
+  document.getElementById('hl-swipe-channel-name').textContent = 
+    video.channelTitle || video.channel || 'Football';
+  document.getElementById('hl-swipe-video-desc').textContent = 
+    video.title || 'Football highlight';
+
+  // Load video into iframe
+  let src = video.videoId || video.embedUrl || video.src || '';
+  if (!src.startsWith('http')) {
+    src = `https://www.youtube.com/embed/${src}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
+  }
+  if (typeof cleanEmbedUrl === 'function') src = cleanEmbedUrl(src);
+  if (typeof addStartTime === 'function') src = addStartTime(src);
+
+  const iframe = document.getElementById('hl-swipe-iframe');
+  if (iframe) {
+    iframe.src = src;
+  }
+
+  // Update like count
+  const likeCount = _hlSwipeLikes[video.videoId] ? 1 : 0;
+  document.getElementById('hl-swipe-like-count').textContent = likeCount > 0 ? likeCount : '0';
+
+  // Update comment count
+  const comments = _hlSwipeComments[video.videoId] || [];
+  document.getElementById('hl-swipe-comment-count').textContent = comments.length;
+
+  // Reset comments panel
+  hlSwipeCloseComments();
+}
+
+// TOUCH/SWIPE HANDLING
+function hlSwipeTouchStart(e) {
+  if (_hlSwipeIsAnimating) return;
+  _hlSwipeStartY = e.touches[0].clientY;
+  _hlSwipeCurrentY = _hlSwipeStartY;
+}
+
+function hlSwipeTouchMove(e) {
+  if (_hlSwipeIsAnimating) return;
+  _hlSwipeCurrentY = e.touches[0].clientY;
+}
+
+function hlSwipeTouchEnd(e) {
+  if (_hlSwipeIsAnimating) return;
+
+  const diff = _hlSwipeStartY - _hlSwipeCurrentY;
+  const threshold = 50; // pixels to swipe
+
+  // Swipe up = next video
+  if (diff > threshold && _hlSwipeCurrentIndex < _hlSwipeVideos.length - 1) {
+    _hlSwipeIsAnimating = true;
+    const playerWrap = document.getElementById('hl-swipe-player-wrap');
+    if (playerWrap) playerWrap.classList.add('swipe-out-up');
+    
+    setTimeout(() => {
+      _hlSwipeCurrentIndex++;
+      const playerWrap = document.getElementById('hl-swipe-player-wrap');
+      if (playerWrap) {
+        playerWrap.classList.remove('swipe-out-up');
+        playerWrap.classList.add('swipe-in-up');
+      }
+      loadSwipeHighlight(_hlSwipeCurrentIndex);
+      setTimeout(() => {
+        const playerWrap = document.getElementById('hl-swipe-player-wrap');
+        if (playerWrap) playerWrap.classList.remove('swipe-in-up');
+        _hlSwipeIsAnimating = false;
+      }, 300);
+    }, 300);
+  }
+
+  // Swipe down = previous video
+  if (diff < -threshold && _hlSwipeCurrentIndex > 0) {
+    _hlSwipeIsAnimating = true;
+    const playerWrap = document.getElementById('hl-swipe-player-wrap');
+    if (playerWrap) playerWrap.classList.add('swipe-out-down');
+    
+    setTimeout(() => {
+      _hlSwipeCurrentIndex--;
+      const playerWrap = document.getElementById('hl-swipe-player-wrap');
+      if (playerWrap) {
+        playerWrap.classList.remove('swipe-out-down');
+        playerWrap.classList.add('swipe-in-down');
+      }
+      loadSwipeHighlight(_hlSwipeCurrentIndex);
+      setTimeout(() => {
+        const playerWrap = document.getElementById('hl-swipe-player-wrap');
+        if (playerWrap) playerWrap.classList.remove('swipe-in-down');
+        _hlSwipeIsAnimating = false;
+      }, 300);
+    }, 300);
+  }
+}
+
+// ACTION BUTTONS
+function hlSwipeLike() {
+  const video = _hlSwipeVideos[_hlSwipeCurrentIndex];
+  const videoId = video.videoId;
+  const likeBtn = document.getElementById('hl-swipe-like-btn');
+  const likeCount = document.getElementById('hl-swipe-like-count');
+
+  if (_hlSwipeLikes[videoId]) {
+    // Unlike
+    delete _hlSwipeLikes[videoId];
+    likeBtn.classList.remove('liked');
+    likeCount.textContent = '0';
+  } else {
+    // Like
+    _hlSwipeLikes[videoId] = true;
+    likeBtn.classList.add('liked');
+    likeCount.textContent = '1';
+  }
+
+  // Animation
+  likeBtn.style.transform = 'scale(1.2)';
+  setTimeout(() => {
+    likeBtn.style.transform = 'scale(1)';
+  }, 200);
+
+  showToast(_hlSwipeLikes[videoId] ? '❤️ Added to likes' : '👌 Removed from likes');
+}
+
+// Open comments
+function hlSwipeOpenComments() {
+  const panel = document.getElementById('hl-swipe-comment-panel');
+  if (panel) panel.classList.add('active');
+  renderSwipeComments();
+}
+
+// Close comments
+function hlSwipeCloseComments() {
+  const panel = document.getElementById('hl-swipe-comment-panel');
+  if (panel) panel.classList.remove('active');
+}
+
+// Render comments for current video
+function renderSwipeComments() {
+  const video = _hlSwipeVideos[_hlSwipeCurrentIndex];
+  const videoId = video.videoId;
+  const comments = _hlSwipeComments[videoId] || [];
+  const list = document.getElementById('hl-swipe-comment-list');
+
+  if (comments.length === 0) {
+    list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px;">
+      No comments yet. Be the first!
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = comments.map((c, i) => `
+    <div class="hl-swipe-comment-item">
+      <div class="hl-swipe-comment-avatar">${c.initials}</div>
+      <div class="hl-swipe-comment-bubble">
+        <div class="hl-swipe-comment-user">${c.user}</div>
+        <div class="hl-swipe-comment-text">${c.text}</div>
+        <div class="hl-swipe-comment-time">${c.time}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// Send comment
+function hlSwipeSendComment() {
+  const input = document.getElementById('hl-swipe-comment-input');
+  const text = input.value.trim();
+
+  if (!text) return;
+
+  const video = _hlSwipeVideos[_hlSwipeCurrentIndex];
+  const videoId = video.videoId;
+
+  if (!_hlSwipeComments[videoId]) {
+    _hlSwipeComments[videoId] = [];
+  }
+
+  // Add comment
+  _hlSwipeComments[videoId].push({
+    user: 'You',
+    initials: 'YU',
+    text: text,
+    time: 'now'
+  });
+
+  // Update comment count
+  document.getElementById('hl-swipe-comment-count').textContent = 
+    _hlSwipeComments[videoId].length;
+
+  // Clear input and re-render
+  input.value = '';
+  renderSwipeComments();
+  showToast('✅ Comment added');
+}
+
+// Share
+function hlSwipeShare() {
+  const video = _hlSwipeVideos[_hlSwipeCurrentIndex];
+  const url = window.location.href;
+  
+  if (navigator.share) {
+    navigator.share({
+      title: 'Check out this highlight!',
+      text: video.title,
+      url: url
+    }).catch(err => console.log('Share cancelled'));
+  } else {
+    // Fallback
+    showToast('📤 Share link copied!');
+    navigator.clipboard.writeText(url).catch(() => {});
+  }
+}
+
+// Download/Save
+function hlSwipeDownload() {
+  const video = _hlSwipeVideos[_hlSwipeCurrentIndex];
+  showToast('⬇️ Saved to your library');
+  console.log('[PitchSide] Saved:', video.title);
+}
+
+// MODIFY openSBPlayer TO USE NEW SWIPE MODAL
+const _originalOpenSBPlayer = window.openSBPlayer;
+
+window.openSBPlayer = function(title, videoId) {
+  // Find the index of this video in the highlights list
+  const highlightVideos = VIDEOS.filter(v => !v.userPost);
+  const index = highlightVideos.findIndex(v => 
+    (v.videoId === videoId || v.embedUrl === videoId || v.src === videoId)
+  );
+
+  if (index >= 0) {
+    // Use new swipe modal if available
+    _hlSwipeVideos = highlightVideos;
+    openSwipeModal(index);
+  } else if (_originalOpenSBPlayer) {
+    // Fallback to original player if not found
+    _originalOpenSBPlayer(title, videoId);
+  }
+};
+
+// INITIALIZE SWIPE MODAL ON DOM READY
+document.addEventListener('DOMContentLoaded', () => {
+  const modal = document.getElementById('hl-swipe-modal');
+  if (!modal) {
+    console.warn('[PitchSide] Swipe modal HTML not found');
+  }
+});
