@@ -115,14 +115,18 @@ function openSBPlayer(title, videoId) {
   const body = document.getElementById('sb-player-body');
   
   let src = videoId;
-  if (!videoId.startsWith('http')) {
+  if (videoId && !videoId.startsWith('http')) {
     const cleanId = String(videoId).replace('yt_', '');
     src = `https://www.youtube.com/embed/${cleanId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
   }
   
   // Use the same cleaning and start-time logic as the main feed for consistency
   if (typeof cleanEmbedUrl === 'function') src = cleanEmbedUrl(src);
-  if (typeof addStartTime === 'function') src = addStartTime(src);
+  // Only add start time if it's a video file or we explicitly want to skip for YouTube
+  // For YouTube embeds, we usually want to start from beginning unless specified
+  if (typeof addStartTime === 'function' && src && !src.includes('youtube.com') && !src.includes('youtu.be')) {
+    src = addStartTime(src);
+  }
 
   body.innerHTML = `
     <div style="position:relative;width:100%;height:100%;">
@@ -3862,7 +3866,9 @@ function openHlPlayerById(id) {
   // Also register in map for future lookups
   if (!window._hlVideoMap) window._hlVideoMap = {};
   window._hlVideoMap[String(v.id)] = v;
-  openHlPlayer(String(v.id), v.title || '', v.src || v.embedUrl || '', v.embed || '', v.thumbnail || '');
+  // Extract a clean videoId for Highlights section compatibility
+  const videoId = v.videoId || v.youtubeId || (String(v.id).startsWith('yt_') ? v.id.replace('yt_', '') : v.id);
+  openHlPlayer(String(v.id), v.title || '', v.src || v.embedUrl || '', v.embed || '', v.thumbnail || '', '', videoId);
 }
 
 /* ── Tab switcher ── */
@@ -3952,8 +3958,8 @@ function _renderOfficialHighlights() {
   container.innerHTML = _hlOfficialData.map(h => {
     const isFallback = !!h.ytSearch;
     const tapAction  = isFallback
-      ? `onclick="openHlPlayer('${_esc(h.id)}','${_esc(h.title)}','','','','${_esc(h.ytSearch)}')"`
-      : `onclick="openHlPlayer('${_esc(h.id)}','${_esc(h.title)}','${_esc(h.videoUrl)}','${_esc(h.embedHtml)}','${_esc(h.thumbnail)}')"`; 
+      ? `onclick="openHlPlayer('${_esc(h.id)}','${_esc(h.title)}','','','','${_esc(h.ytSearch)}','${_esc(h.id)}')"`
+      : `onclick="openHlPlayer('${_esc(h.id)}','${_esc(h.title)}','${_esc(h.videoUrl)}','${_esc(h.embedHtml)}','${_esc(h.thumbnail)}','','${_esc(h.id)}')"`; 
     const gradA = h.gradA || '#0f172a';
     const gradB = h.gradB || '#1e293b';
     const thumbHtml = isFallback
@@ -3996,7 +4002,7 @@ function _renderOfficialHighlights() {
 /* ══════════════════════════════════════════════════════
    IN-APP VIDEO PLAYER — plays MP4 directly, no YouTube UI
 ══════════════════════════════════════════════════════ */
-function openHlPlayer(id, title, videoUrl, embedHtml, thumbnail, ytSearch) {
+function openHlPlayer(id, title, videoUrl, embedHtml, thumbnail, ytSearch, videoId) {
   const overlay = document.getElementById('hl-player-overlay');
   const wrap    = document.getElementById('hl-video-wrap');
   const titleEl = document.getElementById('hl-player-title');
@@ -4080,7 +4086,14 @@ function openHlPlayer(id, title, videoUrl, embedHtml, thumbnail, ytSearch) {
   else if (ytSearch) {
     const searchUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(ytSearch);
     wrap.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#fff;gap:16px;padding:24px;text-align:center;background:linear-gradient(135deg,#0f172a,#1e293b);"><div style="font-size:56px;">🎬</div><div><div style="font-size:16px;font-weight:700;margin-bottom:8px;">' + title + '</div><div style="font-size:13px;opacity:0.8;line-height:1.5;margin-bottom:16px;">This highlight is available on YouTube.</div></div><a href="' + searchUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;padding:12px 28px;border-radius:24px;text-decoration:none;font-weight:700;font-size:14px;">▶ Watch on YouTube</a></div>';
-  } else {
+  } 
+  // Priority 4: Fallback to YouTube embed if we have a videoId (consistent with Highlights tab)
+  else if (videoId) {
+    const cleanId = String(videoId).replace('yt_', '');
+    const src = `https://www.youtube-nocookie.com/embed/${cleanId}?rel=0&modestbranding=1&showinfo=0&autoplay=1&mute=0&controls=1`;
+    injectIframe(src);
+  }
+  else {
     wrap.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#fff;gap:12px;"><div style="font-size:48px;">⚽</div><div style="font-size:14px;opacity:.7;">Video not available</div></div>';
   }
 
