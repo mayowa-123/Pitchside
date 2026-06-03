@@ -6,10 +6,83 @@ let _sbCurrentFilter = 'all';
 let _sbPage = 0;
 const _sbPageSize = 20;
 let _sbFiltered = [];
-
 async function loadSBHighlights(filter) {
   _sbCurrentFilter = filter;
   _sbPage = 0;
+
+  document.querySelectorAll('[id^="sb-btn-"]').forEach(btn => {
+    btn.style.background = 'var(--bg2)';
+    btn.style.color = 'var(--text)';
+  });
+  const btnMap = {
+    'all': 'all', 'ENGLAND: Premier League': 'pl', 'SPAIN: La Liga': 'll',
+    'ITALY: Serie A': 'sa', 'GERMANY: Bundesliga': 'bl',
+    'UEFA: Champions League': 'cl', 'FRANCE: Ligue 1': 'l1'
+  };
+  const activeId = 'sb-btn-' + (btnMap[filter] || 'all');
+  const activeBtn = document.getElementById(activeId);
+  if (activeBtn) { activeBtn.style.background = 'var(--green)'; activeBtn.style.color = '#fff'; }
+
+  const grid = document.getElementById('sb-video-grid');
+  grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);"><div style="font-size:28px;">⚽</div><div style="margin-top:8px;font-size:14px;">Loading highlights...</div></div>';
+
+  const queryMap = {
+    'all': 'football match highlights 2026',
+    'ENGLAND: Premier League': 'Premier League highlights 2026',
+    'SPAIN: La Liga': 'La Liga highlights 2026',
+    'ITALY: Serie A': 'Serie A highlights 2026',
+    'GERMANY: Bundesliga': 'Bundesliga highlights 2026',
+    'UEFA: Champions League': 'Champions League highlights 2026',
+    'FRANCE: Ligue 1': 'Ligue 1 highlights 2026',
+  };
+
+  const searchQuery = queryMap[filter] || 'football match highlights 2026';
+
+  // localStorage cache — 2 hours per filter
+  const CACHE_KEY = `pitchside_highlights_${filter}`;
+  const TWO_HOURS = 2 * 60 * 60 * 1000;
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      const { timestamp, videos } = JSON.parse(cached);
+      if (Date.now() - timestamp < TWO_HOURS) {
+        _sbFiltered = videos;
+        _sbAllVideos = videos;
+        renderSBPage(true);
+        return;
+      }
+    }
+  } catch(_) {}
+
+  try {
+    const res = await fetch(`/api/highlights?query=${encodeURIComponent(searchQuery)}`);
+    const data = await res.json();
+
+    if (!res.ok || !data.videos) {
+      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">Could not load highlights. Try again later.</div>';
+      return;
+    }
+
+    const videos = data.videos;
+    _sbAllVideos = videos;
+    _sbFiltered = videos;
+
+    // Save to cache
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), videos }));
+    } catch(_) {}
+
+    if (!_sbFiltered.length) {
+      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">No highlights found right now.</div>';
+      return;
+    }
+    renderSBPage(true);
+
+  } catch(err) {
+    console.error('[PitchSide] Highlights fetch error:', err);
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">Failed to load highlights.</div>';
+  }
+}
   document.querySelectorAll('[id^="sb-btn-"]').forEach(btn => {
     btn.style.background = 'var(--bg2)';
     btn.style.color = 'var(--text)';
