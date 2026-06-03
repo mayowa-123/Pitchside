@@ -507,6 +507,152 @@
   </div>
 </div>
 
+
+<!-- ════════════════════════════════════════
+     SETTINGS & PRIVACY PAGE
+════════════════════════════════════════ -->
+<div id="page-settings" class="page">
+  <div class="hdr">
+    <h1>SETTINGS & PRIVACY</h1>
+  </div>
+
+  <div class="settings-container">
+    
+    <!-- Visibility & Privacy Section -->
+    <div class="settings-section">
+      <div class="settings-section-title">Privacy & Data</div>
+      
+      <div class="settings-item" onclick="openSettingsMenu('private-account')">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">🔓</div>
+          <div>
+            <div class="settings-item-title">Private Account</div>
+            <div class="settings-item-desc">Control who can follow you</div>
+          </div>
+        </div>
+        <div class="settings-arrow">›</div>
+      </div>
+
+      <div class="settings-item" onclick="openSettingsMenu('blocked')">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">⛔</div>
+          <div>
+            <div class="settings-item-title">Blocked Accounts</div>
+            <div class="settings-item-desc">Manage blocked users</div>
+          </div>
+        </div>
+        <div class="settings-arrow">›</div>
+      </div>
+    </div>
+
+    <!-- Interactions Section -->
+    <div class="settings-section">
+      <div class="settings-section-title">Interactions</div>
+      
+      <div class="settings-item" onclick="openSettingsMenu('comments')">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">💬</div>
+          <div>
+            <div class="settings-item-title">Comments</div>
+            <div class="settings-item-desc">Who can comment on your posts</div>
+          </div>
+        </div>
+        <div class="settings-arrow">›</div>
+      </div>
+
+      <div class="settings-item" onclick="openSettingsMenu('mentions')">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">@</div>
+          <div>
+            <div class="settings-item-title">Mentions</div>
+            <div class="settings-item-desc">Control mention notifications</div>
+          </div>
+        </div>
+        <div class="settings-arrow">›</div>
+      </div>
+
+      <div class="settings-item" onclick="openSettingsMenu('dms')">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">✉️</div>
+          <div>
+            <div class="settings-item-title">Direct Messages</div>
+            <div class="settings-item-desc">Who can message you</div>
+          </div>
+        </div>
+        <div class="settings-arrow">›</div>
+      </div>
+    </div>
+
+    <!-- Data & Device Section -->
+    <div class="settings-section">
+      <div class="settings-section-title">Data & Device</div>
+      
+      <div class="settings-item" onclick="openSettingsMenu('data-saver')">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">📊</div>
+          <div>
+            <div class="settings-item-title">Data Saver</div>
+            <div class="settings-item-desc">Reduce data usage</div>
+          </div>
+        </div>
+        <div class="settings-arrow">›</div>
+      </div>
+
+      <div class="settings-item" onclick="openSettingsMenu('devices')">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">📱</div>
+          <div>
+            <div class="settings-item-title">Device Requests</div>
+            <div class="settings-item-desc">Active sessions, logout devices</div>
+          </div>
+        </div>
+        <div class="settings-arrow">›</div>
+      </div>
+    </div>
+
+    <!-- Support & Legal Section -->
+    <div class="settings-section">
+      <div class="settings-section-title">Support & Legal</div>
+      
+      <div class="settings-item" onclick="openSettingsMenu('privacy-center')">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">🛡️</div>
+          <div>
+            <div class="settings-item-title">Privacy Center</div>
+            <div class="settings-item-desc">Your data & privacy rights</div>
+          </div>
+        </div>
+        <div class="settings-arrow">›</div>
+      </div>
+
+      <div class="settings-item" onclick="openSettingsMenu('legal')">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">📄</div>
+          <div>
+            <div class="settings-item-title">Terms & Policies</div>
+            <div class="settings-item-desc">Terms of service, privacy policy</div>
+          </div>
+        </div>
+        <div class="settings-arrow">›</div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Settings Submenu Overlays -->
+<div id="settings-submenu" class="settings-submenu hidden">
+  <div class="settings-submenu-header">
+    <button class="settings-back-btn" onclick="closeSettingsMenu()">‹</button>
+    <h2 id="submenu-title">Setting</h2>
+    <div style="width:24px;"></div>
+  </div>
+  <div id="submenu-content" class="settings-submenu-content">
+    <!-- Content injected by JavaScript -->
+  </div>
+</div>
+
 <div id="page-profile" class="page">
   <div class="hdr">
     <h1>PROFILE</h1>
@@ -567,7 +713,7 @@
           <div class="pmenu-label">Notification Preferences</div>
           <div class="pmenu-arrow">›</div>
         </div>
-        <div class="pmenu-item" onclick="showToast('Privacy settings coming soon')">
+        <div class="pmenu-item" onclick="goToPage('settings')">
           <div class="pmenu-icon">🔒</div>
           <div class="pmenu-label">Privacy & Data</div>
           <div class="pmenu-arrow">›</div>
@@ -1637,350 +1783,6 @@
     <textarea id="support-message" placeholder="Tell us what's on your mind..." style="width:100%;min-height:120px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;resize:vertical;" maxlength="500"></textarea>
     <div style="font-size:11px;color:var(--text3);margin-top:6px;text-align:right;" id="char-count">0/500</div>
     <button onclick="submitSupport()" style="width:100%;margin-top:12px;padding:12px;background:var(--green);border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;">Send to pitchside145@gmail.com</button>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════
-     SETTINGS & PRIVACY PAGE
-════════════════════════════════════════ -->
-<div id="page-settings" class="page">
-  <div class="hdr">
-    <h1>SETTINGS & PRIVACY</h1>
-  </div>
-
-  <div class="settings-container">
-    
-    <!-- Account Section -->
-    <div class="settings-section">
-      <div class="settings-section-title">Account</div>
-      
-      <div class="settings-item" onclick="openSettingsMenu('account-info')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">👤</div>
-          <div>
-            <div class="settings-item-title">Account Info</div>
-            <div class="settings-item-desc">Email, name, username</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="openSettingsMenu('security')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">🔒</div>
-          <div>
-            <div class="settings-item-title">Security & Permissions</div>
-            <div class="settings-item-desc">Password, 2FA, login activity</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="openSettingsMenu('password')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">🔐</div>
-          <div>
-            <div class="settings-item-title">Password & Authentication</div>
-            <div class="settings-item-desc">Change password, manage auth</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-    </div>
-
-    <!-- Visibility & Privacy Section -->
-    <div class="settings-section">
-      <div class="settings-section-title">Visibility & Privacy</div>
-      
-      <div class="settings-item" onclick="openSettingsMenu('private-account')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">🔓</div>
-          <div>
-            <div class="settings-item-title">Private Account</div>
-            <div class="settings-item-desc">Control who can follow you</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="openSettingsMenu('blocked')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">⛔</div>
-          <div>
-            <div class="settings-item-title">Blocked Accounts</div>
-            <div class="settings-item-desc">Manage blocked users</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-    </div>
-
-    <!-- Interactions Section -->
-    <div class="settings-section">
-      <div class="settings-section-title">Interactions</div>
-      
-      <div class="settings-item" onclick="openSettingsMenu('comments')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">💬</div>
-          <div>
-            <div class="settings-item-title">Comments</div>
-            <div class="settings-item-desc">Who can comment on your posts</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="openSettingsMenu('mentions')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">@</div>
-          <div>
-            <div class="settings-item-title">Mentions</div>
-            <div class="settings-item-desc">Control mention notifications</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="openSettingsMenu('dms')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">✉️</div>
-          <div>
-            <div class="settings-item-title">Direct Messages</div>
-            <div class="settings-item-desc">Who can message you</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-    </div>
-
-    <!-- Content & Display Section -->
-    <div class="settings-section">
-      <div class="settings-section-title">Content & Display</div>
-      
-      <div class="settings-item" onclick="openSettingsMenu('display')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">🌙</div>
-          <div>
-            <div class="settings-item-title">Display</div>
-            <div class="settings-item-desc">Dark mode, theme</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="openSettingsMenu('language')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">🌐</div>
-          <div>
-            <div class="settings-item-title">Language</div>
-            <div class="settings-item-desc">App language preference</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="openSettingsMenu('content-pref')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">✨</div>
-          <div>
-            <div class="settings-item-title">Content Preferences</div>
-            <div class="settings-item-desc">Leagues, teams, content type</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="openSettingsMenu('playback')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">▶️</div>
-          <div>
-            <div class="settings-item-title">Playback</div>
-            <div class="settings-item-desc">Auto-play, quality, sound</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-    </div>
-
-    <!-- Personalization Section -->
-    <div class="settings-section">
-      <div class="settings-section-title">Personalization</div>
-      
-      <div class="settings-item" onclick="openSettingsMenu('accessibility')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">♿</div>
-          <div>
-            <div class="settings-item-title">Accessibility</div>
-            <div class="settings-item-desc">Font size, captions, etc</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="openSettingsMenu('wellbeing')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">⏰</div>
-          <div>
-            <div class="settings-item-title">Time & Well-being</div>
-            <div class="settings-item-desc">Screen time limits, reminders</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-    </div>
-
-    <!-- Data & Device Section -->
-    <div class="settings-section">
-      <div class="settings-section-title">Data & Device</div>
-      
-      <div class="settings-item" onclick="openSettingsMenu('data-saver')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">📊</div>
-          <div>
-            <div class="settings-item-title">Data Saver</div>
-            <div class="settings-item-desc">Reduce data usage</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="openSettingsMenu('offline')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">⬇️</div>
-          <div>
-            <div class="settings-item-title">Offline Content</div>
-            <div class="settings-item-desc">Download videos, manage storage</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="openSettingsMenu('devices')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">📱</div>
-          <div>
-            <div class="settings-item-title">Device Requests</div>
-            <div class="settings-item-desc">Active sessions, logout devices</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-    </div>
-
-    <!-- Ads & Marketing Section -->
-    <div class="settings-section">
-      <div class="settings-section-title">Ads & Marketing</div>
-      
-      <div class="settings-item" onclick="openSettingsMenu('ads')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">📢</div>
-          <div>
-            <div class="settings-item-title">Ads</div>
-            <div class="settings-item-desc">Ad preferences, interests</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="openSettingsMenu('ad-activity')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">📊</div>
-          <div>
-            <div class="settings-item-title">Recent Ad Activity</div>
-            <div class="settings-item-desc">Ads you've interacted with</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-    </div>
-
-    <!-- Support & Legal Section -->
-    <div class="settings-section">
-      <div class="settings-section-title">Support & Legal</div>
-      
-      <div class="settings-item" onclick="openAboutDeveloper()">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">❓</div>
-          <div>
-            <div class="settings-item-title">Help Center</div>
-            <div class="settings-item-desc">FAQs, tutorials, support</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="openSettingsMenu('privacy-center')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">🛡️</div>
-          <div>
-            <div class="settings-item-title">Privacy Center</div>
-            <div class="settings-item-desc">Your data & privacy rights</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="openSettingsMenu('legal')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">📄</div>
-          <div>
-            <div class="settings-item-title">Terms & Policies</div>
-            <div class="settings-item-desc">Terms of service, privacy policy</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-    </div>
-
-    <!-- Account Actions Section -->
-    <div class="settings-section">
-      <div class="settings-item" onclick="openSettingsMenu('family-pairing')">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">👨‍👩‍👧</div>
-          <div>
-            <div class="settings-item-title">Family Pairing</div>
-            <div class="settings-item-desc">Manage family accounts</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item" onclick="switchAccount()">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">🔄</div>
-          <div>
-            <div class="settings-item-title">Switch Account</div>
-            <div class="settings-item-desc">Use a different account</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-
-      <div class="settings-item logout-item" onclick="logoutUser()">
-        <div class="settings-item-left">
-          <div class="settings-item-icon">🚪</div>
-          <div>
-            <div class="settings-item-title">Log Out</div>
-            <div class="settings-item-desc">Sign out of PitchSide</div>
-          </div>
-        </div>
-        <div class="settings-arrow">›</div>
-      </div>
-    </div>
-
-  </div>
-
-</div>
-
-<!-- Settings Submenu Overlays -->
-<div id="settings-submenu" class="settings-submenu hidden">
-  <div class="settings-submenu-header">
-    <button class="settings-back-btn" onclick="closeSettingsMenu()">‹</button>
-    <h2 id="submenu-title">Setting</h2>
-    <div style="width:24px;"></div>
-  </div>
-  <div id="submenu-content" class="settings-submenu-content">
-    <!-- Content injected by JavaScript -->
   </div>
 </div>
 
