@@ -6707,31 +6707,12 @@ const settingsStore = {
 
   getDefaults() {
     return {
-      account: {
-        privateAccount: false,
-      },
-      privacy: {
-        allowComments: 'everyone',
-        allowMentions: 'everyone',
-        allowDMs: 'everyone',
-      },
-      display: {
-        theme: 'dark',
-        language: 'English',
-      },
-      content: {
-        preferredLeagues: ['PL', 'UCL', 'NPFL'],
-        autoPlayVideos: true,
-        videoQuality: 'auto',
-      },
-      wellness: {
-        screenTimeLimit: 0,
-        screenTimeEnabled: false,
-      },
-      data: {
-        dataSaver: false,
-        offlineContent: [],
-      },
+      account: { privateAccount: false },
+      privacy: { allowComments: 'everyone', allowMentions: 'everyone', allowDMs: 'everyone' },
+      display: { theme: 'dark', language: 'English' },
+      content: { preferredLeagues: ['PL', 'UCL', 'NPFL'], autoPlayVideos: true, videoQuality: 'auto' },
+      wellness: { screenTimeLimit: 0, screenTimeEnabled: false },
+      data: { dataSaver: false, offlineContent: [] },
     };
   },
 
@@ -6751,93 +6732,19 @@ const settingsStore = {
   },
 };
 
-// Open settings submenu
 function openSettingsMenu(menuType) {
   const submenu = document.getElementById('settings-submenu');
   const content = document.getElementById('submenu-content');
   const title = document.getElementById('submenu-title');
 
   if (!submenu) return;
-
   submenu.classList.remove('hidden');
 
   const menus = {
-    'account-info': {
-      title: 'Account Info',
-      content: `
-        <div class="settings-info">
-          📧 Your account information is kept safe and secure.
-        </div>
-        <div class="settings-toggle">
-          <div class="toggle-label">
-            <div class="toggle-label-main">Email Address</div>
-            <div class="toggle-label-sub" id="email-display">user@email.com</div>
-          </div>
-        </div>
-        <div class="settings-toggle">
-          <div class="toggle-label">
-            <div class="toggle-label-main">Username</div>
-            <div class="toggle-label-sub" id="username-display">@username</div>
-          </div>
-        </div>
-        <div class="settings-toggle">
-          <div class="toggle-label">
-            <div class="toggle-label-main">Display Name</div>
-            <div class="toggle-label-sub" id="displayname-display">Your Name</div>
-          </div>
-        </div>
-        <button class="settings-button" onclick="editAccountInfo()">Edit Account Info</button>
-      `,
-    },
-
-    'security': {
-      title: 'Security & Permissions',
-      content: `
-        <div class="settings-info">
-          🔒 Keep your account secure with strong authentication.
-        </div>
-        <div class="settings-toggle">
-          <div class="toggle-label">
-            <div class="toggle-label-main">Two-Factor Authentication</div>
-            <div class="toggle-label-sub">Add extra security to your account</div>
-          </div>
-          <input type="checkbox" id="twofa-toggle" onchange="toggleTwoFA()">
-        </div>
-        <div class="settings-toggle">
-          <div class="toggle-label">
-            <div class="toggle-label-main">Login Activity</div>
-            <div class="toggle-label-sub">See where you're logged in</div>
-          </div>
-          <span>›</span>
-        </div>
-      `,
-    },
-
-    'password': {
-      title: 'Password & Authentication',
-      content: `
-        <div class="settings-info">
-          🔐 Your password should be strong and unique.
-        </div>
-        <button class="settings-button" onclick="changePassword()">Change Password</button>
-        <div style="margin-top: 16px;">
-          <div style="font-size: 12px; color: var(--text3); margin-bottom: 8px;">Password Requirements:</div>
-          <div style="background: var(--bg2); padding: 12px; border-radius: 8px; font-size: 12px; color: var(--text2); line-height: 1.6;">
-            ✓ At least 8 characters<br>
-            ✓ Mix of uppercase & lowercase<br>
-            ✓ At least one number<br>
-            ✓ At least one special character
-          </div>
-        </div>
-      `,
-    },
-
     'private-account': {
       title: 'Private Account',
       content: `
-        <div class="settings-info">
-          🔓 Approve follow requests before people can see your profile.
-        </div>
+        <div class="settings-info">🔓 Approve follow requests before people can see your profile.</div>
         <div class="settings-toggle">
           <div class="toggle-label">
             <div class="toggle-label-main">Private Account</div>
@@ -6857,13 +6764,9 @@ function openSettingsMenu(menuType) {
     'blocked': {
       title: 'Blocked Accounts',
       content: `
-        <div class="settings-info">
-          ⛔ Manage users you've blocked.
-        </div>
+        <div class="settings-info">⛔ Manage users you've blocked.</div>
         <div id="blocked-list" style="margin-top: 12px;">
-          <div style="text-align: center; padding: 40px 12px; color: var(--text3);">
-            😊 No blocked accounts yet.
-          </div>
+          <div style="text-align: center; padding: 40px 12px; color: var(--text3);">😊 No blocked accounts yet.</div>
         </div>
       `,
     },
@@ -6871,9 +6774,7 @@ function openSettingsMenu(menuType) {
     'comments': {
       title: 'Comments',
       content: `
-        <div class="settings-info">
-          💬 Choose who can comment on your posts.
-        </div>
+        <div class="settings-info">💬 Choose who can comment on your posts.</div>
         <select class="settings-select" onchange="updateSetting('privacy.allowComments', this.value)">
           <option value="everyone">Everyone can comment</option>
           <option value="followers">Only followers can comment</option>
@@ -6886,9 +6787,7 @@ function openSettingsMenu(menuType) {
     'mentions': {
       title: 'Mentions',
       content: `
-        <div class="settings-info">
-          @ Choose who can mention you in posts.
-        </div>
+        <div class="settings-info">@ Choose who can mention you in posts.</div>
         <select class="settings-select" onchange="updateSetting('privacy.allowMentions', this.value)">
           <option value="everyone">Everyone can mention you</option>
           <option value="followers">Only followers can mention</option>
@@ -6900,9 +6799,7 @@ function openSettingsMenu(menuType) {
     'dms': {
       title: 'Direct Messages',
       content: `
-        <div class="settings-info">
-          ✉️ Control who can send you direct messages.
-        </div>
+        <div class="settings-info">✉️ Control who can send you direct messages.</div>
         <select class="settings-select" onchange="updateSetting('privacy.allowDMs', this.value)">
           <option value="everyone">Everyone can DM you</option>
           <option value="followers">Only followers can DM</option>
@@ -6911,135 +6808,10 @@ function openSettingsMenu(menuType) {
       `,
     },
 
-    'display': {
-      title: 'Display',
-      content: `
-        <div class="settings-info">
-          🌙 Customize how PitchSide looks.
-        </div>
-        <div class="settings-toggle">
-          <div class="toggle-label">
-            <div class="toggle-label-main">Dark Mode</div>
-            <div class="toggle-label-sub">Easy on the eyes</div>
-          </div>
-          <input type="checkbox" id="darkmode-toggle" checked onchange="toggleDarkMode()">
-        </div>
-      `,
-    },
-
-    'language': {
-      title: 'Language',
-      content: `
-        <div class="settings-info">
-          🌐 Select your preferred language.
-        </div>
-        <select class="settings-select">
-          <option>English</option>
-          <option>Español</option>
-          <option>Français</option>
-          <option>Deutsch</option>
-        </select>
-      `,
-    },
-
-    'content-pref': {
-      title: 'Content Preferences',
-      content: `
-        <div class="settings-info">
-          ✨ Choose leagues and teams you're interested in.
-        </div>
-        <div style="font-size: 12px; font-weight: 500; color: var(--text); margin: 12px 0 8px;">Favorite Leagues</div>
-        <div class="settings-toggle" style="border: none; background: transparent; padding: 0; margin-bottom: 8px;">
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1;">
-            <input type="checkbox" checked>
-            <span style="color: var(--text);">Premier League 🏴󠁧󠁢󠁥󠁮󠁧󠁿</span>
-          </label>
-        </div>
-        <div class="settings-toggle" style="border: none; background: transparent; padding: 0; margin-bottom: 8px;">
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1;">
-            <input type="checkbox" checked>
-            <span style="color: var(--text);">Champions League ⭐</span>
-          </label>
-        </div>
-        <div class="settings-toggle" style="border: none; background: transparent; padding: 0;">
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1;">
-            <input type="checkbox" checked>
-            <span style="color: var(--text);">NPFL 🇳🇬</span>
-          </label>
-        </div>
-      `,
-    },
-
-    'playback': {
-      title: 'Playback',
-      content: `
-        <div class="settings-info">
-          ▶️ Control how videos play.
-        </div>
-        <div class="settings-toggle">
-          <div class="toggle-label">
-            <div class="toggle-label-main">Autoplay Videos</div>
-            <div class="toggle-label-sub">Play videos as you scroll</div>
-          </div>
-          <input type="checkbox" id="autoplay-toggle" checked onchange="updateSetting('content.autoPlayVideos', this.checked)">
-        </div>
-        <div style="margin-top: 12px;">
-          <div style="font-size: 12px; font-weight: 500; color: var(--text); margin-bottom: 8px;">Video Quality</div>
-          <select class="settings-select" onchange="updateSetting('content.videoQuality', this.value)">
-            <option value="auto">Auto (recommended)</option>
-            <option value="720p">720p (High)</option>
-            <option value="480p">480p (Medium)</option>
-            <option value="360p">360p (Low)</option>
-          </select>
-        </div>
-      `,
-    },
-
-    'accessibility': {
-      title: 'Accessibility',
-      content: `
-        <div class="settings-info">
-          ♿ Make PitchSide easier to use.
-        </div>
-        <div class="settings-toggle">
-          <div class="toggle-label">
-            <div class="toggle-label-main">Captions</div>
-            <div class="toggle-label-sub">Show subtitles on videos</div>
-          </div>
-          <input type="checkbox">
-        </div>
-        <div class="settings-toggle">
-          <div class="toggle-label">
-            <div class="toggle-label-main">Reduce Motion</div>
-            <div class="toggle-label-sub">Minimize animations</div>
-          </div>
-          <input type="checkbox">
-        </div>
-      `,
-    },
-
-    'wellbeing': {
-      title: 'Time & Well-being',
-      content: `
-        <div class="settings-info">
-          ⏰ Set healthy app usage limits.
-        </div>
-        <div class="settings-toggle">
-          <div class="toggle-label">
-            <div class="toggle-label-main">Daily Screen Time Limit</div>
-            <div class="toggle-label-sub">Get a reminder when limit is reached</div>
-          </div>
-          <input type="checkbox" id="screen-limit-toggle" onchange="toggleScreenLimit()">
-        </div>
-      `,
-    },
-
     'data-saver': {
       title: 'Data Saver',
       content: `
-        <div class="settings-info">
-          📊 Reduce data consumption.
-        </div>
+        <div class="settings-info">📊 Reduce data consumption.</div>
         <div class="settings-toggle">
           <div class="toggle-label">
             <div class="toggle-label-main">Data Saver Mode</div>
@@ -7050,36 +6822,16 @@ function openSettingsMenu(menuType) {
       `,
     },
 
-    'offline': {
-      title: 'Offline Content',
-      content: `
-        <div class="settings-info">
-          ⬇️ Download videos to watch offline.
-        </div>
-        <div style="margin-top: 12px; background: var(--bg2); padding: 12px; border-radius: 8px;">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-            <span style="color: var(--text);">Storage Used</span>
-            <span style="color: var(--green); font-weight: 600;">245 MB</span>
-          </div>
-          <div style="background: var(--bg); height: 6px; border-radius: 3px; overflow: hidden;">
-            <div style="background: var(--green); width: 30%; height: 100%;"></div>
-          </div>
-        </div>
-      `,
-    },
-
     'devices': {
       title: 'Device Requests',
       content: `
-        <div class="settings-info">
-          📱 Manage active sessions and devices.
-        </div>
+        <div class="settings-info">📱 Manage active sessions and devices.</div>
         <div style="margin-top: 12px;">
           <div style="font-size: 12px; font-weight: 500; color: var(--text); margin-bottom: 8px;">Active Sessions</div>
           <div class="settings-list-item">
             <div class="settings-list-info">
-              <div class="settings-list-name">🖥️ Chrome on Mac</div>
-              <div class="settings-list-detail">Abuja, NG • Just now</div>
+              <div class="settings-list-name">🖥️ Current Device</div>
+              <div class="settings-list-detail">Right now</div>
             </div>
             <span style="font-size: 12px; color: var(--green);">Current</span>
           </div>
@@ -7087,37 +6839,10 @@ function openSettingsMenu(menuType) {
       `,
     },
 
-    'ads': {
-      title: 'Ads',
-      content: `
-        <div class="settings-info">
-          📢 Control how you see ads.
-        </div>
-        <div style="font-size: 12px; font-weight: 500; color: var(--text); margin: 12px 0 8px;">Ad Interests</div>
-        <div class="settings-toggle" style="border: none; background: transparent; padding: 0;">
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1;">
-            <input type="checkbox" checked>
-            <span style="color: var(--text);">⚽ Football</span>
-          </label>
-        </div>
-      `,
-    },
-
-    'ad-activity': {
-      title: 'Recent Ad Activity',
-      content: `
-        <div style="text-align: center; padding: 40px 12px; color: var(--text3);">
-          📭 No recent ad activity
-        </div>
-      `,
-    },
-
     'privacy-center': {
       title: 'Privacy Center',
       content: `
-        <div class="settings-info">
-          🛡️ Learn about your privacy rights and how we protect your data.
-        </div>
+        <div class="settings-info">🛡️ Learn about your privacy rights and how we protect your data.</div>
         <button class="settings-button" onclick="downloadMyData()">Download My Data</button>
       `,
     },
@@ -7131,16 +6856,6 @@ function openSettingsMenu(menuType) {
           • Privacy Policy<br>
           • Cookie Policy
         </div>
-      `,
-    },
-
-    'family-pairing': {
-      title: 'Family Pairing',
-      content: `
-        <div class="settings-info">
-          👨‍👩‍👧 Create a family group to manage accounts together.
-        </div>
-        <button class="settings-button" onclick="alert('Feature coming soon')">Create Family Group</button>
       `,
     },
   };
@@ -7167,43 +6882,8 @@ function togglePrivateAccount() {
   if (toggle) updateSetting('account.privateAccount', toggle.checked);
 }
 
-function toggleDarkMode() {
-  const toggle = document.getElementById('darkmode-toggle');
-  if (toggle && toggle.checked) {
-    document.documentElement.style.colorScheme = 'dark';
-  }
-}
-
-function toggleScreenLimit() {
-  const toggle = document.getElementById('screen-limit-toggle');
-  if (toggle) updateSetting('wellness.screenTimeEnabled', toggle.checked);
-}
-
-function changePassword() {
-  alert('Password change - feature in development');
-}
-
-function editAccountInfo() {
-  alert('Edit account - feature in development');
-}
-
-function switchAccount() {
-  alert('Switch account - feature in development');
-}
-
-function logoutUser() {
-  if (confirm('Are you sure you want to log out?')) {
-    console.log('User logged out');
-    // Add your logout logic here
-  }
-}
-
 function downloadMyData() {
   alert('Data download - feature in development');
-}
-
-function toggleTwoFA() {
-  alert('Two-factor authentication - feature in development');
 }
 
 // ═══════════════════════════════════════════════════════════════
