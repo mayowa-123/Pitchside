@@ -1915,7 +1915,7 @@ body {
 }
 
 /* ═══════════════════════════════════════
-   SETTINGS & PRIVACY PAGE STYLES
+   SETTINGS PAGE STYLES
 ═══════════════════════════════════════ */
 
 .settings-container {
@@ -1955,18 +1955,6 @@ body {
 .settings-item:active {
   background: var(--bg3);
   transform: scale(0.98);
-}
-
-.settings-item.logout-item {
-  border-color: rgba(239, 68, 68, 0.3);
-}
-
-.settings-item.logout-item .settings-item-icon {
-  color: #ef4444;
-}
-
-.settings-item.logout-item .settings-item-title {
-  color: #ef4444;
 }
 
 .settings-item-left {
@@ -2132,26 +2120,6 @@ body {
   align-items: center;
 }
 
-.settings-list-user {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-}
-
-.settings-list-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--green);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 600;
-  font-size: 12px;
-}
-
 .settings-list-info {
   display: flex;
   flex-direction: column;
@@ -2167,17 +2135,6 @@ body {
 .settings-list-detail {
   font-size: 11px;
   color: var(--text3);
-}
-
-.settings-btn-remove {
-  background: #ef4444;
-  border: none;
-  color: white;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
 }
 
 @keyframes slideUpIn {
