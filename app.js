@@ -140,7 +140,7 @@ function renderSBPage(reset) {
     const thumb = v.thumbnail || 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽';
     const title = (v.title || 'Highlight').replace(/'/g, "\\'");
     const videoId = v.videoId || v.embedUrl || v.src || '';
-    const channel = v.channel || '';
+    const channel = v.channel || v.channelTitle || ''; 
     return `
       <div onclick="openSBPlayer('${title}','${videoId}')" style="cursor:pointer;border-radius:12px;overflow:hidden;background:var(--bg2);box-shadow:var(--shadow-md);">
         <div style="position:relative;aspect-ratio:16/9;background:#111;">
