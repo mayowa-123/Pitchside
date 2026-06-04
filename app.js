@@ -3795,9 +3795,8 @@ let _hlPlayerData   = [];
 
 /* ── Init (called once when nav tab clicked) ── */
 function initHighlights() {
-  // Always re-render so fresh Firebase data shows immediately
-  _renderHighlightsFromVideos();
-  _loadCommunityHighlights();
+  // Load highlights using the proven YouTube highlights system (same as Explore tab)
+  loadSBHighlights('all');
 }
 
 /* ── Render official highlights directly from the VIDEOS array (Firebase bot data) ── */
