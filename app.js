@@ -83,51 +83,9 @@ async function loadSBHighlights(filter) {
     grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">Failed to load highlights.</div>';
   }
 }
-  document.querySelectorAll('[id^="sb-btn-"]').forEach(btn => {
-    btn.style.background = 'var(--bg2)';
-    btn.style.color = 'var(--text)';
-  });
-  const btnMap = {
-    'all': 'all', 'ENGLAND: Premier League': 'pl', 'SPAIN: La Liga': 'll',
-    'ITALY: Serie A': 'sa', 'GERMANY: Bundesliga': 'bl',
-    'UEFA: Champions League': 'cl', 'FRANCE: Ligue 1': 'l1'
-  };
-  const activeId = 'sb-btn-' + (btnMap[filter] || 'all');
-  const activeBtn = document.getElementById(activeId);
-  if (activeBtn) { activeBtn.style.background = 'var(--green)'; activeBtn.style.color = '#fff'; }
-  const grid = document.getElementById('sb-video-grid');
-  grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);"><div style="font-size:28px;">⚽</div><div style="margin-top:8px;font-size:14px;">Loading highlights...</div></div>';
-  let filtered = VIDEOS.filter(v => !v.userPost);
-  if (filter !== 'all') {
-    const leagueMap = {
-      'ENGLAND: Premier League': 'premier',
-      'SPAIN: La Liga': 'la liga',
-      'ITALY: Serie A': 'serie a',
-      'GERMANY: Bundesliga': 'bundesliga',
-      'UEFA: Champions League': 'champions',
-      'FRANCE: Ligue 1': 'ligue',
-    };
-    const keyword = leagueMap[filter] || filter.toLowerCase();
-    filtered = filtered.filter(v =>
-      (v.title || '').toLowerCase().includes(keyword) ||
-      (v.channelTitle || '').toLowerCase().includes(keyword) ||
-      (v.competition || '').toLowerCase().includes(keyword)
-    );
-  }
-  _sbAllVideos = filtered;
-  _sbFiltered = filtered;
-  if (!_sbFiltered.length) {
-    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">No highlights found right now.</div>';
-    return;
-  }
-  renderSBPage(true);
-}
 
-function _renderHighlightsFromVideos() {
-  if (typeof _sbCurrentFilter !== 'undefined') {
-    loadSBHighlights(_sbCurrentFilter);
-  }
-}
+
+
 
 function renderSBPage(reset) {
   const grid = document.getElementById('sb-video-grid');
@@ -215,16 +173,7 @@ function closeSBPlayer() {
   document.getElementById('sb-player-body').innerHTML = '';
 }
 
-// Auto load when highlights page opens
-document.addEventListener('DOMContentLoaded', () => {
-  const origSwitch = window.switchPage;
-  window.switchPage = function(page, el) {
-    if (origSwitch) origSwitch(page, el);
-    if (page === 'highlights' && _sbAllVideos.length === 0) {
-      loadSBHighlights('all');
-    }
-  };
-});
+
 
 /* ═══════════════════════════════════════════
    LIVE SCORES ENGINE
@@ -1424,14 +1373,7 @@ function openVideoOverlay(videoId) { openHlPlayerById(String(videoId)); }
 function closeVideoOverlay() {
   if (currentVideoId !== null) _stopInCard(currentVideoId);
 }
-function navigateVideo(direction) {
-  const idx = VIDEOS.findIndex(v => v.id === currentVideoId);
-  if (idx === -1) return;
-  const nextIdx = direction === 'next'
-    ? (idx + 1) % VIDEOS.length
-    : (idx - 1 + VIDEOS.length) % VIDEOS.length;
-  _playInCard(VIDEOS[nextIdx].id);
-}
+
 
 function renderVideoEmbed(v) {
   const container = document.getElementById('vcard-embed-' + v.id)
