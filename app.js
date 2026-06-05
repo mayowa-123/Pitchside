@@ -63,13 +63,18 @@ function renderSBPage(reset) {
   const slice = _sbFiltered.slice(start, end);
   const hasMore = _sbFiltered.length > end;
 
-  const cards = slice.map(v => {
+  const cards = slice.map((v, i) => {
     const thumb = v.thumbnail || 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽';
-    const title = (v.title || 'Highlight').replace(/'/g, "\\'");
-    const videoDataJson = JSON.stringify(v).replace(/'/g, "\\'");
+    const title = v.title || 'Highlight';
     const channel = v.channel || '';
+    const cardId = `sb-card-${_sbPage}-${i}`;
+    
+    // Store video data in a global map (safer than embedding in HTML)
+    window._sbVideoCards = window._sbVideoCards || {};
+    window._sbVideoCards[cardId] = v;
+    
     return `
-      <div onclick="openSBPlayer('${title}', '${videoDataJson}')" style="cursor:pointer;border-radius:12px;overflow:hidden;background:var(--bg2);box-shadow:var(--shadow-md);">
+      <div onclick="openSBPlayerFromCard('${cardId}')" style="cursor:pointer;border-radius:12px;overflow:hidden;background:var(--bg2);box-shadow:var(--shadow-md);">
         <div style="position:relative;aspect-ratio:16/9;background:#111;">
           <img src="${thumb}" style="width:100%;height:100%;object-fit:cover;" onerror="this.src='https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽'">
           <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
@@ -80,7 +85,7 @@ function renderSBPage(reset) {
         </div>
         <div style="padding:8px;">
           <div style="font-size:11px;color:var(--green);font-weight:600;margin-bottom:3px;">${channel}</div>
-          <div style="font-size:12px;color:var(--text);font-weight:500;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${v.title || 'Highlight'}</div>
+          <div style="font-size:12px;color:var(--text);font-weight:500;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${title}</div>
         </div>
       </div>`;
   }).join('');
@@ -109,22 +114,23 @@ async function sbLoadMore() {
   if (wrap) wrap.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:10px;">All highlights loaded!</div>';
 }
 
-function openSBPlayer(title, videoDataJson) {
+function openSBPlayerFromCard(cardId) {
+  const videoData = window._sbVideoCards && window._sbVideoCards[cardId];
+  if (!videoData) {
+    console.error('Video not found:', cardId);
+    alert('Error loading video');
+    return;
+  }
+  openSBPlayer(videoData.title || 'Highlight', videoData);
+}
+
+function openSBPlayer(title, videoDataObj) {
   const overlay = document.getElementById('sb-player-overlay');
   document.getElementById('sb-player-title').textContent = title;
   const body = document.getElementById('sb-player-body');
   
-  // Parse the video object
-  let videoData = {};
-  try {
-    videoData = JSON.parse(videoDataJson);
-  } catch (e) {
-    console.error('Failed to parse video data:', e);
-    body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);">Error loading video</div>';
-    overlay.style.display = 'flex';
-    overlay.style.flexDirection = 'column';
-    return;
-  }
+  // videoDataObj is already an object, not JSON string
+  const videoData = videoDataObj || {};
 
   let src = '';
 
