@@ -66,10 +66,10 @@ function renderSBPage(reset) {
   const cards = slice.map(v => {
     const thumb = v.thumbnail || 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽';
     const title = (v.title || 'Highlight').replace(/'/g, "\\'");
-    const videoId = v.videoId || v.embedUrl || v.src || '';
+    const videoDataJson = JSON.stringify(v).replace(/'/g, "\\'");
     const channel = v.channel || '';
     return `
-      <div onclick="openSBPlayer('${title}','${videoId}')" style="cursor:pointer;border-radius:12px;overflow:hidden;background:var(--bg2);box-shadow:var(--shadow-md);">
+      <div onclick="openSBPlayer('${title}', '${videoDataJson}')" style="cursor:pointer;border-radius:12px;overflow:hidden;background:var(--bg2);box-shadow:var(--shadow-md);">
         <div style="position:relative;aspect-ratio:16/9;background:#111;">
           <img src="${thumb}" style="width:100%;height:100%;object-fit:cover;" onerror="this.src='https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽'">
           <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
@@ -109,17 +109,47 @@ async function sbLoadMore() {
   if (wrap) wrap.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:10px;">All highlights loaded!</div>';
 }
 
-function openSBPlayer(title, videoId) {
+function openSBPlayer(title, videoDataJson) {
   const overlay = document.getElementById('sb-player-overlay');
   document.getElementById('sb-player-title').textContent = title;
   const body = document.getElementById('sb-player-body');
   
-  let src = videoId;
-  if (videoId && !videoId.startsWith('http')) {
-    const cleanId = String(videoId).replace('yt_', '');
-    src = `https://www.youtube.com/embed/${cleanId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
+  // Parse the video object
+  let videoData = {};
+  try {
+    videoData = JSON.parse(videoDataJson);
+  } catch (e) {
+    console.error('Failed to parse video data:', e);
+    body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);">Error loading video</div>';
+    overlay.style.display = 'flex';
+    overlay.style.flexDirection = 'column';
+    return;
   }
-  
+
+  let src = '';
+
+  // Check all possible video sources in priority order
+  if (videoData.embedUrl) {
+    src = videoData.embedUrl;
+  } else if (videoData.src) {
+    src = videoData.src;
+  } else if (videoData.videoId) {
+    // YouTube video ID - build embed URL
+    const cleanId = String(videoData.videoId).replace('yt_', '');
+    src = `https://www.youtube.com/embed/${cleanId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
+  } else if (videoData.url) {
+    src = videoData.url;
+  }
+
+  // Validate that we have a URL before attempting to play
+  if (!src) {
+    console.error('No valid video source found:', videoData);
+    body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);">⚠️ Video source unavailable</div>';
+    overlay.style.display = 'flex';
+    overlay.style.flexDirection = 'column';
+    return;
+  }
+
   // Use the same cleaning and start-time logic as the main feed for consistency
   if (typeof cleanEmbedUrl === 'function') src = cleanEmbedUrl(src);
   // Only add start time if it's a video file or we explicitly want to skip for YouTube
