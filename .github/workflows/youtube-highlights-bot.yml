@@ -1,8 +1,10 @@
-name: YouTube Highlights Bot
+name: YouTube Highlights Bot - Every 1 Hour (FREE Tier)
 
 on:
+  # ✅ OPTION 3: Every 1 hour (24 times per day)
+  # This keeps you under FREE tier limits (20,000 writes/day)
   schedule:
-    - cron: '0 6,8,10,12,14,16,18,20,22,23 * * *'
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -10,10 +12,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      
       - uses: actions/setup-node@v3
         with:
           node-version: '18'
+      
       - run: npm install firebase-admin
+      
+      # Run the Option 3 bot
       - run: node scripts/youtube-highlights-bot.js
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
