@@ -9,57 +9,56 @@ initializeApp({
 
 const db = getFirestore();
 
-// ✅ OPTION 3: 11 specific channels (verified globally accessible)
-const CHANNELS = [
-  { id: 'UCEZnlktMZkS_o3YCwKEHnrw', name: 'UEFA', searchTerm: 'UEFA Champions League highlights' },
-  { id: 'UCKt-VYy5-oqXz6xqDNBnqWw', name: 'LaLiga', searchTerm: 'LaLiga highlights' },
-  { id: 'BVB', name: 'Bundesliga', searchTerm: 'Bundesliga highlights' },
-  { id: 'SerieA', name: 'Serie A', searchTerm: 'Serie A highlights' },
-  { id: 'CONMEBOL', name: 'Copa Libertadores', searchTerm: 'Copa Libertadores highlights' },
-  { id: 'NPFL', name: 'NPFL', searchTerm: 'NPFL Nigeria highlights' },
-  { id: 'JLEAGUEInternational', name: 'J-League', searchTerm: 'J-League highlights' },
-  { id: 'FIFA', name: 'World Cup', searchTerm: 'FIFA World Cup highlights' },
-  { id: 'CBSSportsGolazo', name: 'CBS Sports Golazo', searchTerm: 'CBS Sports Golazo highlights' },
-  { id: 'CAF', name: 'AFCON', searchTerm: 'AFCON highlights' },
-  { id: 'Ligue1', name: 'Ligue 1', searchTerm: 'Ligue 1 highlights' },
+// ✅ FIXED: Search by channel name + keywords (more reliable)
+const SEARCH_QUERIES = [
+  { name: 'UEFA Champions League', query: 'UEFA Champions League highlights' },
+  { name: 'LaLiga', query: 'LaLiga highlights 2024 2025 2026' },
+  { name: 'Bundesliga', query: 'Bundesliga highlights 2024 2025 2026' },
+  { name: 'Serie A', query: 'Serie A highlights 2024 2025 2026' },
+  { name: 'Copa Libertadores', query: 'Copa Libertadores highlights' },
+  { name: 'NPFL', query: 'NPFL Nigeria football highlights' },
+  { name: 'J-League', query: 'J-League Japan football highlights' },
+  { name: 'FIFA World Cup', query: 'FIFA World Cup highlights' },
+  { name: 'CBS Sports Golazo', query: 'CBS Sports Golazo football' },
+  { name: 'AFCON', query: 'AFCON Africa Cup highlights' },
+  { name: 'Ligue 1', query: 'Ligue 1 France highlights' },
 ];
 
-// ✅ OPTION 3: 50 videos per channel (was 100) - FREE tier safe
-const VIDEOS_PER_CHANNEL = 50;
-
-// ✅ OPTION 3: Max 250 videos per run (was 500)
+// Videos per search query
+const VIDEOS_PER_QUERY = 50;
 const MAX_VIDEOS = 250;
 
-// ✅ Backfill from January 2024
+// Backfill from January 2024
 const BACKFILL_DATE = new Date('2024-01-01').toISOString();
 
-// YouTube API Key
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 
 /**
- * Fetch videos from a specific channel
+ * ✅ FIXED: Fetch videos by search query (not channel ID)
  */
-async function fetchFromChannel(channel) {
+async function fetchByQuery(searchConfig) {
   try {
-    console.log(`📺 Fetching from: ${channel.name}`);
+    console.log(`📺 Searching: ${searchConfig.name}`);
 
     const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
     searchUrl.searchParams.append('part', 'snippet');
-    searchUrl.searchParams.append('channelId', channel.id);
-    searchUrl.searchParams.append('q', channel.searchTerm);
+    searchUrl.searchParams.append('q', searchConfig.query);
     searchUrl.searchParams.append('type', 'video');
-    searchUrl.searchParams.append('maxResults', VIDEOS_PER_CHANNEL);
-    searchUrl.searchParams.append('order', 'date');
-    searchUrl.searchParams.append('publishedAfter', BACKFILL_DATE);
+    searchUrl.searchParams.append('maxResults', VIDEOS_PER_QUERY);
+    searchUrl.searchParams.append('order', 'date'); // Latest first
+    searchUrl.searchParams.append('publishedAfter', BACKFILL_DATE); // From Jan 2024
+    searchUrl.searchParams.append('relevanceLanguage', 'en');
     searchUrl.searchParams.append('key', YOUTUBE_API_KEY);
 
     const res = await fetch(searchUrl.toString());
     const data = await res.json();
 
-    if (!data.items) {
-      console.log(`⚠️ No items for ${channel.name}`);
+    if (!data.items || data.items.length === 0) {
+      console.log(`   ⚠️ No results for ${searchConfig.name}`);
       return [];
     }
+
+    console.log(`   ✅ Found ${data.items.length} results`);
 
     return data.items.map(item => ({
       videoId: item.id.videoId,
@@ -67,14 +66,14 @@ async function fetchFromChannel(channel) {
       title: item.snippet.title,
       thumbnail: item.snippet.thumbnails?.high?.url || item.snippet.thumbnails?.default?.url,
       channelTitle: item.snippet.channelTitle,
-      channel: channel.name,
+      channel: searchConfig.name, // Use the search category name
       publishedAt: new Date(item.snippet.publishedAt),
       createdAt: new Date().toISOString(),
       source: 'youtube',
       fetchedAt: new Date().toISOString(),
     }));
   } catch (err) {
-    console.error(`❌ Failed to fetch ${channel.name}:`, err.message);
+    console.error(`   ❌ Error for ${searchConfig.name}:`, err.message);
     return [];
   }
 }
@@ -84,29 +83,29 @@ async function fetchFromChannel(channel) {
  */
 async function run() {
   console.log('\n' + '='.repeat(60));
-  console.log('🚀 YouTube Highlights Bot - OPTION 3');
+  console.log('🚀 YouTube Highlights Bot - OPTION 3 (FIXED)');
   console.log('⏰ Running at:', new Date().toISOString());
-  console.log('📺 Channels:', CHANNELS.length);
-  console.log('📹 Videos/Channel:', VIDEOS_PER_CHANNEL);
+  console.log('📺 Search queries:', SEARCH_QUERIES.length);
+  console.log('📹 Videos/Query:', VIDEOS_PER_QUERY);
   console.log('📅 Backfill from:', BACKFILL_DATE);
   console.log('💰 Cost: FREE (under quota)');
   console.log('='.repeat(60) + '\n');
 
   const allVideos = [];
 
-  // Fetch from all 11 channels
-  for (const channel of CHANNELS) {
+  // Search for all queries
+  for (const query of SEARCH_QUERIES) {
     try {
-      const videos = await fetchFromChannel(channel);
-      console.log(`✅ ${channel.name.padEnd(20)} → ${videos.length} videos`);
+      const videos = await fetchByQuery(query);
+      console.log(`   → Added ${videos.length} videos\n`);
       allVideos.push(...videos);
 
       if (allVideos.length >= MAX_VIDEOS) {
-        console.log(`⚠️ Reached max (${MAX_VIDEOS}). Stopping.`);
+        console.log(`⚠️ Reached max (${MAX_VIDEOS}). Stopping search.`);
         break;
       }
     } catch (err) {
-      console.error(`❌ Error with ${channel.name}:`, err.message);
+      console.error(`Error with ${query.name}:`, err.message);
     }
 
     // Small delay to avoid rate limiting
@@ -118,7 +117,7 @@ async function run() {
     return;
   }
 
-  console.log(`\n📊 Total fetched: ${allVideos.length}`);
+  console.log(`📊 Total fetched: ${allVideos.length}`);
 
   // Check existing videos
   const colRef = db.collection('highlights');
@@ -152,7 +151,7 @@ async function run() {
     addBatch.set(ref, video, { merge: true });
     batchCount++;
 
-    // Commit every 450 (Firestore batch limit is 500)
+    // Commit every 450 (Firestore limit)
     if (batchCount === 450 || index === newVideos.length - 1) {
       addBatch.commit();
       console.log(`✅ Batch ${batchNum} committed (${batchCount} videos)`);
