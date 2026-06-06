@@ -1,10 +1,10 @@
-name: YouTube Highlights Bot - Every 1 Hour (FREE Tier)
+name: YouTube Highlights Bot - Smart Forever (Every 6 Hours)
 
 on:
-  # ✅ OPTION 3: Every 1 hour (24 times per day)
-  # This keeps you under FREE tier limits (20,000 writes/day)
+  # ✅ SMART FOREVER: Every 6 hours (4 times per day)
+  # This keeps the bot sustainable forever while building a massive library
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 0,6,12,18 * * *'  # Runs at 12am, 6am, 12pm, 6pm UTC
   workflow_dispatch:
 
 jobs:
@@ -19,7 +19,7 @@ jobs:
       
       - run: npm install firebase-admin
       
-      # Run the Option 3 bot
+      # Run the Smart Forever bot
       - run: node scripts/youtube-highlights-bot.js
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
