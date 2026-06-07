@@ -1798,3 +1798,79 @@
 
 </body>
 </html>
+
+<!-- 💎 PREMIUM FEATURES UI ELEMENTS -->
+
+<!-- Notifications Panel -->
+<div id="notifications-panel" class="notifications-panel" style="display:none;position:fixed;top:60px;right:16px;width:320px;background:var(--bg);border-radius:12px;box-shadow:var(--shadow-lg);z-index:1000;max-height:400px;overflow-y:auto;flex-direction:column;border:1px solid rgba(16,185,129,0.2);">
+  <div style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.1);font-weight:600;color:var(--text);">🔔 Notifications</div>
+  <div id="notifications-list" style="flex:1;">
+    <div style="padding:16px;text-align:center;color:var(--text2);font-size:13px;">No new notifications</div>
+  </div>
+</div>
+
+<!-- Trending Videos Mini Section -->
+<div id="trending-mini" style="display:none;position:fixed;bottom:120px;left:16px;background:rgba(0,0,0,0.8);border-radius:12px;padding:12px;width:280px;z-index:500;border:1px solid rgba(16,185,129,0.3);">
+  <div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:8px;">🔥 Trending</div>
+  <div id="trending-mini-list" style="display:flex;flex-direction:column;gap:8px;max-height:200px;overflow-y:auto;"></div>
+</div>
+
+<!-- Collections Sidebar -->
+<div id="collections-sidebar" style="display:none;position:fixed;bottom:120px;right:16px;background:rgba(0,0,0,0.8);border-radius:12px;padding:12px;width:280px;z-index:500;border:1px solid rgba(16,185,129,0.3);">
+  <div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:8px;">📚 Collections</div>
+  <div id="collections-list" style="display:flex;flex-direction:column;gap:6px;">
+    <div onclick="toggleCollection('favorites')" style="padding:8px;background:rgba(16,185,129,0.1);border-radius:8px;cursor:pointer;color:var(--text2);font-size:12px;">❤️ Favorites</div>
+    <div onclick="toggleCollection('watchlist')" style="padding:8px;background:rgba(16,185,129,0.1);border-radius:8px;cursor:pointer;color:var(--text2);font-size:12px;">📋 Watch Later</div>
+  </div>
+</div>
+
+<!-- Video Quality Selector (Hidden by default) -->
+<div id="quality-selector" style="display:none;position:fixed;top:80px;right:16px;background:var(--bg);border-radius:12px;padding:8px;z-index:1000;border:1px solid rgba(16,185,129,0.2);">
+  <div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600;">📊 Quality</div>
+  <button onclick="setVideoQuality('auto')" style="display:block;width:100%;padding:6px;background:rgba(16,185,129,0.1);border:none;border-radius:6px;color:var(--text2);font-size:11px;cursor:pointer;margin-bottom:4px;">Auto</button>
+  <button onclick="setVideoQuality('1080p')" style="display:block;width:100%;padding:6px;background:rgba(16,185,129,0.1);border:none;border-radius:6px;color:var(--text2);font-size:11px;cursor:pointer;margin-bottom:4px;">1080p</button>
+  <button onclick="setVideoQuality('720p')" style="display:block;width:100%;padding:6px;background:rgba(16,185,129,0.1);border:none;border-radius:6px;color:var(--text2);font-size:11px;cursor:pointer;margin-bottom:4px;">720p</button>
+  <button onclick="setVideoQuality('480p')" style="display:block;width:100%;padding:6px;background:rgba(16,185,129,0.1);border:none;border-radius:6px;color:var(--text2);font-size:11px;cursor:pointer;">480p</button>
+</div>
+
+<!-- Creator Profile Card (shown on hover) -->
+<div id="creator-profile-card" style="display:none;position:fixed;background:var(--bg);border-radius:12px;padding:16px;z-index:1001;width:280px;border:1px solid rgba(16,185,129,0.2);box-shadow:var(--shadow-lg);">
+  <div style="display:flex;gap:12px;margin-bottom:12px;">
+    <div id="creator-avatar" style="width:48px;height:48px;border-radius:50%;background:var(--bg2);flex-shrink:0;"></div>
+    <div style="flex:1;">
+      <div id="creator-name" style="font-weight:600;color:var(--text);font-size:13px;"></div>
+      <div id="creator-followers" style="font-size:11px;color:var(--text2);"></div>
+      <div id="creator-badge" style="margin-top:4px;"></div>
+    </div>
+  </div>
+  <div id="creator-bio" style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:12px;"></div>
+  <div style="display:flex;gap:8px;">
+    <button id="follow-btn" onclick="toggleFollowFromCard()" style="flex:1;padding:8px;background:var(--green);border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer;">Follow</button>
+    <button onclick="closeCreatorCard()" style="flex:1;padding:8px;background:rgba(255,255,255,0.1);border:none;border-radius:8px;color:var(--text);font-weight:600;font-size:12px;cursor:pointer;">Close</button>
+  </div>
+</div>
+
+<!-- Share Menu (dynamically inserted) -->
+<!-- Share menu is created dynamically by showShareMenu() -->
+
+<!-- Notification Badge -->
+<style>
+.notification-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: var(--green);
+  color: #fff;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+}
+</style>
+
+<!-- End of Premium Features UI -->
+
