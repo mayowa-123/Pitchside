@@ -2161,3 +2161,409 @@ body {
     font-size: 11px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   💎 PREMIUM FEATURES CSS STYLING
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Notifications Panel */
+.notifications-panel {
+  animation: slideInRight 0.3s ease;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Engagement Metrics Display */
+.engagement-metrics {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.engagement-metric {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.engagement-metric:hover {
+  color: var(--green);
+}
+
+/* Creator Profile Badge */
+.creator-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.creator-verified {
+  color: var(--green);
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+/* Share Button Group */
+.share-button-group {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.share-btn-small {
+  flex: 1;
+  padding: 6px;
+  background: rgba(16, 185, 129, 0.1);
+  border: none;
+  border-radius: 6px;
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.share-btn-small:active {
+  background: rgba(16, 185, 129, 0.2);
+  transform: scale(0.95);
+}
+
+/* Collections Button */
+.collection-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 6px;
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.collection-toggle:hover {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.collection-toggle.active {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: var(--green);
+}
+
+/* Follow Button */
+.follow-btn {
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--green);
+  border-radius: 6px;
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.follow-btn:hover {
+  background: var(--green);
+  color: #fff;
+}
+
+.follow-btn.following {
+  background: var(--green);
+  color: #fff;
+}
+
+/* Trending Section */
+.trending-card {
+  cursor: pointer;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg2);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.trending-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+}
+
+.trending-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(16, 185, 129, 0.9);
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* Comment Like System */
+.comment-like-btn {
+  background: none;
+  border: none;
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  transition: color 0.2s ease;
+}
+
+.comment-like-btn:hover {
+  color: var(--green);
+}
+
+.comment-like-btn.liked {
+  color: var(--green);
+  font-weight: 600;
+}
+
+/* Quality Selector */
+.quality-option {
+  padding: 6px;
+  background: rgba(16, 185, 129, 0.1);
+  border: none;
+  border-radius: 6px;
+  color: var(--text2);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.quality-option:hover {
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--green);
+}
+
+.quality-option.active {
+  background: var(--green);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Premium Card Styling */
+.premium-card {
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(0, 212, 255, 0.02));
+  border-radius: 12px;
+}
+
+.premium-badge {
+  background: linear-gradient(135deg, var(--green), #00d4ff);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 700;
+}
+
+/* Analytics Card */
+.analytics-card {
+  padding: 12px;
+  background: var(--bg2);
+  border-radius: 10px;
+  border-left: 3px solid var(--green);
+}
+
+.analytics-label {
+  font-size: 11px;
+  color: var(--text2);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.analytics-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+/* Notification Item */
+.notification-item {
+  padding: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.notification-item:hover {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.notification-item.unread {
+  background: rgba(16, 185, 129, 0.05);
+  border-left: 3px solid var(--green);
+}
+
+/* Creator Profile Card */
+.creator-profile-card {
+  animation: slideInUp 0.3s ease;
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Share Menu Container */
+.share-menu {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.share-menu-content {
+  width: 100%;
+  background: var(--bg);
+  border-radius: 20px 20px 0 0;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Engagement Button Premium Styling */
+.engagement-btn-premium {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: rgba(16, 185, 129, 0.1);
+  border: none;
+  border-radius: 6px;
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.engagement-btn-premium:hover {
+  background: rgba(16, 185, 129, 0.2);
+  transform: scale(1.05);
+}
+
+.engagement-btn-premium.active {
+  background: rgba(16, 185, 129, 0.3);
+}
+
+/* Trending Mini Section */
+.trending-mini {
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+}
+
+/* Collections Sidebar */
+.collections-sidebar {
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+}
+
+/* Premium Feature Indicator */
+.premium-indicator {
+  display: inline-block;
+  background: linear-gradient(135deg, var(--green), #00d4ff);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 8px;
+  font-weight: 700;
+  color: #000;
+  margin-left: 4px;
+}
+
+/* Video Metrics Display */
+.video-metrics-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.metric-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* Smooth Transitions */
+.premium-transition {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Glass Morphism Effect for Premium */
+.glass-effect {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+/* Premium Hover State */
+.premium-hover:hover {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(0, 212, 255, 0.05));
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   END OF PREMIUM FEATURES CSS
+   ═══════════════════════════════════════════════════════════════ */
+
