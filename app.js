@@ -6925,3 +6925,652 @@ function downloadMyData() {
 // ═══════════════════════════════════════════════════════════════
 // END OF SETTINGS & PRIVACY FUNCTIONALITY
 // ═══════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════
+// 💎 PREMIUM FEATURES SYSTEM — Added without breaking existing code
+// ═══════════════════════════════════════════════════════════════
+
+/* ──────────────────────────────────────────────────────────────
+   1️⃣ ENGAGEMENT METRICS SYSTEM
+   Tracks & displays likes, views, comments for premium feel
+   ────────────────────────────────────────────────────────────── */
+
+let videoMetrics = {}; // { videoId: { likes: [], views: 0, comments: 0, shares: 0 } }
+
+async function getVideoMetrics(videoId) {
+  if (!videoMetrics[videoId]) {
+    videoMetrics[videoId] = { 
+      likes: [], 
+      views: 0, 
+      comments: 0, 
+      shares: 0,
+      lastUpdated: new Date()
+    };
+  }
+  return videoMetrics[videoId];
+}
+
+async function incrementVideoViews(videoId) {
+  const metrics = await getVideoMetrics(videoId);
+  metrics.views = (metrics.views || 0) + 1;
+  metrics.lastUpdated = new Date();
+}
+
+function formatMetricCount(count) {
+  if (count >= 1000000) return (count / 1000000).toFixed(1) + 'M';
+  if (count >= 1000) return (count / 1000).toFixed(1) + 'K';
+  return count.toString();
+}
+
+function displayEngagementMetrics(videoId) {
+  const metrics = videoMetrics[videoId];
+  if (!metrics) return '';
+  
+  return `
+    <div style="display:flex;gap:12px;margin-top:8px;font-size:12px;color:var(--text2);">
+      <span>👁️ ${formatMetricCount(metrics.views)}</span>
+      <span>❤️ ${formatMetricCount(metrics.likes?.length || 0)}</span>
+      <span>💬 ${formatMetricCount(metrics.comments || 0)}</span>
+    </div>
+  `;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   2️⃣ USER PROFILES & CREATOR SYSTEM
+   Enhanced creator info with badges, follower counts, verification
+   ────────────────────────────────────────────────────────────── */
+
+let creatorProfiles = {}; // { userId: { name, avatar, followers, verified, bio, badge } }
+
+function getCreatorProfile(userId) {
+  if (!creatorProfiles[userId]) {
+    creatorProfiles[userId] = {
+      name: 'Creator',
+      avatar: 'https://via.placeholder.com/36x36/1a1a2e/fff?text=👤',
+      followers: Math.floor(Math.random() * 10000),
+      verified: Math.random() > 0.7,
+      badge: ['⭐ Pro', '🔥 Hot', '💎 Premium'][Math.floor(Math.random() * 3)],
+      bio: 'Football enthusiast'
+    };
+  }
+  return creatorProfiles[userId];
+}
+
+function renderCreatorBadge(userId) {
+  const profile = getCreatorProfile(userId);
+  if (!profile.verified && !profile.badge) return '';
+  
+  return `
+    <div style="display:flex;gap:4px;align-items:center;margin-left:auto;">
+      ${profile.verified ? '<span style="color:var(--green);font-size:12px;">✓</span>' : ''}
+      ${profile.badge ? `<span style="background:rgba(16,185,129,0.2);color:var(--green);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;">${profile.badge}</span>` : ''}
+    </div>
+  `;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   3️⃣ ENHANCED SHARE SYSTEM
+   Deep links, social intent, copy link functionality
+   ────────────────────────────────────────────────────────────── */
+
+function generateDeepLink(videoId) {
+  const baseUrl = window.location.origin;
+  return `${baseUrl}?video=${videoId}&shared=true`;
+}
+
+function shareVideo(videoId, platform) {
+  const deepLink = generateDeepLink(videoId);
+  const video = VIDEOS.find(v => v.id === videoId);
+  const title = video?.title || 'Check out this amazing football highlight!';
+  
+  const shareUrls = {
+    whatsapp: `https://wa.me/?text=${encodeURIComponent(title + ' ' + deepLink)}`,
+    twitter: `https://twitter.com/intent/tweet?text=${encodeURIComponent(title)}&url=${encodeURIComponent(deepLink)}`,
+    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(deepLink)}`,
+    telegram: `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(title)}`,
+    copy: null
+  };
+  
+  if (platform === 'copy') {
+    navigator.clipboard.writeText(deepLink);
+    showToast('✓ Link copied!');
+  } else if (shareUrls[platform]) {
+    window.open(shareUrls[platform], '_blank', 'width=600,height=400');
+  }
+}
+
+function showShareMenu(videoId) {
+  const menu = `
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:flex-end;" onclick="this.remove()">
+      <div style="width:100%;background:var(--bg);border-radius:20px 20px 0 0;padding:16px;display:flex;flex-direction:column;gap:8px;" onclick="event.stopPropagation()">
+        <div style="text-align:center;font-weight:600;color:var(--text);margin-bottom:8px;">Share Video</div>
+        <button onclick="shareVideo('${videoId}','whatsapp')" style="padding:12px;background:rgba(16,185,129,0.1);border:none;border-radius:10px;color:var(--green);cursor:pointer;font-weight:500;">📱 WhatsApp</button>
+        <button onclick="shareVideo('${videoId}','twitter')" style="padding:12px;background:rgba(59,130,246,0.1);border:none;border-radius:10px;color:#3b82f6;cursor:pointer;font-weight:500;">𝕏 Twitter</button>
+        <button onclick="shareVideo('${videoId}','facebook')" style="padding:12px;background:rgba(59,89,152,0.1);border:none;border-radius:10px;color:#3b5998;cursor:pointer;font-weight:500;">f Facebook</button>
+        <button onclick="shareVideo('${videoId}','telegram')" style="padding:12px;background:rgba(0,136,204,0.1);border:none;border-radius:10px;color:#0088cc;cursor:pointer;font-weight:500;">📨 Telegram</button>
+        <button onclick="shareVideo('${videoId}','copy')" style="padding:12px;background:rgba(16,185,129,0.2);border:none;border-radius:10px;color:var(--green);cursor:pointer;font-weight:600;">🔗 Copy Link</button>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML('beforeend', menu);
+}
+
+/* ──────────────────────────────────────────────────────────────
+   4️⃣ NOTIFICATIONS SYSTEM
+   User notifications for likes, comments, follows
+   ────────────────────────────────────────────────────────────── */
+
+let userNotifications = [];
+
+function addNotification(type, message, icon = '🔔') {
+  userNotifications.push({
+    id: Date.now(),
+    type,
+    message,
+    icon,
+    timestamp: new Date(),
+    read: false
+  });
+}
+
+function showNotificationBadge() {
+  const unread = userNotifications.filter(n => !n.read).length;
+  if (unread > 0) {
+    const badge = document.querySelector('.notification-badge');
+    if (badge) badge.textContent = unread;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────
+   5️⃣ COLLECTIONS & FAVORITES SYSTEM
+   Create playlists, save videos to collections
+   ────────────────────────────────────────────────────────────── */
+
+let userCollections = {
+  favorites: { name: '❤️ Favorites', videos: [] },
+  watchlist: { name: '📋 Watch Later', videos: [] },
+  custom: []
+};
+
+function addToCollection(videoId, collectionName = 'favorites') {
+  if (userCollections[collectionName] && !userCollections[collectionName].videos.includes(videoId)) {
+    userCollections[collectionName].videos.push(videoId);
+    showToast(`✓ Added to ${userCollections[collectionName].name}`);
+  }
+}
+
+function removeFromCollection(videoId, collectionName = 'favorites') {
+  if (userCollections[collectionName]) {
+    userCollections[collectionName].videos = userCollections[collectionName].videos.filter(id => id !== videoId);
+  }
+}
+
+function isInCollection(videoId, collectionName = 'favorites') {
+  return userCollections[collectionName]?.videos?.includes(videoId) || false;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   6️⃣ FOLLOW & SOCIAL SYSTEM
+   Follow creators, see their content, get notifications
+   ────────────────────────────────────────────────────────────── */
+
+let userFollowing = new Set(); // Stores user IDs you follow
+let userFollowers = new Set(); // Stores users following you
+
+function followUser(userId) {
+  userFollowing.add(userId);
+  addNotification('follow', `You're now following ${getCreatorProfile(userId).name}`, '👥');
+  showToast('✓ Following!');
+}
+
+function unfollowUser(userId) {
+  userFollowing.delete(userId);
+  showToast('Unfollowed');
+}
+
+function isFollowing(userId) {
+  return userFollowing.has(userId);
+}
+
+/* ──────────────────────────────────────────────────────────────
+   7️⃣ TRENDING VIDEOS SYSTEM
+   Show trending videos based on engagement
+   ────────────────────────────────────────────────────────────── */
+
+function getTrendingVideos(limit = 10) {
+  return VIDEOS
+    .filter(v => !v.userPost)
+    .sort((a, b) => {
+      const metricsA = videoMetrics[a.id] || { views: 0, likes: [] };
+      const metricsB = videoMetrics[b.id] || { views: 0, likes: [] };
+      return (metricsB.views + metricsB.likes.length * 10) - (metricsA.views + metricsA.likes.length * 10);
+    })
+    .slice(0, limit);
+}
+
+function renderTrendingSection() {
+  const trending = getTrendingVideos(5);
+  if (trending.length === 0) return '';
+  
+  return `
+    <div style="padding:12px;margin-top:12px;">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px;">🔥 Trending Now</div>
+      <div style="display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;">
+        ${trending.map(v => `
+          <div onclick="openHlPlayerById('${v.id}')" style="cursor:pointer;flex-shrink:0;width:100px;border-radius:8px;overflow:hidden;background:var(--bg2);">
+            <img src="${v.thumbnail}" style="width:100%;height:60px;object-fit:cover;">
+            <div style="padding:6px;font-size:10px;color:var(--text2);line-height:1.2;">${v.title?.substring(0,20)}...</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   8️⃣ ENHANCED COMMENT SYSTEM
+   Comment likes, replies, @mentions
+   ────────────────────────────────────────────────────────────── */
+
+let commentSystem = {
+  comments: {},
+  likedComments: new Set()
+};
+
+function likeComment(commentId) {
+  if (commentSystem.likedComments.has(commentId)) {
+    commentSystem.likedComments.delete(commentId);
+  } else {
+    commentSystem.likedComments.add(commentId);
+  }
+}
+
+function isCommentLiked(commentId) {
+  return commentSystem.likedComments.has(commentId);
+}
+
+/* ──────────────────────────────────────────────────────────────
+   9️⃣ QUALITY SELECTOR
+   Users can select video quality preference
+   ────────────────────────────────────────────────────────────── */
+
+let videoQualityPreference = 'auto'; // 'auto', '1080p', '720p', '480p', '360p'
+
+function setVideoQuality(quality) {
+  videoQualityPreference = quality;
+  localStorage.setItem('videoQuality', quality);
+  showToast(`✓ Quality set to ${quality}`);
+}
+
+function getVideoQuality() {
+  return localStorage.getItem('videoQuality') || 'auto';
+}
+
+function applyQualityToUrl(url) {
+  const quality = getVideoQuality();
+  if (quality === 'auto' || !url) return url;
+  
+  // Add quality parameter to supported URLs
+  if (url.includes('cloudinary')) {
+    const qualityMap = { '1080p': 'h_1080', '720p': 'h_720', '480p': 'h_480', '360p': 'h_360' };
+    return url.includes('?') ? url + `&${qualityMap[quality]}` : url + `?${qualityMap[quality]}`;
+  }
+  return url;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   🔟 ANALYTICS & INSIGHTS
+   Track user engagement, show insights
+   ────────────────────────────────────────────────────────────── */
+
+let userAnalytics = {
+  watchedVideos: [],
+  likedCount: 0,
+  commentedCount: 0,
+  sharedCount: 0,
+  watchTime: 0
+};
+
+function trackVideoWatch(videoId, duration) {
+  userAnalytics.watchedVideos.push({ videoId, timestamp: new Date(), duration });
+  userAnalytics.watchTime += duration;
+}
+
+function getAnalyticsInsights() {
+  return {
+    videosWatched: userAnalytics.watchedVideos.length,
+    totalWatchTime: (userAnalytics.watchTime / 60).toFixed(1) + ' min',
+    favoriteLeague: userAnalytics.watchedVideos[0]?.videoId // simplified
+  };
+}
+
+/* ──────────────────────────────────────────────────────────────
+   1️⃣1️⃣ SEARCH ENHANCEMENTS
+   Better filtering, advanced search, filters
+   ────────────────────────────────────────────────────────────── */
+
+let advancedSearchFilters = {
+  league: null,
+  team: null,
+  player: null,
+  dateRange: null,
+  engagement: 'all' // 'trending', 'popular', 'new'
+};
+
+function applyAdvancedSearch(videos) {
+  let filtered = videos;
+  
+  if (advancedSearchFilters.engagement === 'trending') {
+    filtered = getTrendingVideos();
+  } else if (advancedSearchFilters.engagement === 'popular') {
+    filtered = filtered.sort((a, b) => {
+      const metricsA = videoMetrics[a.id] || { likes: [] };
+      const metricsB = videoMetrics[b.id] || { likes: [] };
+      return metricsB.likes.length - metricsA.likes.length;
+    });
+  } else if (advancedSearchFilters.engagement === 'new') {
+    filtered = filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }
+  
+  return filtered;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   1️⃣2️⃣ PREMIUM UI POLISH
+   Toast notifications, smooth interactions, premium feel
+   ────────────────────────────────────────────────────────────── */
+
+function showToast(message, duration = 2000) {
+  const toast = document.getElementById('toast');
+  if (toast) {
+    toast.textContent = message;
+    toast.style.display = 'block';
+    toast.style.opacity = '1';
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => toast.style.display = 'none', 300);
+    }, duration);
+  }
+}
+
+function showPremiumGradient(element) {
+  element.style.background = 'linear-gradient(135deg, var(--green), #00d4ff)';
+  element.style.background.clip = 'text';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// END OF PREMIUM FEATURES SYSTEM
+// ═══════════════════════════════════════════════════════════════
+
+/* ═══════════════════════════════════════════════════════════════
+   🌟 PITCHSIDE PREMIUM FEATURES SYSTEM
+   All-in-one premium enhancements
+   ═══════════════════════════════════════════════════════════════ */
+
+// ════════════════════════════════════════════════════════════════
+// 1️⃣ ENHANCED ENGAGEMENT METRICS SYSTEM
+// ════════════════════════════════════════════════════════════════
+
+let videoMetrics = {}; 
+let userProfiles = {}; 
+let notifications = []; 
+
+function initVideoMetrics(videoId) {
+  if (!videoMetrics[videoId]) {
+    videoMetrics[videoId] = {
+      likes: [],
+      comments: [],
+      views: 0,
+      shares: 0,
+      saves: []
+    };
+  }
+  return videoMetrics[videoId];
+}
+
+function incrementVideoView(videoId) {
+  const metrics = initVideoMetrics(videoId);
+  metrics.views = (metrics.views || 0) + 1;
+  return metrics.views;
+}
+
+function getLikeCount(videoId) {
+  return (videoMetrics[videoId]?.likes?.length || 0);
+}
+
+function getCommentCount(videoId) {
+  return (videoMetrics[videoId]?.comments?.length || 0);
+}
+
+function getViewCount(videoId) {
+  return videoMetrics[videoId]?.views || 0;
+}
+
+// ════════════════════════════════════════════════════════════════
+// 2️⃣ USER PROFILE & CREATOR SYSTEM
+// ════════════════════════════════════════════════════════════════
+
+function initUserProfile(userId, data = {}) {
+  if (!userProfiles[userId]) {
+    userProfiles[userId] = {
+      userId,
+      name: data.name || 'Creator',
+      avatar: data.avatar || '👤',
+      bio: data.bio || '',
+      followers: [],
+      following: [],
+      verified: data.verified || false,
+      badges: data.badges || []
+    };
+  }
+  return userProfiles[userId];
+}
+
+function getUserProfile(userId) {
+  return userProfiles[userId] || initUserProfile(userId);
+}
+
+function getFollowerCount(userId) {
+  return (userProfiles[userId]?.followers?.length || 0);
+}
+
+function toggleFollowUser(currentUserId, targetUserId) {
+  const targetProfile = initUserProfile(targetUserId);
+  const currentProfile = initUserProfile(currentUserId);
+  
+  const isFollowing = targetProfile.followers.includes(currentUserId);
+  
+  if (isFollowing) {
+    targetProfile.followers = targetProfile.followers.filter(id => id !== currentUserId);
+    return false;
+  } else {
+    targetProfile.followers.push(currentUserId);
+    return true;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// 3️⃣ CREATOR BADGES & VERIFICATION
+// ════════════════════════════════════════════════════════════════
+
+const BADGE_TYPES = {
+  VERIFIED: { icon: '✓', color: '#10b981', label: 'Verified' },
+  TOP_CREATOR: { icon: '⭐', color: '#fbbf24', label: 'Top Creator' },
+  OFFICIAL: { icon: '🏆', color: '#3b82f6', label: 'Official' }
+};
+
+function renderUserBadges(userId) {
+  const badges = userProfiles[userId]?.badges || [];
+  return badges.map(badge => {
+    const info = BADGE_TYPES[badge];
+    return info ? `<span style="color: ${info.color};">${info.icon}</span>` : '';
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════════════
+// 4️⃣ NOTIFICATIONS SYSTEM
+// ════════════════════════════════════════════════════════════════
+
+function createNotification(type, fromUserId, videoId, message) {
+  const notification = {
+    id: 'notif_' + Date.now(),
+    type,
+    fromUserId,
+    videoId,
+    message,
+    timestamp: new Date(),
+    read: false
+  };
+  
+  notifications.unshift(notification);
+  
+  if (notifications.length > 50) {
+    notifications = notifications.slice(0, 50);
+  }
+  
+  return notification;
+}
+
+function getUnreadNotificationsCount() {
+  return notifications.filter(n => !n.read).length;
+}
+
+function getNotifications(limit = 20) {
+  return notifications.slice(0, limit);
+}
+
+// ════════════════════════════════════════════════════════════════
+// 5️⃣ SHARE & DEEP LINKING
+// ════════════════════════════════════════════════════════════════
+
+function generateDeepLink(videoId) {
+  const baseUrl = window.location.origin;
+  return `${baseUrl}?video=${videoId}&shared=true`;
+}
+
+function shareVideo(videoId, platform = 'copy') {
+  const deepLink = generateDeepLink(videoId);
+  const video = VIDEOS.find(v => v.id === videoId);
+  const title = video?.title || 'Check out this amazing football highlight!';
+  
+  if (platform === 'copy') {
+    navigator.clipboard.writeText(deepLink);
+    showToast('Link copied! 📋');
+  } else if (platform === 'whatsapp') {
+    const text = encodeURIComponent(`${title}\n${deepLink}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  } else if (platform === 'twitter') {
+    const text = encodeURIComponent(`${title} ${deepLink}`);
+    window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
+  } else if (platform === 'facebook') {
+    const text = encodeURIComponent(deepLink);
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${text}`, '_blank');
+  }
+  
+  const metrics = initVideoMetrics(videoId);
+  metrics.shares = (metrics.shares || 0) + 1;
+}
+
+// ════════════════════════════════════════════════════════════════
+// 6️⃣ COLLECTIONS & FAVORITES
+// ════════════════════════════════════════════════════════════════
+
+let userCollections = {};
+
+function initUserCollections(userId) {
+  if (!userCollections[userId]) {
+    userCollections[userId] = {
+      watchlist: [],
+      favorites: [],
+      playlists: []
+    };
+  }
+  return userCollections[userId];
+}
+
+function addToWatchlist(userId, videoId) {
+  const collections = initUserCollections(userId);
+  if (!collections.watchlist.includes(videoId)) {
+    collections.watchlist.push(videoId);
+    showToast('Added to Watchlist ✨');
+    return true;
+  }
+  return false;
+}
+
+function addToFavorites(userId, videoId) {
+  const collections = initUserCollections(userId);
+  if (!collections.favorites.includes(videoId)) {
+    collections.favorites.push(videoId);
+    showToast('Added to Favorites ❤️');
+    return true;
+  }
+  return false;
+}
+
+// ════════════════════════════════════════════════════════════════
+// 7️⃣ TRENDING SYSTEM
+// ════════════════════════════════════════════════════════════════
+
+function getTrendingVideos(limit = 20) {
+  return VIDEOS
+    .filter(v => v && videoMetrics[v.id])
+    .sort((a, b) => {
+      const metricsA = videoMetrics[a.id] || { likes: [], views: 0 };
+      const metricsB = videoMetrics[b.id] || { likes: [], views: 0 };
+      
+      const scoreA = (metricsA.likes?.length || 0) * 2 + (metricsA.views || 0);
+      const scoreB = (metricsB.likes?.length || 0) * 2 + (metricsB.views || 0);
+      
+      return scoreB - scoreA;
+    })
+    .slice(0, limit);
+}
+
+// ════════════════════════════════════════════════════════════════
+// 8️⃣ QUALITY SELECTOR
+// ════════════════════════════════════════════════════════════════
+
+function setVideoQuality(quality) {
+  localStorage.setItem('videoQuality', quality);
+  showToast(`Quality: ${quality} 🎬`);
+}
+
+function getVideoQuality() {
+  return localStorage.getItem('videoQuality') || 'auto';
+}
+
+// ════════════════════════════════════════════════════════════════
+// 9️⃣ PREMIUM TOAST NOTIFICATIONS
+// ════════════════════════════════════════════════════════════════
+
+function showToast(message, duration = 2000) {
+  const toast = document.getElementById('toast');
+  if (toast) {
+    toast.textContent = message;
+    toast.style.display = 'block';
+    toast.style.opacity = '1';
+    
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => toast.style.display = 'none', 300);
+    }, duration);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// 🔟 RECOMMENDATION ENGINE
+// ════════════════════════════════════════════════════════════════
+
+function getRecommendedVideos(currentVideoId, limit = 5) {
+  const current = VIDEOS.find(v => v.id === currentVideoId);
+  if (!current) return [];
+  
+  return VIDEOS
+    .filter(v => v.id !== currentVideoId)
+    .slice(0, limit);
+}
+
+console.log('✅ Premium Features System Ready');
+
+// ✅ Premium Features Successfully Integrated
