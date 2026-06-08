@@ -4133,6 +4133,39 @@ function openHlPlayer(id, title, videoUrl, embedHtml, thumbnail, ytSearch, video
     wrap.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#fff;gap:12px;"><div style="font-size:48px;">⚽</div><div style="font-size:14px;opacity:.7;">Video not available</div></div>';
   }
 
+  // Add TikTok-style side actions
+  const sideActions = document.createElement('div');
+  sideActions.className = 'tt-side-actions';
+  sideActions.id = 'tt-side-actions-' + id;
+  sideActions.innerHTML = `
+    <button class="tt-action-btn tt-like-btn" onclick="toggleTTLike('${id}')" title="Like">
+      <svg width="32" height="32" fill="none" stroke="white" stroke-width="2" viewBox="0 0 24 24">
+        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+      </svg>
+      <div class="tt-action-label" id="like-count-${id}">0</div>
+    </button>
+    <button class="tt-action-btn tt-comment-btn" onclick="openComments('${id}')" title="Comment">
+      <svg width="32" height="32" fill="white" viewBox="0 0 24 24">
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6A8.38 8.38 0 0 1 12 3a8.5 8.5 0 0 1 8.5 8.5z"></path>
+      </svg>
+      <div class="tt-action-label" id="comment-count-${id}">0</div>
+    </button>
+    <button class="tt-action-btn tt-repost-btn" onclick="repostVideo('${id}')" title="Share">
+      <svg width="32" height="32" fill="white" viewBox="0 0 24 24">
+        <path d="M22 2L11 13m11-11v6h-6M2 22L13 11m-11 11v-6h6"/>
+      </svg>
+      <div class="tt-action-label">Share</div>
+    </button>
+    <button class="tt-action-btn tt-save-btn" onclick="toggleSaveVideoFromTT('${id}')" title="Save">
+      <svg width="32" height="32" fill="none" stroke="white" stroke-width="2" viewBox="0 0 24 24">
+        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+      </svg>
+      <div class="tt-action-label">Save</div>
+    </button>
+  `;
+  
+  wrap.parentElement.appendChild(sideActions);
+
   overlay.classList.add('open');
   document.body.style.overflow = 'hidden';
 }
@@ -4143,6 +4176,11 @@ function closeHlPlayer() {
   const wrap    = document.getElementById('hl-video-wrap');
   overlay.classList.remove('open');
   wrap.innerHTML = ''; // stops video/audio
+  
+  // Remove side actions
+  const sideActions = document.querySelector('.tt-side-actions');
+  if (sideActions) sideActions.remove();
+  
   document.body.style.overflow = '';
 }
 
@@ -7311,3 +7349,744 @@ function showPremiumGradient(element) {
 // 1️⃣ ENHANCED ENGAGEMENT METRICS SYSTEM
 // ════════════════════════════════════════════════════════════════
 
+/* ═══════════════════════════════════════════════════════════════
+   🔥 UNIFIED FIREBASE INTEGRATION
+   All app data in Firebase - Real-time, persistent, synchronized
+   ═══════════════════════════════════════════════════════════════ */
+
+// Global app state (synced from Firebase)
+window.appState = {
+  currentUser: null,
+  userProfile: null,
+  notifications: [],
+  settings: null,
+  userCollections: null,
+  following: [],
+  followers: [],
+  videoMetrics: {},
+  unsubscribers: []
+};
+
+// ════════════════════════════════════════════════════════════════
+// STEP 1: INITIALIZE FIREBASE LISTENERS
+// ════════════════════════════════════════════════════════════════
+
+function initializeUnifiedFirebase() {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  const auth = window._psAuth;
+  
+  if (!fsApi || !db || !auth) {
+    console.warn('⚠️ Firebase not ready yet, retrying...');
+    setTimeout(initializeUnifiedFirebase, 1000);
+    return;
+  }
+
+  console.log('🔥 Initializing Unified Firebase Integration...');
+
+  // Listen to auth state changes
+  auth.onAuthStateChanged(user => {
+    appState.currentUser = user;
+    
+    if (user) {
+      // Load user's unified profile
+      loadUserProfile(user.uid);
+      // Load user's settings
+      loadUserSettings(user.uid);
+      // Load user's notifications
+      loadUserNotifications(user.uid);
+      // Load user's collections
+      loadUserCollections(user.uid);
+      // Load user's following/followers
+      loadUserSocialGraph(user.uid);
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// STEP 2: USER PROFILE - UNIFIED DATA
+// ════════════════════════════════════════════════════════════════
+
+async function loadUserProfile(userId) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, doc, getDoc, onSnapshot } = fsApi;
+
+  // Listen to real-time changes
+  const unsubscribe = onSnapshot(
+    doc(db, 'userProfiles', userId),
+    snapshot => {
+      if (snapshot.exists()) {
+        appState.userProfile = {
+          id: userId,
+          ...snapshot.data()
+        };
+        console.log('👤 User profile updated:', appState.userProfile.name);
+        
+        // Update UI everywhere
+        updateAllUIWithUserProfile();
+      }
+    },
+    error => console.error('Error loading profile:', error)
+  );
+
+  appState.unsubscribers.push(unsubscribe);
+}
+
+async function updateUserProfile(userId, updates) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, doc, updateDoc } = fsApi;
+
+  try {
+    await updateDoc(doc(db, 'userProfiles', userId), {
+      ...updates,
+      updatedAt: new Date()
+    });
+    console.log('✅ Profile updated:', updates);
+  } catch (error) {
+    console.error('Error updating profile:', error);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// STEP 3: SETTINGS - UNIFIED PREFERENCES
+// ════════════════════════════════════════════════════════════════
+
+async function loadUserSettings(userId) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, doc, getDoc, onSnapshot, setDoc } = fsApi;
+
+  // Listen to real-time settings changes
+  const unsubscribe = onSnapshot(
+    doc(db, 'userSettings', userId),
+    async snapshot => {
+      if (snapshot.exists()) {
+        appState.settings = {
+          id: userId,
+          ...snapshot.data()
+        };
+      } else {
+        // Create default settings if doesn't exist
+        const defaultSettings = {
+          privacy: 'public',
+          notificationsEnabled: true,
+          emailNotifications: false,
+          pushNotifications: true,
+          commentNotifications: true,
+          likeNotifications: true,
+          followNotifications: true,
+          shareNotifications: true,
+          videoQuality: 'auto',
+          theme: 'dark',
+          language: 'en',
+          blockedUsers: [],
+          mutedUsers: [],
+          createdAt: new Date()
+        };
+        
+        await setDoc(doc(db, 'userSettings', userId), defaultSettings);
+        appState.settings = { id: userId, ...defaultSettings };
+      }
+
+      console.log('⚙️ Settings loaded:', appState.settings);
+      
+      // Update UI - applies settings everywhere
+      applySettingsToApp();
+    },
+    error => console.error('Error loading settings:', error)
+  );
+
+  appState.unsubscribers.push(unsubscribe);
+}
+
+async function updateSettings(userId, settingKey, value) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, doc, updateDoc } = fsApi;
+
+  try {
+    await updateDoc(doc(db, 'userSettings', userId), {
+      [settingKey]: value,
+      updatedAt: new Date()
+    });
+    console.log(`✅ Setting updated: ${settingKey} = ${value}`);
+  } catch (error) {
+    console.error('Error updating setting:', error);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// STEP 4: NOTIFICATIONS - REAL-TIME + PREFERENCES INTEGRATED
+// ════════════════════════════════════════════════════════════════
+
+async function loadUserNotifications(userId) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, query, where, orderBy, limit, onSnapshot } = fsApi;
+
+  // Listen to real-time notifications
+  const q = query(
+    collection(db, 'notifications'),
+    where('toUserId', '==', userId),
+    orderBy('createdAt', 'desc'),
+    limit(50)
+  );
+
+  const unsubscribe = onSnapshot(
+    q,
+    snapshot => {
+      appState.notifications = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.() || new Date()
+      }));
+
+      console.log('🔔 Notifications updated:', appState.notifications.length);
+      
+      // Update notification UI everywhere
+      updateNotificationUI();
+    },
+    error => console.error('Error loading notifications:', error)
+  );
+
+  appState.unsubscribers.push(unsubscribe);
+}
+
+async function createNotification(toUserId, type, fromUserId, videoId, message) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, addDoc } = fsApi;
+
+  try {
+    // Check user settings before creating notification
+    const userSettings = appState.settings;
+    const notificationKey = type + 'Notifications';
+    
+    if (userSettings && userSettings[notificationKey] === false) {
+      console.log('🔕 Notification disabled:', type);
+      return;
+    }
+
+    const notification = {
+      toUserId,
+      type, // 'like', 'comment', 'follow', 'share'
+      fromUserId,
+      videoId,
+      message,
+      read: false,
+      createdAt: new Date()
+    };
+
+    await addDoc(collection(db, 'notifications'), notification);
+    console.log('✅ Notification created:', message);
+  } catch (error) {
+    console.error('Error creating notification:', error);
+  }
+}
+
+async function markNotificationAsRead(notificationId) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, doc, updateDoc } = fsApi;
+
+  try {
+    await updateDoc(doc(db, 'notifications', notificationId), {
+      read: true
+    });
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// STEP 5: VIDEO METRICS - REAL-TIME ENGAGEMENT
+// ════════════════════════════════════════════════════════════════
+
+async function loadVideoMetrics(videoId) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, doc, onSnapshot } = fsApi;
+
+  const unsubscribe = onSnapshot(
+    doc(db, 'videoMetrics', videoId),
+    snapshot => {
+      if (snapshot.exists()) {
+        appState.videoMetrics[videoId] = {
+          id: videoId,
+          ...snapshot.data()
+        };
+        console.log(`📊 Metrics updated for ${videoId}`);
+        
+        // Update UI for this video
+        updateVideoMetricsUI(videoId);
+      }
+    }
+  );
+
+  appState.unsubscribers.push(unsubscribe);
+}
+
+async function likeVideo(videoId, userId) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, doc, updateDoc, arrayUnion, arrayRemove } = fsApi;
+
+  try {
+    const metricsRef = doc(db, 'videoMetrics', videoId);
+    const metricsData = appState.videoMetrics[videoId];
+
+    const isLiked = metricsData?.likes?.includes(userId);
+
+    if (isLiked) {
+      await updateDoc(metricsRef, {
+        likes: arrayRemove(userId)
+      });
+    } else {
+      await updateDoc(metricsRef, {
+        likes: arrayUnion(userId)
+      });
+
+      // Create notification for video owner
+      const video = VIDEOS.find(v => v.id === videoId);
+      if (video?.userId) {
+        createNotification(video.userId, 'like', userId, videoId, `${appState.userProfile?.name || 'Someone'} liked your video`);
+      }
+    }
+  } catch (error) {
+    console.error('Error liking video:', error);
+  }
+}
+
+async function addVideoComment(videoId, userId, text) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, addDoc, updateDoc, doc, increment } = fsApi;
+
+  try {
+    // Add comment to Firestore
+    const commentRef = await addDoc(collection(db, 'videoComments'), {
+      videoId,
+      userId,
+      userProfile: appState.userProfile,
+      text,
+      likes: [],
+      createdAt: new Date()
+    });
+
+    // Update video metrics
+    await updateDoc(doc(db, 'videoMetrics', videoId), {
+      commentCount: increment(1)
+    });
+
+    // Notify video owner
+    const video = VIDEOS.find(v => v.id === videoId);
+    if (video?.userId) {
+      createNotification(
+        video.userId,
+        'comment',
+        userId,
+        videoId,
+        `${appState.userProfile?.name || 'Someone'} commented on your video`
+      );
+    }
+
+    console.log('✅ Comment added');
+  } catch (error) {
+    console.error('Error adding comment:', error);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// STEP 6: COLLECTIONS (FAVORITES, WATCHLIST) - UNIFIED
+// ════════════════════════════════════════════════════════════════
+
+async function loadUserCollections(userId) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, doc, getDoc, onSnapshot, setDoc } = fsApi;
+
+  const unsubscribe = onSnapshot(
+    doc(db, 'userCollections', userId),
+    async snapshot => {
+      if (snapshot.exists()) {
+        appState.userCollections = {
+          id: userId,
+          ...snapshot.data()
+        };
+      } else {
+        // Create default collections
+        const defaultCollections = {
+          favorites: [],
+          watchlist: [],
+          playlists: [],
+          createdAt: new Date()
+        };
+        
+        await setDoc(doc(db, 'userCollections', userId), defaultCollections);
+        appState.userCollections = { id: userId, ...defaultCollections };
+      }
+
+      console.log('📚 Collections loaded');
+      updateCollectionsUI();
+    }
+  );
+
+  appState.unsubscribers.push(unsubscribe);
+}
+
+async function addToFavorites(userId, videoId) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, doc, updateDoc, arrayUnion, arrayRemove } = fsApi;
+
+  try {
+    const isFavorited = appState.userCollections?.favorites?.includes(videoId);
+
+    if (isFavorited) {
+      await updateDoc(doc(db, 'userCollections', userId), {
+        favorites: arrayRemove(videoId)
+      });
+    } else {
+      await updateDoc(doc(db, 'userCollections', userId), {
+        favorites: arrayUnion(videoId)
+      });
+    }
+
+    console.log('❤️ Favorite toggled');
+  } catch (error) {
+    console.error('Error toggling favorite:', error);
+  }
+}
+
+async function addToWatchlist(userId, videoId) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, doc, updateDoc, arrayUnion, arrayRemove } = fsApi;
+
+  try {
+    const isWatched = appState.userCollections?.watchlist?.includes(videoId);
+
+    if (isWatched) {
+      await updateDoc(doc(db, 'userCollections', userId), {
+        watchlist: arrayRemove(videoId)
+      });
+    } else {
+      await updateDoc(doc(db, 'userCollections', userId), {
+        watchlist: arrayUnion(videoId)
+      });
+    }
+
+    console.log('📋 Watchlist toggled');
+  } catch (error) {
+    console.error('Error toggling watchlist:', error);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// STEP 7: FOLLOW SYSTEM - REAL-TIME SOCIAL GRAPH
+// ════════════════════════════════════════════════════════════════
+
+async function loadUserSocialGraph(userId) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, doc, onSnapshot } = fsApi;
+
+  // Load following
+  const followingUnsub = onSnapshot(
+    doc(db, 'userFollowing', userId),
+    snapshot => {
+      if (snapshot.exists()) {
+        appState.following = snapshot.data().following || [];
+        appState.followers = snapshot.data().followers || [];
+      }
+      console.log('👥 Social graph updated');
+      updateFollowUI();
+    }
+  );
+
+  appState.unsubscribers.push(followingUnsub);
+}
+
+async function toggleFollowUser(currentUserId, targetUserId) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  
+  if (!fsApi || !db) return;
+
+  const { collection, doc, updateDoc, arrayUnion, arrayRemove } = fsApi;
+
+  try {
+    const isFollowing = appState.following?.includes(targetUserId);
+
+    if (isFollowing) {
+      // Unfollow
+      await updateDoc(doc(db, 'userFollowing', currentUserId), {
+        following: arrayRemove(targetUserId)
+      });
+
+      await updateDoc(doc(db, 'userFollowing', targetUserId), {
+        followers: arrayRemove(currentUserId)
+      });
+    } else {
+      // Follow
+      await updateDoc(doc(db, 'userFollowing', currentUserId), {
+        following: arrayUnion(targetUserId)
+      });
+
+      await updateDoc(doc(db, 'userFollowing', targetUserId), {
+        followers: arrayUnion(currentUserId)
+      });
+
+      // Create notification
+      createNotification(
+        targetUserId,
+        'follow',
+        currentUserId,
+        null,
+        `${appState.userProfile?.name || 'Someone'} started following you`
+      );
+    }
+
+    console.log('✅ Follow toggled');
+  } catch (error) {
+    console.error('Error toggling follow:', error);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// STEP 8: UI UPDATE FUNCTIONS - UNIFIED ACROSS APP
+// ════════════════════════════════════════════════════════════════
+
+function updateAllUIWithUserProfile() {
+  // Update all places that show user profile
+  updateHeaderProfile();
+  updateProfilePage();
+  updateCommentAuthor();
+  console.log('🎨 UI updated with user profile');
+}
+
+function applySettingsToApp() {
+  // Apply theme
+  if (appState.settings?.theme === 'light') {
+    document.body.classList.add('light-theme');
+  } else {
+    document.body.classList.remove('light-theme');
+  }
+
+  // Apply language
+  if (appState.settings?.language) {
+    console.log('Language set to:', appState.settings.language);
+  }
+
+  // Apply quality
+  if (appState.settings?.videoQuality) {
+    console.log('Video quality set to:', appState.settings.videoQuality);
+  }
+
+  console.log('⚙️ Settings applied to app');
+}
+
+function updateNotificationUI() {
+  // Update notification badge
+  const unreadCount = appState.notifications?.filter(n => !n.read).length || 0;
+  const badge = document.querySelector('.notification-badge');
+  if (badge) {
+    badge.textContent = unreadCount > 0 ? unreadCount : '';
+    badge.style.display = unreadCount > 0 ? 'flex' : 'none';
+  }
+
+  // Update notification panel
+  const panel = document.querySelector('#notifications-panel');
+  if (panel) {
+    const list = document.querySelector('#notifications-list');
+    if (list) {
+      list.innerHTML = appState.notifications
+        .slice(0, 20)
+        .map(n => `
+          <div class="notification-item ${n.read ? '' : 'unread'}" onclick="markNotificationAsRead('${n.id}')">
+            <div style="font-weight: 600; color: var(--text);">${n.message}</div>
+            <div style="font-size: 11px; color: var(--text2);">${formatTime(n.createdAt)}</div>
+          </div>
+        `).join('');
+    }
+  }
+
+  console.log('🔔 Notification UI updated');
+}
+
+function updateVideoMetricsUI(videoId) {
+  const metrics = appState.videoMetrics[videoId];
+  if (!metrics) return;
+
+  const videoCard = document.querySelector(`[data-video-id="${videoId}"]`);
+  if (videoCard) {
+    // Update like count
+    const likeBtn = videoCard.querySelector('.like-count');
+    if (likeBtn) likeBtn.textContent = metrics.likes?.length || 0;
+
+    // Update comment count
+    const commentBtn = videoCard.querySelector('.comment-count');
+    if (commentBtn) commentBtn.textContent = metrics.commentCount || 0;
+
+    // Update view count
+    const viewBtn = videoCard.querySelector('.view-count');
+    if (viewBtn) viewBtn.textContent = metrics.views || 0;
+  }
+}
+
+function updateCollectionsUI() {
+  const favoritesCount = appState.userCollections?.favorites?.length || 0;
+  const watchlistCount = appState.userCollections?.watchlist?.length || 0;
+
+  const favBtn = document.querySelector('[data-collection="favorites"]');
+  if (favBtn) favBtn.textContent = `❤️ Favorites (${favoritesCount})`;
+
+  const watchBtn = document.querySelector('[data-collection="watchlist"]');
+  if (watchBtn) watchBtn.textContent = `📋 Watchlist (${watchlistCount})`;
+
+  console.log('📚 Collections UI updated');
+}
+
+function updateFollowUI() {
+  const followingCount = appState.following?.length || 0;
+  const followersCount = appState.followers?.length || 0;
+
+  const profileStats = document.querySelector('[data-stat="following"]');
+  if (profileStats) profileStats.textContent = followingCount;
+
+  const followerStats = document.querySelector('[data-stat="followers"]');
+  if (followerStats) followerStats.textContent = followersCount;
+
+  console.log('👥 Follow UI updated');
+}
+
+function updateHeaderProfile() {
+  const header = document.querySelector('.profile-header');
+  if (header && appState.userProfile) {
+    header.innerHTML = `
+      <div>${appState.userProfile.avatar || '👤'}</div>
+      <div>${appState.userProfile.name}</div>
+    `;
+  }
+}
+
+function updateProfilePage() {
+  if (!appState.userProfile) return;
+
+  const profileName = document.querySelector('[data-field="name"]');
+  if (profileName) profileName.textContent = appState.userProfile.name;
+
+  const profileBio = document.querySelector('[data-field="bio"]');
+  if (profileBio) profileBio.textContent = appState.userProfile.bio || '';
+
+  const profileFollowers = document.querySelector('[data-field="followers"]');
+  if (profileFollowers) profileFollowers.textContent = appState.following?.length || 0;
+}
+
+function updateCommentAuthor() {
+  if (!appState.userProfile) return;
+  
+  const nameInput = document.querySelector('[data-author-name]');
+  if (nameInput) nameInput.value = appState.userProfile.name;
+}
+
+// ════════════════════════════════════════════════════════════════
+// STEP 9: HELPER FUNCTIONS
+// ════════════════════════════════════════════════════════════════
+
+function formatTime(date) {
+  if (!date) return '';
+  const d = date instanceof Date ? date : new Date(date);
+  const now = new Date();
+  const diff = now - d;
+
+  if (diff < 60000) return 'Just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  return Math.floor(diff / 86400000) + 'd ago';
+}
+
+function getUnreadNotificationsCount() {
+  return appState.notifications?.filter(n => !n.read).length || 0;
+}
+
+function getTrendingVideos(limit = 20) {
+  if (!VIDEOS) return [];
+  
+  return VIDEOS
+    .filter(v => v && appState.videoMetrics[v.id])
+    .sort((a, b) => {
+      const metricsA = appState.videoMetrics[a.id] || { likes: [], views: 0 };
+      const metricsB = appState.videoMetrics[b.id] || { likes: [], views: 0 };
+      
+      const scoreA = (metricsA.likes?.length || 0) * 2 + (metricsA.views || 0);
+      const scoreB = (metricsB.likes?.length || 0) * 2 + (metricsB.views || 0);
+      
+      return scoreB - scoreA;
+    })
+    .slice(0, limit);
+}
+
+// ════════════════════════════════════════════════════════════════
+// STEP 10: CLEANUP ON LOGOUT
+// ════════════════════════════════════════════════════════════════
+
+function cleanupFirebaseListeners() {
+  appState.unsubscribers.forEach(unsub => unsub());
+  appState.unsubscribers = [];
+  console.log('🧹 Firebase listeners cleaned up');
+}
+
+// ════════════════════════════════════════════════════════════════
+// START UNIFIED FIREBASE
+// ════════════════════════════════════════════════════════════════
+
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(initializeUnifiedFirebase, 2000);
+});
+
+console.log('✅ Unified Firebase Integration Module Loaded');
