@@ -1745,21 +1745,58 @@ function _loadVideoMeta(v) {
 const likedVideos = new Set();
 
 function toggleTTLike(el) {
-  const btn = el.querySelector('.tt-action-btn');
+  const btn = el.querySelector ? el.querySelector('.tt-action-btn') : el;
   const countEl = document.getElementById('tt-like-count');
   const v = VIDEOS.find(x => x.id === currentVideoId);
   if (!v) return;
   if (likedVideos.has(currentVideoId)) {
     likedVideos.delete(currentVideoId);
     v.likes = Math.max(0, (v.likes || 0) - 1);
-    btn.classList.remove('active');
+    if (btn) btn.classList.remove('active');
   } else {
     likedVideos.add(currentVideoId);
     v.likes = (v.likes || 0) + 1;
-    btn.classList.add('active');
+    if (btn) btn.classList.add('active');
     showToast('Liked! ❤️');
   }
-  countEl.textContent = formatCount(v.likes);
+  if (countEl) countEl.textContent = formatCount(v.likes);
+}
+
+// New handler called with videoId directly
+function handleTTLike(btn, videoId) {
+  const v = VIDEOS.find(x => String(x.id) === String(videoId));
+  if (!v) return;
+
+  const countEl = document.getElementById('like-count-' + videoId);
+  const svg = btn.querySelector('svg');
+
+  if (likedVideos.has(String(videoId))) {
+    likedVideos.delete(String(videoId));
+    v.likes = Math.max(0, (v.likes || 0) - 1);
+    btn.classList.remove('active');
+    if (svg) { svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'white'); }
+  } else {
+    likedVideos.add(String(videoId));
+    v.likes = (v.likes || 0) + 1;
+    btn.classList.add('active');
+    if (svg) { svg.setAttribute('fill', '#ff3b5c'); svg.setAttribute('stroke', '#ff3b5c'); }
+    showToast('Liked! ❤️');
+    // Animate
+    btn.style.transform = 'scale(1.3)';
+    setTimeout(() => btn.style.transform = 'scale(1)', 200);
+  }
+
+  if (countEl) countEl.textContent = formatCount ? formatCount(v.likes) : v.likes;
+}
+
+function handleTTSave(btn, videoId) {
+  toggleSaveVideo(videoId);
+  const svg = btn.querySelector('svg');
+  const isSaved = savedVideos?.has ? savedVideos.has(String(videoId)) : false;
+  if (svg) svg.setAttribute('fill', isSaved ? 'white' : 'none');
+  btn.classList.toggle('active');
+  btn.style.transform = 'scale(1.3)';
+  setTimeout(() => btn.style.transform = 'scale(1)', 200);
 }
 
 function repostVideo() {
@@ -4133,37 +4170,76 @@ function openHlPlayer(id, title, videoUrl, embedHtml, thumbnail, ytSearch, video
     wrap.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#fff;gap:12px;"><div style="font-size:48px;">⚽</div><div style="font-size:14px;opacity:.7;">Video not available</div></div>';
   }
 
+  // Set current video ID for side action functions
+  currentVideoId = id;
+  const v = VIDEOS.find(x => String(x.id) === String(id));
+  const likeCount = v?.likes || 0;
+  const commentCount = v?.comments || 0;
+  const creatorAvatar = v?.posterAvatar || v?.avatar || '';
+  const creatorName = v?.channel || v?.username || '';
+  const isLiked = likedVideos?.has(String(id));
+  const isSaved = savedVideos?.has ? savedVideos.has(String(id)) : false;
+
+  // Remove any existing side actions
+  document.querySelectorAll('.tt-side-actions').forEach(el => el.remove());
+
   // Add TikTok-style side actions
   const sideActions = document.createElement('div');
   sideActions.className = 'tt-side-actions';
   sideActions.id = 'tt-side-actions-' + id;
   sideActions.innerHTML = `
-    <button class="tt-action-btn tt-like-btn" onclick="toggleTTLike('${id}')" title="Like">
-      <svg width="32" height="32" fill="none" stroke="white" stroke-width="2" viewBox="0 0 24 24">
-        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+    <!-- Creator Avatar -->
+    <div class="tt-creator-wrap" onclick="openCreatorProfile('${creatorName}')">
+      <div class="tt-creator-avatar">
+        ${creatorAvatar
+          ? `<img src="${creatorAvatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+          : `<div style="width:100%;height:100%;border-radius:50%;background:linear-gradient(135deg,#10b981,#3b82f6);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;">${(creatorName||'?')[0].toUpperCase()}</div>`
+        }
+      </div>
+      <div class="tt-creator-follow-btn">+</div>
+    </div>
+
+    <!-- Like -->
+    <button class="tt-action-btn tt-like-btn ${isLiked ? 'active' : ''}" id="like-btn-${id}" onclick="handleTTLike(this, '${id}')">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="${isLiked ? '#ff3b5c' : 'none'}" stroke="${isLiked ? '#ff3b5c' : 'white'}" stroke-width="2">
+        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
       </svg>
-      <div class="tt-action-label" id="like-count-${id}">0</div>
+      <span class="tt-action-label" id="like-count-${id}">${formatCount ? formatCount(likeCount) : likeCount}</span>
     </button>
-    <button class="tt-action-btn tt-comment-btn" onclick="openComments('${id}')" title="Comment">
-      <svg width="32" height="32" fill="white" viewBox="0 0 24 24">
-        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6A8.38 8.38 0 0 1 12 3a8.5 8.5 0 0 1 8.5 8.5z"></path>
+
+    <!-- Comment -->
+    <button class="tt-action-btn tt-comment-btn" onclick="openComments()">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="white">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
       </svg>
-      <div class="tt-action-label" id="comment-count-${id}">0</div>
+      <span class="tt-action-label" id="comment-count-${id}">${formatCount ? formatCount(commentCount) : commentCount}</span>
     </button>
-    <button class="tt-action-btn tt-repost-btn" onclick="repostVideo('${id}')" title="Share">
-      <svg width="32" height="32" fill="white" viewBox="0 0 24 24">
-        <path d="M22 2L11 13m11-11v6h-6M2 22L13 11m-11 11v-6h6"/>
+
+    <!-- Save/Bookmark -->
+    <button class="tt-action-btn tt-save-btn ${isSaved ? 'active' : ''}" id="save-btn-${id}" onclick="handleTTSave(this, '${id}')">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="${isSaved ? 'white' : 'none'}" stroke="white" stroke-width="2">
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
       </svg>
-      <div class="tt-action-label">Share</div>
+      <span class="tt-action-label">Save</span>
     </button>
-    <button class="tt-action-btn tt-save-btn" onclick="toggleSaveVideoFromTT('${id}')" title="Save">
-      <svg width="32" height="32" fill="none" stroke="white" stroke-width="2" viewBox="0 0 24 24">
-        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+
+    <!-- Repost -->
+    <button class="tt-action-btn tt-repost-btn" onclick="repostVideo()">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+        <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
       </svg>
-      <div class="tt-action-label">Save</div>
+      <span class="tt-action-label">Repost</span>
+    </button>
+
+    <!-- Share -->
+    <button class="tt-action-btn tt-share-btn" onclick="showShareMenu('${id}')">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>
+      </svg>
+      <span class="tt-action-label">Share</span>
     </button>
   `;
-  
+
   wrap.parentElement.appendChild(sideActions);
 
   overlay.classList.add('open');
