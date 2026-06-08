@@ -2567,3 +2567,104 @@ body {
    END OF PREMIUM FEATURES CSS
    ═══════════════════════════════════════════════════════════════ */
 
+
+/* ═══════════════════════════════════════════
+   🎨 TIKTOK SIDE ACTIONS - CLEAN REDESIGN
+   Matches Snapchat/TikTok premium style
+   ═══════════════════════════════════════════ */
+
+.tt-side-actions {
+  position: absolute !important;
+  right: 12px !important;
+  bottom: 80px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 20px !important;
+  z-index: 100 !important;
+}
+
+/* Remove white box background from buttons */
+.tt-action-btn {
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 4px !important;
+  cursor: pointer !important;
+  -webkit-tap-highlight-color: transparent !important;
+  width: auto !important;
+  height: auto !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+.tt-action-btn svg {
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)) !important;
+  transition: transform 0.15s ease !important;
+}
+
+.tt-action-btn:active svg {
+  transform: scale(0.85) !important;
+}
+
+.tt-action-btn.active svg {
+  filter: drop-shadow(0 0 8px rgba(255,59,92,0.8)) !important;
+}
+
+.tt-action-label {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #fff !important;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8) !important;
+  margin-top: 2px !important;
+  background: none !important;
+}
+
+/* Creator avatar at top of side actions */
+.tt-creator-wrap {
+  position: relative;
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+
+.tt-creator-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid white;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+
+.tt-creator-follow-btn {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 20px;
+  background: #10b981;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+/* Like button active state */
+.tt-like-btn.active svg {
+  fill: #ff3b5c !important;
+  stroke: #ff3b5c !important;
+}
+
+/* Save button active state */
+.tt-save-btn.active svg {
+  fill: white !important;
+}
+
