@@ -6,6 +6,9 @@
   <title>PitchSide | Professional Football Social App</title>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#10b981">
+  <link rel="apple-touch-icon" href="/icon-192.png">
 </head>
 <body>
 
@@ -76,7 +79,12 @@
 
 <div id="page-explore" class="page active">
   <div class="hdr">
-    <h1>EXPLORE</h1>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <h1 style="margin:0;">EXPLORE</h1>
+      <button id="pwa-install-btn" style="display:none;align-items:center;gap:6px;background:#10b981;color:#fff;border:none;border-radius:20px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;letter-spacing:.03em;box-shadow:0 2px 8px rgba(16,185,129,0.4);">
+        ⬇️ Install App
+      </button>
+    </div>
     <div class="s-wrap">
       <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
       <input type="text" class="s-inp" placeholder="Search videos, teams..." oninput="filterExplore(this.value)">
@@ -1795,6 +1803,43 @@
      PitchSide Application Logic
 ═══════════════════════════════════════ -->
 <script src="app.js"></script>
+
+<!-- ═══════════════════════════════════════
+     PWA Install Logic
+═══════════════════════════════════════ -->
+<script>
+  (function() {
+    let deferredPrompt;
+    const btn = document.getElementById('pwa-install-btn');
+
+    window.addEventListener('beforeinstallprompt', function(e) {
+      e.preventDefault();
+      deferredPrompt = e;
+      btn.style.display = 'flex';
+    });
+
+    if (btn) {
+      btn.addEventListener('click', async function() {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+          btn.style.display = 'none';
+        }
+        deferredPrompt = null;
+      });
+    }
+
+    window.addEventListener('appinstalled', function() {
+      btn.style.display = 'none';
+      deferredPrompt = null;
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js');
+    }
+  })();
+</script>
 
 </body>
 </html>
