@@ -605,7 +605,6 @@ function activateFirebaseListener() {
   const db    = window._psDb;
   if (!fsApi || !db || !fsApi.onSnapshot) {
     console.warn('[PitchSide] Firestore not ready — retrying in 1s');
-    // Cap retries: if VIDEOS is still empty after 8s from first call, use fallback
     if (!activateFirebaseListener._retryCount) activateFirebaseListener._retryCount = 0;
     activateFirebaseListener._retryCount++;
     if (activateFirebaseListener._retryCount > 8) {
@@ -618,42 +617,130 @@ function activateFirebaseListener() {
   }
   activateFirebaseListener._retryCount = 0;
 
-  console.log('[PitchSide] 🔥 Activating Firebase real-time listener on "highlights"…');
-  showFirebaseFetchingState(); // CHANGE 3: professional loading state
+  console.log('[PitchSide] 🔥 Activating Firebase real-time listeners…');
+  showFirebaseFetchingState();
 
   const { collection, query, orderBy, limit, onSnapshot } = fsApi;
 
+  // ── Listener 1: highlights (YouTube bot videos) ──
   const q = query(
     collection(db, 'highlights'),
     orderBy('createdAt', 'desc'),
     limit(200)
   );
 
-  _firestoreUnsubscribe = onSnapshot(q,
-    // ── SUCCESS: fires immediately with current data, then on every new write ──
-    (snapshot) => {
-      console.log('[PitchSide] 🔥 onSnapshot fired —', snapshot.docs.length, 'docs');
+  // ── Listener 2: posts (user-uploaded videos) ──
+  const qPosts = query(
+    collection(db, 'posts'),
+    orderBy('createdAt', 'desc'),
+    limit(100)
+  );
 
-      const firebaseDocs = snapshot.docs.map(_firestoreDocToVideo);
+  let _firebaseHighlights = [];
+  let _firebasePosts = [];
 
-      // Merge: Highlightly API highlights first, then Firebase docs, then local user posts
-      const userPosts = VIDEOS.filter(v => v.userPost && !v.firestoreId);
-      VIDEOS = [..._highlightlyVideos, ...firebaseDocs, ...userPosts];
+  let _mergeDebounce = null;
+  let _firstMergeDone = false;
 
-      console.log('[PitchSide] VIDEOS updated:', VIDEOS.length, 'total');
+  function _mergeAndRefresh() {
+    // Debounce: wait 300ms after last call before re-rendering
+    // This stops the "resets 10 times" issue from rapid Firebase snapshots
+    clearTimeout(_mergeDebounce);
+    _mergeDebounce = setTimeout(() => {
+
+      // Get ALL Firebase post IDs we already loaded
+      const firebasePostIds = new Set(_firebasePosts.map(p => String(p.id)));
+
+      // Keep local user posts that haven't appeared in Firebase yet
+      // This prevents videos from disappearing after posting
+      const localOnly = VIDEOS.filter(v =>
+        v.userPost &&
+        !firebasePostIds.has(String(v.id))
+      );
+
+      // Merge: API highlights + Firebase highlights + Firebase posts + local unsaved
+      VIDEOS = [
+        ..._highlightlyVideos,
+        ..._firebaseHighlights,
+        ..._firebasePosts,
+        ...localOnly
+      ];
+
+      console.log('[PitchSide] VIDEOS merged:', VIDEOS.length,
+        '| highlights:', _firebaseHighlights.length,
+        '| posts:', _firebasePosts.length,
+        '| local:', localOnly.length
+      );
+
+      // Update the video lookup map so all videos are clickable
+      if (!window._hlVideoMap) window._hlVideoMap = {};
+      VIDEOS.forEach(v => {
+        if (v && v.id) window._hlVideoMap[String(v.id)] = v;
+      });
+
       refreshAllVideoGrids();
 
-      // If Firebase returned zero docs, load fallback content
-      if (VIDEOS.length === 0) {
-        loadFallbackVideos();
-      }
+      if (VIDEOS.length === 0) loadFallbackVideos();
+      _firstMergeDone = true;
+
+    }, 300); // wait 300ms to batch rapid Firebase calls
+  }
+
+  // Subscribe to highlights
+  _firestoreUnsubscribe = onSnapshot(q,
+    (snapshot) => {
+      console.log('[PitchSide] 🔥 highlights snapshot —', snapshot.docs.length, 'docs');
+      _firebaseHighlights = snapshot.docs.map(_firestoreDocToVideo);
+      _mergeAndRefresh();
     },
-    // ── ERROR ──
     (err) => {
-      console.error('[PitchSide] Firestore onSnapshot error:', err);
+      console.error('[PitchSide] highlights error:', err);
       if (VIDEOS.length === 0) loadFallbackVideos();
     }
   );
+
+  // Subscribe to posts (user videos)
+  const _postsUnsub = onSnapshot(qPosts,
+    (snapshot) => {
+      console.log('[PitchSide] 🔥 posts snapshot —', snapshot.docs.length, 'docs');
+      _firebasePosts = snapshot.docs.map(doc => {
+        const d = doc.data();
+        return {
+          id:        'fs_' + doc.id,
+          firestoreId: doc.id,
+          title:     d.title     || 'My PitchSide Moment',
+          src:       d.mediaUrl  || '',
+          embedUrl:  d.mediaUrl  || '',
+          embed:     '',
+          thumbnail: d.thumbnail || d.mediaUrl || '',
+          mediaType: d.mediaType || 'video',
+          isImage:   d.mediaType === 'image',
+          userPost:  true,
+          playerPost: d.playerPost || false,
+          poster:    d.poster    || d.userName || 'PitchSide User',
+          userId:    d.userId    || '',
+          userName:  d.userName  || '',
+          cat:       d.cat       || 'Trending',
+          likes:     d.likes     || 0,
+          comments:  d.comments  || 0,
+          music:     d.music     || null,
+          taggedMatch: d.taggedMatch || null,
+          createdAt: d.createdAt?.toDate?.() || new Date(),
+          date:      d.createdAt?.toDate?.()
+            ? d.createdAt.toDate().toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'})
+            : new Date().toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}),
+        };
+      });
+      _mergeAndRefresh();
+    },
+    (err) => {
+      console.error('[PitchSide] posts error:', err);
+    }
+  );
+
+  // Store both unsubscribe functions for cleanup
+  const _origUnsub = _firestoreUnsubscribe;
+  _firestoreUnsubscribe = () => { _origUnsub(); _postsUnsub(); };
 }
 
 /* ─────────────────────────────────────────
@@ -6519,12 +6606,18 @@ const localVideo = {
     btn.disabled = false;
     closeQuickPost();
     updateProfileStats();
+
+    // Update video map immediately so new post is clickable right away
+    if (!window._hlVideoMap) window._hlVideoMap = {};
+    window._hlVideoMap[String(localVideo.id)] = localVideo;
+
+    // Single re-render after posting (not multiple)
     refreshAllVideoGrids();
 
     // Go to explore feed after posting
     const exploreNav = document.querySelector('.nav-item');
     switchPage('explore', exploreNav);
-    setTimeout(() => showToast('🎉 Posted to PitchSide!'), 300);
+    setTimeout(() => showToast('🎉 Posted successfully!'), 300);
 
   } catch(err) {
     console.error('[PC] Upload failed:', err);
