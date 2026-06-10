@@ -1263,7 +1263,7 @@ function renderVideos(containerId, data) {
     const isDemoCard = v.id && String(v.id).startsWith('demo');
     const gradA = v.gradientA || '#0f172a';
     const gradB = v.gradientB || '#1e293b';
-    const cardClick = ''; // demo cards removed — all videos come from Firebase bot
+    const cardClick = `onclick="openHlPlayerById('${v.id}')"`;
 
     return `
     <div class="vcard" id="vcard-${v.id}" data-videoid="${v.id}" style="position:relative;" ${cardClick}>
@@ -2256,9 +2256,29 @@ function handleAvatarUpload(e) {
 }
 
 function updateProfileStats() {
-  const videoCount  = VIDEOS.filter(v => v.userPost).length;
-  const teamsCount  = selectedTeams.size;
-  const leaguesCount= selectedLeagues.size;
+  const currentUid = window._psAuth?.currentUser?.uid || '';
+
+  // Count only THIS user's videos from VIDEOS array
+  let videoCount = VIDEOS.filter(v =>
+    v.userPost && (v.userId === currentUid || v.uid === currentUid)
+  ).length;
+
+  // If Firebase is ready, get accurate count from Firestore posts
+  const fsApi = window._psFs;
+  const db    = window._psDb;
+  if (fsApi && db && currentUid) {
+    const { collection, query, where, getDocs } = fsApi;
+    getDocs(
+      query(collection(db, 'posts'), where('userId', '==', currentUid))
+    ).then(snap => {
+      const count = snap.size;
+      const statV = document.getElementById('stat-videos');
+      if (statV) statV.textContent = count;
+    }).catch(() => {});
+  }
+
+  const teamsCount   = selectedTeams.size;
+  const leaguesCount = selectedLeagues.size;
   const statV = document.getElementById('stat-videos');
   const statT = document.getElementById('stat-teams');
   const statL = document.getElementById('stat-leagues');
@@ -6661,61 +6681,126 @@ function openMyVideos() {
   overlay.classList.add('open');
   _renderMyVideos();
 }
+
 function closeMyVideos() {
   const overlay = document.getElementById('my-videos-overlay');
   if (overlay) overlay.classList.remove('open');
 }
+
 function _renderMyVideos() {
   const body = document.getElementById('mv-body');
   if (!body) return;
 
-  // Combine VIDEOS in memory + localStorage history
-  let myVids = VIDEOS.filter(v => v.userPost);
-  try {
-    const stored = JSON.parse(localStorage.getItem('_ps_my_videos') || '[]');
-    // Merge without duplicates
-    stored.forEach(sv => {
-      if (!myVids.find(v => v.id === sv.id)) myVids.push(sv);
-    });
-  } catch(e) {}
+  const currentUid = window._psAuth?.currentUser?.uid || '';
 
+  // Show loading state
+  body.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">
+    <div style="font-size:32px;margin-bottom:8px;">⏳</div>
+    <div>Loading your videos...</div>
+  </div>`;
+  body.style.cssText = 'display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:14px;overflow-y:auto;flex:1;';
+
+  // Load from Firebase posts collection (most accurate)
+  const fsApi = window._psFs;
+  const db    = window._psDb;
+
+  if (fsApi && db && currentUid) {
+    const { collection, query, where, orderBy, getDocs } = fsApi;
+    getDocs(
+      query(
+        collection(db, 'posts'),
+        where('userId', '==', currentUid),
+        orderBy('createdAt', 'desc')
+      )
+    ).then(snap => {
+      const firebaseVids = snap.docs.map(doc => {
+        const d = doc.data();
+        return {
+          id:        'fs_' + doc.id,
+          firestoreId: doc.id,
+          title:     d.title || 'My PitchSide Moment',
+          src:       d.mediaUrl || '',
+          embedUrl:  d.mediaUrl || '',
+          thumbnail: d.thumbnail || d.mediaUrl || '',
+          userPost:  true,
+          userId:    d.userId || '',
+          date:      d.createdAt?.toDate?.()
+            ? d.createdAt.toDate().toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'})
+            : '',
+        };
+      });
+
+      // Also get local VIDEOS not yet in Firebase
+      const localVids = VIDEOS.filter(v =>
+        v.userPost &&
+        (v.userId === currentUid || v.uid === currentUid) &&
+        !firebaseVids.find(fv => fv.id === v.id)
+      );
+
+      const myVids = [...firebaseVids, ...localVids];
+      window._mvCurrentList = myVids;
+      _renderMyVideosList(body, myVids);
+
+    }).catch(err => {
+      // Fallback to local VIDEOS
+      console.error('Firebase My Videos error:', err);
+      const myVids = VIDEOS.filter(v =>
+        v.userPost && (v.userId === currentUid || !currentUid)
+      );
+      window._mvCurrentList = myVids;
+      _renderMyVideosList(body, myVids);
+    });
+
+  } else {
+    // No Firebase — use local VIDEOS
+    const myVids = VIDEOS.filter(v => v.userPost);
+    window._mvCurrentList = myVids;
+    _renderMyVideosList(body, myVids);
+  }
+}
+
+function _renderMyVideosList(body, myVids) {
   if (!myVids.length) {
-    body.innerHTML = `<div class="mv-empty">
+    body.innerHTML = `<div class="mv-empty" style="grid-column:1/-1;">
       <div class="mv-empty-icon">🎬</div>
       <div class="mv-empty-text">No videos yet.<br>Tap the green + button to post your first moment!</div>
     </div>`;
     return;
   }
 
-  body.style.cssText = 'display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:14px;overflow-y:auto;flex:1;';
   body.innerHTML = myVids.map((v, idx) => `
-    <div class="mv-card" onclick="openMyVideoPlayer(${idx})">
+    <div class="mv-card" onclick="event.stopPropagation(); openMyVideoPlayer(${idx})">
       ${v.thumbnail
-        ? `<img class="mv-thumb" src="${v.thumbnail}" alt="${v.title}" onerror="this.style.display='none';this.nextSibling.style.display='flex'"><div class="mv-thumb-ph" style="display:none;">⚽</div>`
+        ? `<img class="mv-thumb" src="${v.thumbnail}" alt="${v.title}"
+            onerror="this.style.display='none';this.nextSibling.style.display='flex'">
+           <div class="mv-thumb-ph" style="display:none;">⚽</div>`
         : `<div class="mv-thumb-ph">⚽</div>`}
       <div class="mv-info">
         <div class="mv-vtitle">${v.title}</div>
         <div class="mv-vdate">${v.date || ''}</div>
       </div>
     </div>`).join('');
-
-  // Store merged list for player access
-  window._mvCurrentList = myVids;
 }
 
 function openMyVideoPlayer(idx) {
   const list = window._mvCurrentList || [];
   const v = list[idx];
   if (!v) return;
-  closeMyVideos();
-  // Use the existing video overlay if available
-  if (typeof openVideoOverlay === 'function') {
-    openVideoOverlay(v.id);
-  } else if (typeof playVideo === 'function') {
-    playVideo(v.id);
-  } else {
-    showToast('Opening: ' + v.title);
+
+  // Make sure video is in VIDEOS array so overlay can find it
+  if (!VIDEOS.find(x => String(x.id) === String(v.id))) {
+    VIDEOS.unshift(v);
   }
+
+  // Update video map so it's clickable
+  if (!window._hlVideoMap) window._hlVideoMap = {};
+  window._hlVideoMap[String(v.id)] = v;
+
+  // Close modal THEN open player
+  closeMyVideos();
+  setTimeout(() => {
+    openHlPlayerById(String(v.id));
+  }, 150); // Small delay so modal closes smoothly before player opens
 }
 
 window.openMyVideos       = openMyVideos;
