@@ -2460,7 +2460,7 @@ function _videoToExploreCard(v) {
   const isDemoCard = v.id && String(v.id).startsWith('demo');
 
   return `
-    <div class="vcard" id="vcard-${v.id}" data-videoid="${v.id}" style="position:relative;">
+    <div class="vcard" id="vcard-${v.id}" data-videoid="${v.id}" style="position:relative;cursor:pointer;" onclick="openHlPlayerById(String(this.dataset.videoid))">
       <div class="vthumb" style="position:relative;" id="vcard-thumb-${v.id}">
         ${isDemoCard
           ? `<div style="width:100%;height:100%;background:linear-gradient(135deg,${gradA},${gradB});display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
@@ -4000,9 +4000,10 @@ function _renderHighlightsFromVideos() {
     return;
   }
 
-  // Store full video objects in a lookup map so openHlPlayer can retrieve them safely
-  window._hlVideoMap = {};
+  // Add to map WITHOUT wiping it - preserves user posts and explore videos
+  if (!window._hlVideoMap) window._hlVideoMap = {};
   official.forEach(v => { window._hlVideoMap[String(v.id)] = v; });
+  VIDEOS.forEach(v => { if (v && v.id) window._hlVideoMap[String(v.id)] = v; });
 
   container.innerHTML = official.map(v => {
     const thumb   = v.thumbnail || '';
