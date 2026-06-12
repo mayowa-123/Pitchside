@@ -2342,16 +2342,6 @@ function updateProfileStats() {
   if (statL) statL.textContent = leaguesCount;
 }
 
-  const teamsCount   = selectedTeams.size;
-  const leaguesCount = selectedLeagues.size;
-  const statV = document.getElementById('stat-videos');
-  const statT = document.getElementById('stat-teams');
-  const statL = document.getElementById('stat-leagues');
-  if (statV) statV.textContent = videoCount;
-  if (statT) statT.textContent = teamsCount;
-  if (statL) statL.textContent = leaguesCount;
-}
-
 function openEditProfile() {
   document.getElementById('edit-name').value  = profileData.name;
   document.getElementById('edit-email').value = profileData.email;
@@ -6703,7 +6693,6 @@ updateProfileStats();
     upDiv.classList.remove('show');
     btn.disabled = false;
     closeQuickPost();
-    updateProfileStats();
 
     // Update video map immediately so new post is clickable right away
     if (!window._hlVideoMap) window._hlVideoMap = {};
