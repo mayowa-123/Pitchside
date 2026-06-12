@@ -1422,16 +1422,43 @@ let currentVideoId = null;
 let _scrollObserver = null;
 
 function _startScrollObserver() {
-  if (_scrollObserver) _scrollObserver.disconnect();
+  // Disconnect existing observer if any
+  if (_scrollObserver) {
+    _scrollObserver.disconnect();
+    _scrollObserver = null;
+  }
 
-  // No autoplay on scroll — only wire click to open full player
-  document.querySelectorAll('.vcard[data-videoid]').forEach(card => {
-    card.onclick = (e) => {
-      if (e.target.closest('.ai-analysis-btn') || e.target.closest('.ai-insight-overlay')) return;
-      const vid = card.dataset.videoid;
-      if (vid) openHlPlayerById(String(vid));
+  // Get all video cards
+  var cards = document.querySelectorAll('.vcard[data-videoid]');
+  
+  for (var i = 0; i < cards.length; i++) {
+    var card = cards[i];
+    
+    // Remove any existing click handlers to prevent duplicates
+    if (card._myClickHandler) {
+      card.removeEventListener('click', card._myClickHandler);
+    }
+    
+    // Create new click handler
+    card._myClickHandler = function(e) {
+      // Don't trigger if clicking on AI buttons or insight overlay
+      if (e.target.closest('.ai-analysis-btn') || e.target.closest('.ai-insight-overlay')) {
+        return;
+      }
+      var vid = this.dataset.videoid;
+      if (vid) {
+        openHlPlayerById(String(vid));
+      }
     };
-  });
+    
+    card.addEventListener('click', card._myClickHandler);
+  }
+  
+  // Disable any autoplay observer that might be playing videos
+  if (window._videoObserver) {
+    window._videoObserver.disconnect();
+    window._videoObserver = null;
+  }
 }
 
 function _playInCard(videoId) {
@@ -2257,25 +2284,63 @@ function handleAvatarUpload(e) {
 
 function updateProfileStats() {
   const currentUid = window._psAuth?.currentUser?.uid || '';
-
-  // Count only THIS user's videos from VIDEOS array
-  let videoCount = VIDEOS.filter(v =>
-    v.userPost && (v.userId === currentUid || v.uid === currentUid)
-  ).length;
-
-  // If Firebase is ready, get accurate count from Firestore posts
-  const fsApi = window._psFs;
-  const db    = window._psDb;
-  if (fsApi && db && currentUid) {
-    const { collection, query, where, getDocs } = fsApi;
-    getDocs(
-      query(collection(db, 'posts'), where('userId', '==', currentUid))
-    ).then(snap => {
-      const count = snap.size;
-      const statV = document.getElementById('stat-videos');
-      if (statV) statV.textContent = count;
-    }).catch(() => {});
+  const storageKey = '_ps_my_videos_' + currentUid;
+  
+  // Get videos from localStorage (these are your uploaded videos)
+  let myVideos = [];
+  try {
+    const stored = localStorage.getItem(storageKey);
+    if (stored) {
+      myVideos = JSON.parse(stored);
+    }
+  } catch(e) {
+    console.warn('Failed to load stored videos:', e);
   }
+  
+  // Also check VIDEOS array for user posts
+  const fromVideos = VIDEOS.filter(function(v) {
+    return v.userPost && (v.userId === currentUid || v.uid === currentUid);
+  });
+  
+  // Combine both sources, remove duplicates by ID
+  const allIds = {};
+  const merged = [];
+  
+  // Add fromVideos first
+  for (var i = 0; i < fromVideos.length; i++) {
+    var v = fromVideos[i];
+    if (!allIds[v.id]) {
+      allIds[v.id] = true;
+      merged.push(v);
+    }
+  }
+  
+  // Add myVideos second (if not already added)
+  for (var i = 0; i < myVideos.length; i++) {
+    var v = myVideos[i];
+    if (!allIds[v.id]) {
+      allIds[v.id] = true;
+      merged.push(v);
+    }
+  }
+  
+  var videoCount = merged.length;
+  
+  // Store in global cache for My Videos modal
+  window._userVideosCache = merged;
+  
+  // Update the stats display in the profile
+  var teamsCount = selectedTeams.size;
+  var leaguesCount = selectedLeagues.size;
+  
+  var statV = document.getElementById('stat-videos');
+  var statT = document.getElementById('stat-teams');
+  var statL = document.getElementById('stat-leagues');
+  
+  if (statV) statV.textContent = videoCount;
+  if (statT) statT.textContent = teamsCount;
+  if (statL) statL.textContent = leaguesCount;
+}
 
   const teamsCount   = selectedTeams.size;
   const leaguesCount = selectedLeagues.size;
@@ -2469,10 +2534,9 @@ function _videoToExploreCard(v) {
                  <svg width="22" height="22" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                </div>
              </div>`
-          : hasThumbnail
-            ? `<img src="${thumbUrl}" alt="${v.title}" loading="lazy"
-                 style="width:100%;height:100%;object-fit:cover;display:block;"
-                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+          ${hasThumbnail ? `<img src="${thumbUrl}" alt="${v.title}" loading="lazy" preload="none"
+     style="width:100%;height:100%;object-fit:cover;display:block;"
+     onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">` : ''}
                <div class="vthumb-ph" style="background:linear-gradient(135deg,#0f172a,#1e293b);display:none;">`
             : `<div class="vthumb-ph" style="background:linear-gradient(135deg,#0f172a,#1e293b);">`
         }
@@ -4286,7 +4350,7 @@ function openHlPlayer(id, title, videoUrl, embedHtml, thumbnail, ytSearch, video
   const creatorAvatar = v?.posterAvatar || v?.avatar || '';
   const creatorName = v?.channel || v?.username || '';
   const isLiked = likedVideos?.has(String(id));
-  const isSaved = savedVideos?.has ? savedVideos.has(String(id)) : false;
+  const isSaved = (typeof savedHighlights !== 'undefined') ? savedHighlights.has(String(id)) : false;
 
   // Remove any existing side actions
   document.querySelectorAll('.tt-side-actions').forEach(el => el.remove());
@@ -4348,10 +4412,17 @@ function openHlPlayer(id, title, videoUrl, embedHtml, thumbnail, ytSearch, video
     </button>
   `;
 
-  wrap.parentElement.appendChild(sideActions);
-
+  // ✅ Open overlay FIRST - before any side actions code
+  // This ensures overlay always shows even if side actions have errors
   overlay.classList.add('open');
   document.body.style.overflow = 'hidden';
+
+  // ✅ Side actions in try/catch - errors here won't break the player
+  try {
+    wrap.parentElement.appendChild(sideActions);
+  } catch(e) {
+    console.warn('[PitchSide] Side actions error:', e);
+  }
 }
 
 
@@ -6617,11 +6688,17 @@ const localVideo = {
     VIDEOS.unshift(localVideo);
 
     // Persist user posts in localStorage for history
-    try {
-      const stored = JSON.parse(localStorage.getItem('_ps_my_videos') || '[]');
-      stored.unshift(localVideo);
-      localStorage.setItem('_ps_my_videos', JSON.stringify(stored.slice(0, 100)));
-    } catch(e) {}
+    // Persist user posts in localStorage for history (using user-specific key)
+try {
+  const currentUid = window._psAuth?.currentUser?.uid || '';
+  const storageKey = '_ps_my_videos_' + currentUid;
+  const stored = JSON.parse(localStorage.getItem(storageKey) || '[]');
+  stored.unshift(localVideo);
+  localStorage.setItem(storageKey, JSON.stringify(stored.slice(0, 100)));
+} catch(e) {}
+
+// Immediately update the profile stats so the number changes right away
+updateProfileStats();
 
     upDiv.classList.remove('show');
     btn.disabled = false;
@@ -6784,12 +6861,22 @@ function _renderMyVideosList(body, myVids) {
 }
 
 function openMyVideoPlayer(idx) {
-  const list = window._mvCurrentList || [];
-  const v = list[idx];
-  if (!v) return;
+  var list = window._mvCurrentList || [];
+  var v = list[idx];
+  if (!v) {
+    console.warn('Video not found at index:', idx);
+    return;
+  }
 
-  // Make sure video is in VIDEOS array so overlay can find it
-  if (!VIDEOS.find(x => String(x.id) === String(v.id))) {
+  // Make sure video is in VIDEOS array
+  var videoExists = false;
+  for (var i = 0; i < VIDEOS.length; i++) {
+    if (String(VIDEOS[i].id) === String(v.id)) {
+      videoExists = true;
+      break;
+    }
+  }
+  if (!videoExists) {
     VIDEOS.unshift(v);
   }
 
@@ -6797,11 +6884,18 @@ function openMyVideoPlayer(idx) {
   if (!window._hlVideoMap) window._hlVideoMap = {};
   window._hlVideoMap[String(v.id)] = v;
 
-  // Close modal THEN open player
-  closeMyVideos();
-  setTimeout(() => {
+  // Get the modal element
+  var modal = document.getElementById('my-videos-overlay');
+  
+  // Close modal first
+  if (modal) {
+    modal.classList.remove('open');
+  }
+  
+  // Then open player after a tiny delay (prevents race condition)
+  setTimeout(function() {
     openHlPlayerById(String(v.id));
-  }, 150); // Small delay so modal closes smoothly before player opens
+  }, 50);
 }
 
 window.openMyVideos       = openMyVideos;
@@ -6811,12 +6905,28 @@ window.openMyVideoPlayer  = openMyVideoPlayer;
 // On load: restore any stored posts into VIDEOS so profile count is right
 (function restoreStoredPosts() {
   try {
-    const stored = JSON.parse(localStorage.getItem('_ps_my_videos') || '[]');
-    stored.forEach(sv => {
-      if (!VIDEOS.find(v => v.id === sv.id)) VIDEOS.push(sv);
-    });
+    const currentUid = window._psAuth?.currentUser?.uid || '';
+    if (currentUid) {
+      const storageKey = '_ps_my_videos_' + currentUid;
+      const stored = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      for (var i = 0; i < stored.length; i++) {
+        var sv = stored[i];
+        var alreadyExists = false;
+        for (var j = 0; j < VIDEOS.length; j++) {
+          if (VIDEOS[j].id === sv.id) {
+            alreadyExists = true;
+            break;
+          }
+        }
+        if (!alreadyExists) {
+          VIDEOS.push(sv);
+        }
+      }
+    }
     updateProfileStats();
-  } catch(e) {}
+  } catch(e) {
+    console.warn('Restore failed:', e);
+  }
 })();
 
 
