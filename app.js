@@ -6666,6 +6666,7 @@ const localVideo = {
       thumbnail: thumbUrl,
       embed: '', embedUrl: mediaType === 'video' ? mediaUrl : '',
       userPost: true,
+      userId: (_cu && _cu.uid) || 'anonymous',  // ← ADD THIS LINE
       mediaType: mediaType,
       isImage: mediaType === 'image',
       poster: '@' + ((profileData && profileData.name) || 'pitchside').replace(/\s+/g,'').toLowerCase(),
