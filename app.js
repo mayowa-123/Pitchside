@@ -2517,17 +2517,16 @@ function _videoToExploreCard(v) {
   return `
     <div class="vcard" id="vcard-${v.id}" data-videoid="${v.id}" style="position:relative;cursor:pointer;" onclick="openHlPlayerById(String(this.dataset.videoid))">
       <div class="vthumb" style="position:relative;" id="vcard-thumb-${v.id}">
-        ${isDemoCard
+${isDemoCard
           ? `<div style="width:100%;height:100%;background:linear-gradient(135deg,${gradA},${gradB});display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
                <div style="font-size:52px;filter:drop-shadow(0 2px 8px rgba(0,0,0,0.5));">${v.emoji||getCatEmoji(v.cat)}</div>
                <div style="background:rgba(16,185,129,0.9);border-radius:50%;width:52px;height:52px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(16,185,129,0.5);">
                  <svg width="22" height="22" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                </div>
              </div>`
-          ${hasThumbnail ? `<img src="${thumbUrl}" alt="${v.title}" loading="lazy" preload="none"
-     style="width:100%;height:100%;object-fit:cover;display:block;"
-     onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">` : ''}
-               <div class="vthumb-ph" style="background:linear-gradient(135deg,#0f172a,#1e293b);display:none;">`
+          : hasThumbnail ? `<img src="${thumbUrl}" alt="${v.title}" loading="lazy"
+               style="width:100%;height:100%;object-fit:cover;display:block;"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">`
             : `<div class="vthumb-ph" style="background:linear-gradient(135deg,#0f172a,#1e293b);">`
         }
         ${!isDemoCard ? `
