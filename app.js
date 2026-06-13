@@ -6893,13 +6893,23 @@ window.openMyVideoPlayer  = openMyVideoPlayer;
 
 // On load: restore any stored posts into VIDEOS so profile count is right
 (function restoreStoredPosts() {
-  try {
-    const stored = JSON.parse(localStorage.getItem('_ps_my_videos') || '[]');
-    stored.forEach(sv => {
-      if (!VIDEOS.find(v => v.id === sv.id)) VIDEOS.push(sv);
-    });
-    updateProfileStats();
-  } catch(e) {}
+  // Wait for auth to complete, then restore
+  const checkAuth = setInterval(() => {
+    const currentUid = window._psAuth?.currentUser?.uid;
+    if (currentUid) {
+      clearInterval(checkAuth);
+      try {
+        const storageKey = '_ps_my_videos_' + currentUid;
+        const stored = JSON.parse(localStorage.getItem(storageKey) || '[]');
+        stored.forEach(sv => {
+          if (!VIDEOS.find(v => v.id === sv.id)) VIDEOS.push(sv);
+        });
+        updateProfileStats();
+      } catch(e) {}
+    }
+  }, 100);
+  // Timeout after 5 seconds to avoid infinite loop
+  setTimeout(() => clearInterval(checkAuth), 5000);
 })();
 
 
