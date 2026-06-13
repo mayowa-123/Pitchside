@@ -6894,30 +6894,13 @@ window.openMyVideoPlayer  = openMyVideoPlayer;
 // On load: restore any stored posts into VIDEOS so profile count is right
 (function restoreStoredPosts() {
   try {
-    const currentUid = window._psAuth?.currentUser?.uid || '';
-    if (currentUid) {
-      const storageKey = '_ps_my_videos_' + currentUid;
-      const stored = JSON.parse(localStorage.getItem(storageKey) || '[]');
-      for (var i = 0; i < stored.length; i++) {
-        var sv = stored[i];
-        var alreadyExists = false;
-        for (var j = 0; j < VIDEOS.length; j++) {
-          if (VIDEOS[j].id === sv.id) {
-            alreadyExists = true;
-            break;
-          }
-        }
-        if (!alreadyExists) {
-          VIDEOS.push(sv);
-        }
-      }
-    }
+    const stored = JSON.parse(localStorage.getItem('_ps_my_videos') || '[]');
+    stored.forEach(sv => {
+      if (!VIDEOS.find(v => v.id === sv.id)) VIDEOS.push(sv);
+    });
     updateProfileStats();
-  } catch(e) {
-    console.warn('Restore failed:', e);
-  }
+  } catch(e) {}
 })();
-
 
 
 let _currentNewsUrl = '';
