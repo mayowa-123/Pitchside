@@ -276,13 +276,17 @@ async function fetchByQuery(searchConfig) {
           thumbnail: item.snippet.thumbnails?.high?.url || item.snippet.thumbnails?.default?.url,
           channelTitle: item.snippet.channelTitle,
           channel: searchConfig.name,
-          gender: gender, // ✨ NEW: Gender detection
+          gender: gender, // ✨ Gender detection
           publishedAt: new Date(item.snippet.publishedAt),
           createdAt: new Date().toISOString(),
           source: 'youtube',
           fetchedAt: new Date().toISOString(),
           verified: true,
-          filtered: true, // Mark as filtered for highlights
+          filtered: true,
+          // ✅ FIXED: Playback compatibility fields
+          embedUrl: `https://www.youtube.com/embed/${videoId}`,
+          embed: `<iframe width="100%" height="100%" src="https://www.youtube.com/embed/${videoId}?autoplay=1&controls=1" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`,
+          src: `https://www.youtube.com/watch?v=${videoId}`,
         });
         
         console.log(`      ✅ Added (${gender}): ${title.substring(0, 35)}...`);
