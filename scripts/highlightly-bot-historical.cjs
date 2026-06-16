@@ -28,7 +28,7 @@ admin.initializeApp({
 
 const db = admin.firestore();
 const HIGHLIGHTLY_KEY = process.env.HIGHLIGHTLY_KEY;
-const BASE_URL = 'https://football.highlightly.net';
+const BASE_URL = 'https://sport-highlights-api.p.rapidapi.com';
 
 // ════════════════════════════════════════════════════════════════════════════
 // 🎯 CONFIGURATION
