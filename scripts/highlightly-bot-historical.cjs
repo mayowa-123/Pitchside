@@ -1,22 +1,3 @@
-/**
- * ═════════════════════════════════════════════════════════════════════════════
- * 🎬 PITCHSIDE HIGHLIGHTLY BOT - Historical Archive Builder
- * ═════════════════════════════════════════════════════════════════════════════
- * 
- * Strategy:
- * - Runs 9 times per day (~2.67 hours apart)
- * - Fetches highlights from 2020 onwards
- * - Within ~1 year: Complete 2020-2026 archive
- * - Auto-switches to "latest only" mode at 2026
- * - Users can search highlights from 2020-present
- * 
- * Free Tier Usage: 9 runs × 11 requests = ~99/day (safe buffer!)
- * 
- * Deploy: GitHub Actions (scheduled every 2h 40m)
- * Firebase Integration: Store highlights + progress tracking
- * ═════════════════════════════════════════════════════════════════════════════
- */
-
 const admin = require('firebase-admin');
 const axios = require('axios');
 
@@ -28,29 +9,14 @@ admin.initializeApp({
 
 const db = admin.firestore();
 const HIGHLIGHTLY_KEY = process.env.HIGHLIGHTLY_KEY;
-const BASE_URL = 'https://sport-highlights-api.p.rapidapi.com';
-
-// ════════════════════════════════════════════════════════════════════════════
-// 🎯 CONFIGURATION
-// ════════════════════════════════════════════════════════════════════════════
 
 const CONFIG = {
   API_KEY: HIGHLIGHTLY_KEY,
-  BASE_URL: BASE_URL,
-  REQUESTS_PER_RUN: 11, // Safe limit to stay under 100/day
+  BASE_URL: 'https://sport-highlights-api.p.rapidapi.com',
+  REQUESTS_PER_RUN: 9,
   START_YEAR: 2020,
   END_YEAR: 2026,
-  LEAGUES: [
-    'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1',
-    'MLS', 'Nigerian Premier League', 'UEFA Champions League',
-    'UEFA Europa League', 'FIFA World Cup', 'AFC Champions League',
-    'Copa Libertadores'
-  ]
 };
-
-// ════════════════════════════════════════════════════════════════════════════
-// 📊 PROGRESS TRACKING
-// ════════════════════════════════════════════════════════════════════════════
 
 class ProgressTracker {
   async getProgress() {
@@ -61,7 +27,7 @@ class ProgressTracker {
         return {
           currentYear: CONFIG.START_YEAR,
           currentMonth: 1,
-          mode: 'historical', // 'historical' or 'latest'
+          mode: 'historical',
           videosProcessed: 0,
           lastRun: new Date().toISOString(),
         };
@@ -69,7 +35,7 @@ class ProgressTracker {
 
       return doc.data();
     } catch (error) {
-      console.error('Get progress error:', error);
+      console.error('Get progress error:', error.message);
       return {
         currentYear: CONFIG.START_YEAR,
         currentMonth: 1,
@@ -88,19 +54,39 @@ class ProgressTracker {
       
       console.log('✅ Progress updated:', data);
     } catch (error) {
-      console.error('Update progress error:', error);
+      console.error('Update progress error:', error.message);
     }
   }
 
   getDateRange(year, month) {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0);
-    
-    return {
-      startDate: startDate.toISOString().split('T')[0],
-      endDate: endDate.toISOString().split('T')[0],
-      label: `${year}-${String(month).padStart(2, '0')}`
-    };
+    try {
+      // Create dates safely
+      const startDay = 1;
+      const startDate = new Date(year, month - 1, startDay);
+      
+      // Get last day of month
+      const endDate = new Date(year, month, 0);
+      
+      // Format as YYYY-MM-DD
+      const startStr = startDate.toISOString().split('T')[0];
+      const endStr = endDate.toISOString().split('T')[0];
+      
+      console.log(`📆 Date range: ${startStr} to ${endStr}`);
+      
+      return {
+        startDate: startStr,
+        endDate: endStr,
+        label: `${year}-${String(month).padStart(2, '0')}`
+      };
+    } catch (error) {
+      console.error('Date range error:', error.message);
+      // Return a safe default
+      return {
+        startDate: `${year}-${String(month).padStart(2, '0')}-01`,
+        endDate: `${year}-${String(month).padStart(2, '0')}-28`,
+        label: `${year}-${String(month).padStart(2, '0')}`
+      };
+    }
   }
 
   advanceMonth(year, month) {
@@ -110,10 +96,6 @@ class ProgressTracker {
     return { year, month: month + 1 };
   }
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// 🔗 HIGHLIGHTLY API CLIENT
-// ════════════════════════════════════════════════════════════════════════════
 
 class HighlightlyClient {
   constructor(apiKey) {
@@ -133,11 +115,10 @@ class HighlightlyClient {
       const response = await axios.get(url, {
         params: {
           ...params,
-          rapidapi_key: this.apiKey,
         },
         headers: {
           'X-RapidAPI-Key': this.apiKey,
-          'X-RapidAPI-Host': 'football-highlights-api.p.rapidapi.com',
+          'X-RapidAPI-Host': 'sport-highlights-api.p.rapidapi.com',
         },
         timeout: 10000,
       });
@@ -154,8 +135,8 @@ class HighlightlyClient {
 
   async getMatches(startDate, endDate) {
     return await this.makeRequest('/matches', {
-      startDate,
-      endDate,
+      date_start: startDate,
+      date_end: endDate,
       limit: 50,
     });
   }
@@ -164,18 +145,10 @@ class HighlightlyClient {
     return await this.makeRequest(`/matches/${matchId}/highlights`);
   }
 
-  async getLeagues() {
-    return await this.makeRequest('/leagues', { limit: 100 });
-  }
-
   getRequestsUsed() {
     return this.requestCount;
   }
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// 💾 FIREBASE STORAGE
-// ════════════════════════════════════════════════════════════════════════════
 
 class FirebaseStorage {
   async saveHighlights(highlights) {
@@ -186,9 +159,12 @@ class FirebaseStorage {
 
     for (const video of highlights) {
       try {
+        const videoId = video.videoId || video.id || video.match_id;
+        if (!videoId) continue;
+
         // Check if already exists
         const existing = await highlightsRef
-          .where('videoId', '==', video.videoId || video.id)
+          .where('videoId', '==', String(videoId))
           .limit(1)
           .get();
 
@@ -199,14 +175,14 @@ class FirebaseStorage {
 
         // Save new video
         const docData = {
-          videoId: video.videoId || video.id,
-          youtubeId: video.youtubeId || video.videoId || video.id,
+          videoId: String(videoId),
+          youtubeId: video.youtubeId || String(videoId),
           title: video.title || 'Highlight',
           thumbnail: video.thumbnail || video.image || '',
-          channel: video.league?.name || 'Highlightly',
-          channelTitle: video.league?.name || 'Highlightly',
+          channel: 'Highlightly',
+          channelTitle: 'Highlightly',
           source: 'highlightly',
-          embedUrl: video.embedUrl || '',
+          embedUrl: video.embedUrl || video.embed_url || '',
           embed: video.embed || '',
           src: video.url || '',
           publishedAt: new Date(video.date || Date.now()),
@@ -214,17 +190,17 @@ class FirebaseStorage {
           verified: true,
           filtered: true,
           matchId: video.matchId || '',
-          homeTeam: video.homeTeam?.name || '',
-          awayTeam: video.awayTeam?.name || '',
-          competition: video.league?.name || 'Football',
-          category: video.league?.name || 'Football',
+          homeTeam: video.homeTeam?.name || video.home_team || '',
+          awayTeam: video.awayTeam?.name || video.away_team || '',
+          competition: video.league?.name || video.competition || 'Football',
+          category: video.league?.name || video.competition || 'Football',
         };
 
         await highlightsRef.add(docData);
         saved++;
         console.log(`✅ Saved: ${video.title}`);
       } catch (error) {
-        console.error(`Failed to save video: ${video.title}`, error.message);
+        console.error(`Failed to save video:`, error.message);
       }
     }
 
@@ -240,15 +216,11 @@ class FirebaseStorage {
       
       return snap.data().count;
     } catch (error) {
-      console.error('Get count error:', error);
+      console.error('Get count error:', error.message);
       return 0;
     }
   }
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// 🤖 MAIN BOT LOGIC
-// ════════════════════════════════════════════════════════════════════════════
 
 class HighlightlyBot {
   constructor() {
@@ -262,18 +234,19 @@ class HighlightlyBot {
     console.log('🤖 HIGHLIGHTLY BOT - Historical Archive Builder');
     console.log('='.repeat(80) + '\n');
 
-    // Get current progress
-    const progress = await this.progressTracker.getProgress();
-    console.log('📍 Current Progress:', progress);
+    try {
+      const progress = await this.progressTracker.getProgress();
+      console.log('📍 Current Progress:', progress);
 
-    // Check if we've reached 2026
-    if (progress.mode === 'latest' || progress.currentYear >= CONFIG.END_YEAR) {
-      await this.runLatestMode();
-      return;
+      if (progress.mode === 'latest' || progress.currentYear >= CONFIG.END_YEAR) {
+        await this.runLatestMode();
+        return;
+      }
+
+      await this.runHistoricalMode(progress);
+    } catch (error) {
+      console.error('Main error:', error.message);
     }
-
-    // Run historical mode
-    await this.runHistoricalMode(progress);
   }
 
   async runHistoricalMode(progress) {
@@ -282,13 +255,10 @@ class HighlightlyBot {
     const dateRange = this.progressTracker.getDateRange(progress.currentYear, progress.currentMonth);
     console.log(`📆 Date range: ${dateRange.startDate} to ${dateRange.endDate}`);
 
-    // Get matches in this month
     const matchesData = await this.client.getMatches(dateRange.startDate, dateRange.endDate);
 
     if (!matchesData || !matchesData.data || matchesData.data.length === 0) {
       console.log('ℹ️  No matches found for this period');
-      
-      // Advance to next month anyway
       const nextMonth = this.progressTracker.advanceMonth(progress.currentYear, progress.currentMonth);
       await this.progressTracker.updateProgress(nextMonth);
       return;
@@ -296,16 +266,13 @@ class HighlightlyBot {
 
     console.log(`🎬 Found ${matchesData.data.length} matches`);
 
-    // Get highlights for first few matches (respecting request limit)
     let videosSaved = 0;
-    const matchesToProcess = matchesData.data.slice(0, 5); // Process 5 matches per run
+    const matchesToProcess = matchesData.data.slice(0, 5);
 
     for (const match of matchesToProcess) {
-      // Get highlights for this match
       const highlightsData = await this.client.getMatchHighlights(match.id);
 
-      if (highlightsData && highlightsData.data) {
-        // Prepare highlight videos
+      if (highlightsData && highlightsData.data && Array.isArray(highlightsData.data)) {
         const highlights = highlightsData.data.map(h => ({
           ...h,
           matchId: match.id,
@@ -322,7 +289,6 @@ class HighlightlyBot {
     console.log(`\n✅ Saved ${videosSaved} new videos this run`);
     console.log(`📡 API requests used: ${this.client.getRequestsUsed()}/${CONFIG.REQUESTS_PER_RUN}`);
 
-    // Advance to next month
     const nextMonth = this.progressTracker.advanceMonth(progress.currentYear, progress.currentMonth);
     const totalVideos = await this.storage.getVideoCount();
 
@@ -334,23 +300,20 @@ class HighlightlyBot {
     });
 
     console.log(`\n➡️  Next run will fetch: ${nextMonth.year}-${String(nextMonth.month).padStart(2, '0')}`);
-    
-    if (nextMonth.year >= CONFIG.END_YEAR) {
-      console.log('🎉 Historical archive complete! Switching to latest mode next run.');
-    }
   }
 
   async runLatestMode() {
-    console.log('\n🔄 Running in LATEST MODE - Fetching today\'s highlights');
+    console.log('\n🔄 Running in LATEST MODE');
+    
+    const today = new Date();
+    const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    
+    const startStr = sevenDaysAgo.toISOString().split('T')[0];
+    const endStr = today.toISOString().split('T')[0];
 
-    const today = new Date().toISOString().split('T')[0];
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split('T')[0];
+    console.log(`📆 Fetching from: ${startStr} to ${endStr}`);
 
-    console.log(`📆 Fetching from: ${sevenDaysAgo} to ${today}`);
-
-    const matchesData = await this.client.getMatches(sevenDaysAgo, today);
+    const matchesData = await this.client.getMatches(startStr, endStr);
 
     if (!matchesData || !matchesData.data || matchesData.data.length === 0) {
       console.log('ℹ️  No recent matches found');
@@ -360,12 +323,12 @@ class HighlightlyBot {
     console.log(`🎬 Found ${matchesData.data.length} recent matches`);
 
     let videosSaved = 0;
-    const matchesToProcess = matchesData.data.slice(0, 10);
+    const matchesToProcess = matchesData.data.slice(0, 8);
 
     for (const match of matchesToProcess) {
       const highlightsData = await this.client.getMatchHighlights(match.id);
 
-      if (highlightsData && highlightsData.data) {
+      if (highlightsData && highlightsData.data && Array.isArray(highlightsData.data)) {
         const highlights = highlightsData.data.map(h => ({
           ...h,
           matchId: match.id,
@@ -380,13 +343,8 @@ class HighlightlyBot {
     }
 
     console.log(`\n✅ Saved ${videosSaved} new videos from recent matches`);
-    console.log(`📡 API requests used: ${this.client.getRequestsUsed()}/${CONFIG.REQUESTS_PER_RUN}`);
   }
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// 🚀 MAIN EXECUTION
-// ════════════════════════════════════════════════════════════════════════════
 
 async function main() {
   try {
@@ -399,7 +357,8 @@ async function main() {
     
     process.exit(0);
   } catch (error) {
-    console.error('\n❌ BOT ERROR:', error);
+    console.error('\n❌ BOT ERROR:', error.message);
+    console.error(error);
     process.exit(1);
   }
 }
