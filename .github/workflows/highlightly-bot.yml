@@ -51,7 +51,7 @@ jobs:
           HIGHLIGHTLY_KEY: ${{ secrets.HIGHLIGHTLY_KEY }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          node scripts/highlightly-bot-historical.js
+          node scripts/highlightly-bot-historical.cjs
       
       - name: 📊 Log completion
         if: always()
