@@ -1,0 +1,61 @@
+name: 🤖 Highlightly Historical Highlights Bot
+
+on:
+  # Run 9 times per day (every 2 hours 40 minutes)
+  schedule:
+    # 12:00 AM UTC
+    - cron: '0 0 * * *'
+    # 2:40 AM UTC
+    - cron: '40 2 * * *'
+    # 5:20 AM UTC
+    - cron: '20 5 * * *'
+    # 8:00 AM UTC
+    - cron: '0 8 * * *'
+    # 10:40 AM UTC
+    - cron: '40 10 * * *'
+    # 1:20 PM UTC
+    - cron: '20 13 * * *'
+    # 4:00 PM UTC
+    - cron: '0 16 * * *'
+    # 6:40 PM UTC
+    - cron: '40 18 * * *'
+    # 9:20 PM UTC
+    - cron: '20 21 * * *'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  fetch-highlights:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x]
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+      
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+      
+      - name: 📦 Install dependencies
+        run: |
+          npm install firebase-admin axios
+      
+      - name: 🤖 Run Highlightly Bot
+        env:
+          HIGHLIGHTLY_KEY: ${{ secrets.HIGHLIGHTLY_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          node scripts/highlightly-bot-historical.js
+      
+      - name: 📊 Log completion
+        if: always()
+        run: |
+          echo "✅ Bot run completed at $(date)"
+          echo "📡 Free tier budget: 100 requests/day"
+          echo "🎯 Using ~9 requests per run (safe buffer)"
