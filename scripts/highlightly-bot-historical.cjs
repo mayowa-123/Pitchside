@@ -91,9 +91,9 @@ class ProgressTracker {
 
   advanceMonth(year, month) {
     if (month === 12) {
-      return { year: year + 1, month: 1 };
+      return { currentYear: year + 1, currentMonth: 1 };
     }
-    return { year, month: month + 1 };
+    return { currentYear: year, currentMonth: month + 1 };
   }
 }
 
@@ -260,7 +260,12 @@ class HighlightlyBot {
     if (!matchesData || !matchesData.data || matchesData.data.length === 0) {
       console.log('ℹ️  No matches found for this period');
       const nextMonth = this.progressTracker.advanceMonth(progress.currentYear, progress.currentMonth);
-      await this.progressTracker.updateProgress(nextMonth);
+      await this.progressTracker.updateProgress({
+        currentYear: nextMonth.currentYear,
+        currentMonth: nextMonth.currentMonth,
+        mode: progress.mode,
+        videosProcessed: progress.videosProcessed,
+      });
       return;
     }
 
@@ -293,13 +298,13 @@ class HighlightlyBot {
     const totalVideos = await this.storage.getVideoCount();
 
     await this.progressTracker.updateProgress({
-      currentYear: nextMonth.year,
-      currentMonth: nextMonth.month,
-      mode: nextMonth.year >= CONFIG.END_YEAR ? 'latest' : 'historical',
+      currentYear: nextMonth.currentYear,
+      currentMonth: nextMonth.currentMonth,
+      mode: nextMonth.currentYear >= CONFIG.END_YEAR ? 'latest' : 'historical',
       videosProcessed: totalVideos,
     });
 
-    console.log(`\n➡️  Next run will fetch: ${nextMonth.year}-${String(nextMonth.month).padStart(2, '0')}`);
+    console.log(`\n➡️  Next run will fetch: ${nextMonth.currentYear}-${String(nextMonth.currentMonth).padStart(2, '0')}`);
   }
 
   async runLatestMode() {
