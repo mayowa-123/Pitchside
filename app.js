@@ -1877,30 +1877,124 @@ function toggleTTLike(el) {
 }
 
 // New handler called with videoId directly
-function handleTTLike(btn, videoId) {
-  const v = VIDEOS.find(x => String(x.id) === String(videoId));
-  if (!v) return;
+async function handleTTLike(btn, videoId) {
+  try {
+    const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
+    if (!currentUser?.uid) {
+      showToast('Please log in to like videos');
+      return;
+    }
 
-  const countEl = document.getElementById('like-count-' + videoId);
-  const svg = btn.querySelector('svg');
+    const uid = currentUser.uid;
+    const db = window._psDb;
+    const fsApi = window._psFs;
+    
+    if (!db || !fsApi) {
+      showToast('Database not ready');
+      return;
+    }
 
-  if (likedVideos.has(String(videoId))) {
-    likedVideos.delete(String(videoId));
-    v.likes = Math.max(0, (v.likes || 0) - 1);
-    btn.classList.remove('active');
-    if (svg) { svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'white'); }
-  } else {
-    likedVideos.add(String(videoId));
-    v.likes = (v.likes || 0) + 1;
-    btn.classList.add('active');
-    if (svg) { svg.setAttribute('fill', '#ff3b5c'); svg.setAttribute('stroke', '#ff3b5c'); }
-    showToast('Liked! ❤️');
-    // Animate
-    btn.style.transform = 'scale(1.3)';
-    setTimeout(() => btn.style.transform = 'scale(1)', 200);
+    const v = VIDEOS.find(x => String(x.id) === String(videoId));
+    if (!v) return;
+
+    const countEl = document.getElementById('like-count-' + videoId);
+    const svg = btn.querySelector('svg');
+    const likeRef = fsApi.doc(db, 'videoMetrics', String(videoId));
+
+    // Check if already liked
+    const isLiked = likedVideos.has(String(videoId));
+
+    if (isLiked) {
+      // ❌ UNLIKE
+      likedVideos.delete(String(videoId));
+      v.likes = Math.max(0, (v.likes || 0) - 1);
+      btn.classList.remove('active');
+      if (svg) { 
+        svg.setAttribute('fill', 'none'); 
+        svg.setAttribute('stroke', 'white'); 
+      }
+
+      // Save to Firebase
+      await fsApi.updateDoc(likeRef, {
+        likes: fsApi.arrayRemove(uid),
+        likeCount: fsApi.increment(-1),
+        updatedAt: new Date(),
+      }).catch(async (err) => {
+        // Create doc if it doesn't exist
+        if (err.code === 'not-found') {
+          await fsApi.setDoc(likeRef, {
+            videoId: String(videoId),
+            likes: [],
+            likeCount: 0,
+            comments: 0,
+            shares: 0,
+            reposts: 0,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+        }
+      });
+
+      showToast('Unliked ♡');
+    } else {
+      // ❤️ LIKE
+      likedVideos.add(String(videoId));
+      v.likes = (v.likes || 0) + 1;
+      btn.classList.add('active');
+      if (svg) { 
+        svg.setAttribute('fill', '#ff3b5c'); 
+        svg.setAttribute('stroke', '#ff3b5c'); 
+      }
+
+      // Animate
+      btn.style.transform = 'scale(1.3)';
+      setTimeout(() => btn.style.transform = 'scale(1)', 200);
+      showToast('Liked! ❤️');
+
+      // Save to Firebase
+      await fsApi.updateDoc(likeRef, {
+        likes: fsApi.arrayUnion(uid),
+        likeCount: fsApi.increment(1),
+        updatedAt: new Date(),
+      }).catch(async (err) => {
+        // Create doc if it doesn't exist
+        if (err.code === 'not-found') {
+          await fsApi.setDoc(likeRef, {
+            videoId: String(videoId),
+            likes: [uid],
+            likeCount: 1,
+            comments: 0,
+            shares: 0,
+            reposts: 0,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+        }
+      });
+
+      // Add notification to video creator
+      const creator = v.userId || v.uid;
+      if (creator && creator !== uid) {
+        const notifRef = fsApi.collection(db, 'notifications');
+        await fsApi.addDoc(notifRef, {
+          type: 'like',
+          fromUserId: uid,
+          fromUserName: currentUser.displayName || 'User',
+          toUserId: creator,
+          videoId: String(videoId),
+          message: `${currentUser.displayName || 'Someone'} liked your video`,
+          timestamp: new Date(),
+          read: false,
+        }).catch(() => {});
+      }
+    }
+
+    // Update UI
+    if (countEl) countEl.textContent = formatCount ? formatCount(v.likes) : v.likes;
+  } catch (error) {
+    console.error('Like error:', error);
+    showToast('Failed to like video');
   }
-
-  if (countEl) countEl.textContent = formatCount ? formatCount(v.likes) : v.likes;
 }
 
 function handleTTSave(btn, videoId) {
@@ -1913,10 +2007,102 @@ function handleTTSave(btn, videoId) {
   setTimeout(() => btn.style.transform = 'scale(1)', 200);
 }
 
-function repostVideo() {
-  const v = VIDEOS.find(x => x.id === currentVideoId);
-  if (!v) return;
-  showToast('Reposted to your profile ✓');
+async function repostVideo() {
+  try {
+    const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
+    if (!currentUser?.uid) {
+      showToast('Please log in to repost');
+      return;
+    }
+
+    if (!currentVideoId) {
+      showToast('No video selected');
+      return;
+    }
+
+    const v = VIDEOS.find(x => String(x.id) === String(currentVideoId));
+    if (!v) {
+      showToast('Video not found');
+      return;
+    }
+
+    const db = window._psDb;
+    const fsApi = window._psFs;
+
+    if (!db || !fsApi) {
+      showToast('Database not ready');
+      return;
+    }
+
+    // Create repost in posts collection
+    const postsRef = fsApi.collection(db, 'posts');
+    const repostData = {
+      originalVideoId: String(currentVideoId),
+      originalCreatorId: v.userId || v.uid,
+      originalTitle: v.title,
+      originalThumbnail: v.thumbnail,
+      userId: currentUser.uid,
+      userName: currentUser.displayName || 'User',
+      userAvatar: currentUser.photoURL || '',
+      title: `Reposted: ${v.title}`,
+      isRepost: true,
+      videoId: v.videoId || v.youtubeId,
+      youtubeId: v.youtubeId || v.videoId,
+      embedUrl: v.embedUrl,
+      embed: v.embed,
+      src: v.src,
+      thumbnail: v.thumbnail,
+      category: v.category || v.cat || 'Football',
+      userPost: true,
+      playerPost: false,
+      createdAt: new Date(),
+      likes: 0,
+      comments: 0,
+      shares: 0,
+    };
+
+    await fsApi.addDoc(postsRef, repostData);
+
+    // Update metrics
+    const metricsRef = fsApi.doc(db, 'videoMetrics', String(currentVideoId));
+    await fsApi.updateDoc(metricsRef, {
+      reposts: fsApi.increment(1),
+      updatedAt: new Date(),
+    }).catch(async (err) => {
+      if (err.code === 'not-found') {
+        await fsApi.setDoc(metricsRef, {
+          videoId: String(currentVideoId),
+          likes: [],
+          likeCount: 0,
+          comments: 0,
+          shares: 0,
+          reposts: 1,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+    });
+
+    showToast('Reposted to your profile ✓');
+
+    // Notify original creator
+    if (v.userId || v.uid) {
+      const notifRef = fsApi.collection(db, 'notifications');
+      await fsApi.addDoc(notifRef, {
+        type: 'repost',
+        fromUserId: currentUser.uid,
+        fromUserName: currentUser.displayName || 'User',
+        toUserId: v.userId || v.uid,
+        videoId: String(currentVideoId),
+        message: `${currentUser.displayName || 'Someone'} reposted your video`,
+        timestamp: new Date(),
+        read: false,
+      }).catch(() => {});
+    }
+  } catch (error) {
+    console.error('Repost error:', error);
+    showToast('Failed to repost video');
+  }
 }
 
 function downloadVideo() {
@@ -8417,6 +8603,387 @@ function getTrendingVideos(limit = 20) {
     })
     .slice(0, limit);
 }
+
+// ════════════════════════════════════════════════════════════════
+// 💬 COMMENTS SYSTEM - Full Firebase Integration
+// ════════════════════════════════════════════════════════════════
+
+async function submitComment() {
+  try {
+    const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
+    if (!currentUser?.uid) {
+      showToast('Please log in to comment');
+      return;
+    }
+
+    const input = document.getElementById('comment-input');
+    const text = input.value.trim();
+    
+    if (!text || !currentVideoId) {
+      showToast('Comment cannot be empty');
+      return;
+    }
+
+    if (text.length > 500) {
+      showToast('Comment too long (max 500 chars)');
+      return;
+    }
+
+    const db = window._psDb;
+    const fsApi = window._psFs;
+
+    if (!db || !fsApi) {
+      showToast('Database not ready');
+      return;
+    }
+
+    // Add comment to Firebase
+    const commentsRef = fsApi.collection(db, 'videoComments');
+    const commentDoc = await fsApi.addDoc(commentsRef, {
+      videoId: String(currentVideoId),
+      userId: currentUser.uid,
+      userName: currentUser.displayName || 'Anonymous',
+      userAvatar: currentUser.photoURL || '',
+      text: text,
+      timestamp: new Date(),
+      likes: 0,
+      likedBy: [],
+      createdAt: new Date(),
+    });
+
+    // Update videoMetrics comment count
+    const metricsRef = fsApi.doc(db, 'videoMetrics', String(currentVideoId));
+    await fsApi.updateDoc(metricsRef, {
+      comments: fsApi.increment(1),
+      updatedAt: new Date(),
+    }).catch(async (err) => {
+      if (err.code === 'not-found') {
+        await fsApi.setDoc(metricsRef, {
+          videoId: String(currentVideoId),
+          likes: [],
+          likeCount: 0,
+          comments: 1,
+          shares: 0,
+          reposts: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+    });
+
+    // Add to local array
+    if (!userComments[currentVideoId]) userComments[currentVideoId] = [];
+    userComments[currentVideoId].push({
+      id: commentDoc.id,
+      user: currentUser.displayName || 'You',
+      avatar: currentUser.photoURL || '',
+      text: text,
+      time: 'now',
+      initials: (currentUser.displayName || 'U')[0].toUpperCase(),
+      likes: 0,
+      timestamp: new Date(),
+    });
+
+    // Update UI
+    input.value = '';
+    renderComments(currentVideoId);
+    showToast('Comment posted ✓');
+
+    // Notify video creator
+    const v = VIDEOS.find(x => String(x.id) === String(currentVideoId));
+    const creator = v?.userId || v?.uid;
+    if (creator && creator !== currentUser.uid) {
+      const notifRef = fsApi.collection(db, 'notifications');
+      await fsApi.addDoc(notifRef, {
+        type: 'comment',
+        fromUserId: currentUser.uid,
+        fromUserName: currentUser.displayName || 'User',
+        toUserId: creator,
+        videoId: String(currentVideoId),
+        message: `${currentUser.displayName || 'Someone'} commented: "${text.substring(0, 50)}"`,
+        timestamp: new Date(),
+        read: false,
+      }).catch(() => {});
+    }
+  } catch (error) {
+    console.error('Comment error:', error);
+    showToast('Failed to post comment');
+  }
+}
+
+// Load comments from Firebase
+async function loadCommentsFromFirebase(videoId) {
+  try {
+    const db = window._psDb;
+    const fsApi = window._psFs;
+
+    if (!db || !fsApi) return [];
+
+    const commentsRef = fsApi.collection(db, 'videoComments');
+    const q = fsApi.query(
+      commentsRef,
+      fsApi.where('videoId', '==', String(videoId))
+    );
+    const snap = await fsApi.getDocs(q);
+    
+    const comments = [];
+    snap.forEach(doc => {
+      const data = doc.data();
+      comments.push({
+        id: doc.id,
+        user: data.userName || 'User',
+        avatar: data.userAvatar || '',
+        text: data.text,
+        time: getTimeAgo(data.timestamp),
+        initials: (data.userName || 'U')[0].toUpperCase(),
+        likes: data.likes || 0,
+        timestamp: data.timestamp,
+      });
+    });
+
+    return comments;
+  } catch (error) {
+    console.error('Load comments error:', error);
+    return [];
+  }
+}
+
+// Helper: Get time ago string
+function getTimeAgo(timestamp) {
+  if (!timestamp) return 'now';
+  
+  const now = new Date();
+  const date = new Date(timestamp);
+  const seconds = Math.floor((now - date) / 1000);
+  
+  if (seconds < 60) return 'now';
+  if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+  if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+  return Math.floor(seconds / 86400) + 'd ago';
+}
+
+// Update renderComments to use Firebase data
+async function renderComments(videoId) {
+  const list = document.getElementById('comment-list');
+  
+  // Get comments from Firebase
+  const firebaseComments = await loadCommentsFromFirebase(videoId);
+  const localComments = userComments[videoId] || [];
+  const allComments = [...firebaseComments, ...localComments].sort((a, b) => 
+    new Date(b.timestamp) - new Date(a.timestamp)
+  );
+
+  const commentCount = document.getElementById('comment-count');
+  if (commentCount) commentCount.textContent = `(${allComments.length})`;
+
+  if (!list) return;
+
+  if (allComments.length === 0) {
+    list.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text3);font-size:13px;">No comments yet. Be the first!</div>`;
+    return;
+  }
+
+  list.innerHTML = '';
+  allComments.forEach(c => {
+    const item = document.createElement('div');
+    item.className = 'comment-item';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'comment-avatar';
+    avatar.textContent = c.initials;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'comment-bubble';
+
+    const user = document.createElement('div');
+    user.className = 'comment-user';
+    user.textContent = c.user;
+
+    const text = document.createElement('div');
+    text.className = 'comment-text';
+    text.textContent = c.text;
+
+    const time = document.createElement('div');
+    time.className = 'comment-time';
+    time.textContent = c.time;
+
+    bubble.appendChild(user);
+    bubble.appendChild(text);
+    bubble.appendChild(time);
+    item.appendChild(avatar);
+    item.appendChild(bubble);
+    list.appendChild(item);
+  });
+
+  list.scrollTop = list.scrollHeight;
+}
+
+// ════════════════════════════════════════════════════════════════
+// 📤 SHARES SYSTEM - Multi-Platform
+// ════════════════════════════════════════════════════════════════
+
+function shareVideo(videoId, platform) {
+  try {
+    const v = VIDEOS.find(x => String(x.id) === String(videoId));
+    if (!v) return;
+
+    const title = v.title || 'Check out this amazing football highlight!';
+    const deepLink = generateDeepLink(videoId);
+    
+    const shareUrls = {
+      whatsapp: `https://wa.me/?text=${encodeURIComponent(title + '\n\n' + deepLink)}`,
+      twitter: `https://twitter.com/intent/tweet?text=${encodeURIComponent(title + ' ' + deepLink)}&hashtags=PitchSide,Football,Highlights`,
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(deepLink)}`,
+      telegram: `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(title)}`,
+      copy: null
+    };
+    
+    if (platform === 'copy') {
+      navigator.clipboard.writeText(deepLink);
+      showToast('✓ Link copied!');
+    } else if (shareUrls[platform]) {
+      window.open(shareUrls[platform], '_blank', 'width=600,height=400');
+      
+      // Update share count in Firebase
+      updateShareCount(videoId);
+    }
+  } catch (error) {
+    console.error('Share error:', error);
+    showToast('Failed to share');
+  }
+}
+
+async function updateShareCount(videoId) {
+  try {
+    const db = window._psDb;
+    const fsApi = window._psFs;
+    
+    if (!db || !fsApi) return;
+
+    const metricsRef = fsApi.doc(db, 'videoMetrics', String(videoId));
+    await fsApi.updateDoc(metricsRef, {
+      shares: fsApi.increment(1),
+      updatedAt: new Date(),
+    }).catch(async (err) => {
+      if (err.code === 'not-found') {
+        await fsApi.setDoc(metricsRef, {
+          videoId: String(videoId),
+          likes: [],
+          likeCount: 0,
+          comments: 0,
+          shares: 1,
+          reposts: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+    });
+  } catch (error) {
+    console.error('Update share count error:', error);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// 👥 FOLLOW SYSTEM - Real-Time User Following
+// ════════════════════════════════════════════════════════════════
+
+async function followUser(userId) {
+  try {
+    const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
+    if (!currentUser?.uid) {
+      showToast('Please log in to follow');
+      return;
+    }
+
+    if (currentUser.uid === userId) {
+      showToast('Cannot follow yourself');
+      return;
+    }
+
+    const db = window._psDb;
+    const fsApi = window._psFs;
+
+    if (!db || !fsApi) {
+      showToast('Database not ready');
+      return;
+    }
+
+    // Check if already following
+    const followingRef = fsApi.collection(db, 'userFollowing');
+    const q = fsApi.query(
+      followingRef,
+      fsApi.where('followerId', '==', currentUser.uid),
+      fsApi.where('followingId', '==', userId)
+    );
+    const snap = await fsApi.getDocs(q);
+
+    if (!snap.empty) {
+      // Already following - unfollow
+      const docId = snap.docs[0].id;
+      await fsApi.deleteDoc(fsApi.doc(db, 'userFollowing', docId));
+      showToast('Unfollowed');
+      return;
+    }
+
+    // Add follow
+    await fsApi.addDoc(followingRef, {
+      followerId: currentUser.uid,
+      followerName: currentUser.displayName || 'User',
+      followerAvatar: currentUser.photoURL || '',
+      followingId: userId,
+      createdAt: new Date(),
+    });
+
+    showToast('Following ✓');
+
+    // Add notification
+    const notifRef = fsApi.collection(db, 'notifications');
+    await fsApi.addDoc(notifRef, {
+      type: 'follow',
+      fromUserId: currentUser.uid,
+      fromUserName: currentUser.displayName || 'User',
+      toUserId: userId,
+      message: `${currentUser.displayName || 'Someone'} started following you`,
+      timestamp: new Date(),
+      read: false,
+    }).catch(() => {});
+  } catch (error) {
+    console.error('Follow error:', error);
+    showToast('Failed to follow user');
+  }
+}
+
+async function isFollowing(userId) {
+  try {
+    const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
+    if (!currentUser?.uid) return false;
+
+    const db = window._psDb;
+    const fsApi = window._psFs;
+
+    if (!db || !fsApi) return false;
+
+    const followingRef = fsApi.collection(db, 'userFollowing');
+    const q = fsApi.query(
+      followingRef,
+      fsApi.where('followerId', '==', currentUser.uid),
+      fsApi.where('followingId', '==', userId)
+    );
+    const snap = await fsApi.getDocs(q);
+    
+    return !snap.empty;
+  } catch (error) {
+    console.error('Check following error:', error);
+    return false;
+  }
+}
+
+function generateDeepLink(videoId) {
+  const baseUrl = window.location.origin;
+  return `${baseUrl}?video=${videoId}`;
+}
+
+console.log('✅ All Interactions Loaded - Likes, Comments, Shares, Reposts, Follows');
 
 // ════════════════════════════════════════════════════════════════
 // STEP 10: CLEANUP ON LOGOUT
