@@ -1,17 +1,17 @@
 /**
  * ═════════════════════════════════════════════════════════════════════════════
- * 🎬 PITCHSIDE HIGHLIGHTLY BOT - Latest Only Edition
+ * 🎬 PITCHSIDE SCOREBAT BOT - Latest Highlights Edition
  * ═════════════════════════════════════════════════════════════════════════════
  * 
  * Strategy:
  * - Runs 9 times per day (every 2h 40m)
- * - Fetches highlights from LAST 7 DAYS only
- * - No complex date logic
- * - Simple, reliable, clean
- * - Users get LATEST content first!
+ * - Fetches LATEST highlights only
+ * - NO historical data needed
+ * - Simple, clean, reliable
+ * - Real-time fresh content!
  * 
- * Within 3-6 months: 500+ fresh highlights
  * Free Tier: 9 runs × 10 requests = ~90/day (safe!)
+ * No subscriptions, no drama!
  * ═════════════════════════════════════════════════════════════════════════════
  */
 
@@ -25,22 +25,23 @@ admin.initializeApp({
 });
 
 const db = admin.firestore();
-const HIGHLIGHTLY_KEY = process.env.HIGHLIGHTLY_KEY;
+const SCOREBAT_API_KEY = process.env.HIGHLIGHTLY_KEY; // Use same key for Scorebat
 
 const CONFIG = {
-  API_KEY: HIGHLIGHTLY_KEY,
-  BASE_URL: 'https://sport-highlights-api.p.rapidapi.com',
+  API_KEY: SCOREBAT_API_KEY,
+  BASE_URL: 'https://scorebat-video-api.p.rapidapi.com',
+  HOST: 'scorebat-video-api.p.rapidapi.com',
   REQUESTS_PER_RUN: 10,
-  DAYS_BACK: 7, // Fetch last 7 days
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// 🔗 HIGHLIGHTLY API CLIENT
+// 🔗 SCOREBAT API CLIENT
 // ════════════════════════════════════════════════════════════════════════════
 
-class HighlightlyClient {
-  constructor(apiKey) {
+class ScorebatClient {
+  constructor(apiKey, host) {
     this.apiKey = apiKey;
+    this.host = host;
     this.baseURL = CONFIG.BASE_URL;
     this.requestCount = 0;
   }
@@ -53,13 +54,12 @@ class HighlightlyClient {
 
     try {
       const url = `${this.baseURL}${endpoint}`;
+      
       const response = await axios.get(url, {
-        params: {
-          ...params,
-        },
+        params: params,
         headers: {
-          'X-RapidAPI-Key': this.apiKey,
-          'X-RapidAPI-Host': 'sport-highlights-api.p.rapidapi.com',
+          'x-rapidapi-key': this.apiKey,
+          'x-rapidapi-host': this.host,
         },
         timeout: 10000,
       });
@@ -70,20 +70,26 @@ class HighlightlyClient {
       return response.data;
     } catch (error) {
       console.error(`❌ API Error (${endpoint}):`, error.message);
+      if (error.response?.status === 403) {
+        console.error('⚠️ 403 Forbidden - Check your API key!');
+      }
       return null;
     }
   }
 
-  async getMatches(startDate, endDate) {
-    return await this.makeRequest('/matches', {
-      date_start: startDate,
-      date_end: endDate,
+  async getLatestHighlights() {
+    // Scorebat endpoint for latest highlights
+    return await this.makeRequest('/v1/latest', {
       limit: 50,
     });
   }
 
-  async getMatchHighlights(matchId) {
-    return await this.makeRequest(`/matches/${matchId}/highlights`);
+  async getHighlightsByDate(date) {
+    // Get highlights for a specific date (yyyy-mm-dd format)
+    return await this.makeRequest(`/v1/latest`, {
+      date: date,
+      limit: 50,
+    });
   }
 
   getRequestsUsed() {
@@ -104,7 +110,8 @@ class FirebaseStorage {
 
     for (const video of highlights) {
       try {
-        const videoId = video.videoId || video.id || video.match_id;
+        // Scorebat uses 'id' or we generate one
+        const videoId = video.id || video.video_id || `scorebat_${Date.now()}_${Math.random()}`;
         if (!videoId) continue;
 
         // Check if already exists
@@ -114,36 +121,57 @@ class FirebaseStorage {
           .get();
 
         if (!existing.empty) {
-          console.log(`⏭️  Already saved: ${video.title}`);
+          console.log(`⏭️  Already saved: ${video.title || 'Video'}`);
           continue;
+        }
+
+        // Parse teams and competition from title
+        let homeTeam = '';
+        let awayTeam = '';
+        let competition = 'Football';
+
+        if (video.title) {
+          // Try to extract teams from title (e.g., "Team A vs Team B - Competition")
+          const parts = video.title.split('-');
+          if (parts.length >= 2) {
+            const matchPart = parts[0].trim();
+            const teams = matchPart.split('vs');
+            if (teams.length === 2) {
+              homeTeam = teams[0].trim();
+              awayTeam = teams[1].trim();
+            }
+            if (parts.length > 1) {
+              competition = parts[parts.length - 1].trim();
+            }
+          }
         }
 
         // Save new video
         const docData = {
           videoId: String(videoId),
-          youtubeId: video.youtubeId || String(videoId),
-          title: video.title || 'Highlight',
-          thumbnail: video.thumbnail || video.image || '',
-          channel: 'Highlightly',
-          channelTitle: 'Highlightly',
-          source: 'highlightly',
-          embedUrl: video.embedUrl || video.embed_url || '',
+          title: video.title || 'Match Highlight',
+          thumbnail: video.thumbnail || video.thumbnailUrl || '',
+          channel: 'Scorebat',
+          channelTitle: 'Scorebat',
+          source: 'scorebat',
+          embedUrl: video.embed || '',
           embed: video.embed || '',
           src: video.url || '',
-          publishedAt: new Date(video.date || Date.now()),
+          publishedAt: new Date(video.date || video.published || Date.now()),
           createdAt: new Date().toISOString(),
           verified: true,
           filtered: true,
-          matchId: video.matchId || '',
-          homeTeam: video.homeTeam?.name || video.home_team || '',
-          awayTeam: video.awayTeam?.name || video.away_team || '',
-          competition: video.league?.name || video.competition || 'Football',
-          category: video.league?.name || video.competition || 'Football',
+          homeTeam: homeTeam,
+          awayTeam: awayTeam,
+          competition: competition,
+          category: competition,
+          rating: video.rating || 0,
+          views: video.views || 0,
         };
 
         await highlightsRef.add(docData);
         saved++;
-        console.log(`✅ Saved: ${video.title}`);
+        console.log(`✅ Saved: ${video.title || 'Highlight'}`);
       } catch (error) {
         console.error(`Failed to save video:`, error.message);
       }
@@ -155,7 +183,7 @@ class FirebaseStorage {
   async getVideoCount() {
     try {
       const snap = await db.collection('highlights')
-        .where('source', '==', 'highlightly')
+        .where('source', '==', 'scorebat')
         .count()
         .get();
       
@@ -171,15 +199,15 @@ class FirebaseStorage {
 // 🤖 MAIN BOT LOGIC
 // ════════════════════════════════════════════════════════════════════════════
 
-class HighlightlyLatestBot {
+class ScorebatBot {
   constructor() {
-    this.client = new HighlightlyClient(CONFIG.API_KEY);
+    this.client = new ScorebatClient(CONFIG.API_KEY, CONFIG.HOST);
     this.storage = new FirebaseStorage();
   }
 
   async run() {
     console.log('\n' + '='.repeat(80));
-    console.log('🤖 HIGHLIGHTLY BOT - Latest Highlights Only');
+    console.log('🤖 SCOREBAT BOT - Latest Football Highlights');
     console.log('='.repeat(80) + '\n');
 
     try {
@@ -190,72 +218,34 @@ class HighlightlyLatestBot {
   }
 
   async fetchLatestHighlights() {
-    // Calculate date range: last 7 days
-    const today = new Date();
-    const sevenDaysAgo = new Date(today.getTime() - CONFIG.DAYS_BACK * 24 * 60 * 60 * 1000);
-    
-    const startStr = sevenDaysAgo.toISOString().split('T')[0];
-    const endStr = today.toISOString().split('T')[0];
+    console.log(`📅 Fetching latest highlights...\n`);
 
-    console.log(`📅 Fetching highlights from: ${startStr} to ${endStr}`);
-    console.log(`📆 (Last ${CONFIG.DAYS_BACK} days)\n`);
+    // Get latest highlights
+    const highlightsData = await this.client.getLatestHighlights();
 
-    // Get matches for last 7 days
-    const matchesData = await this.client.getMatches(startStr, endStr);
-
-    if (!matchesData || !matchesData.data || matchesData.data.length === 0) {
-      console.log('ℹ️  No matches found in the last 7 days');
-      console.log('✅ BOT RUN COMPLETED (no new data)');
+    if (!highlightsData || !highlightsData.results || highlightsData.results.length === 0) {
+      console.log('ℹ️  No new highlights available right now');
+      console.log('✅ BOT RUN COMPLETED (waiting for new matches)');
       return;
     }
 
-    console.log(`🎬 Found ${matchesData.data.length} matches with potential highlights\n`);
+    console.log(`🎬 Found ${highlightsData.results.length} highlights available\n`);
 
-    // Process matches and get highlights
-    let videosSaved = 0;
-    let videosChecked = 0;
-    
-    // Process first 8 matches (respects request limit)
-    const matchesToProcess = matchesData.data.slice(0, 8);
-
-    for (const match of matchesToProcess) {
-      if (this.client.getRequestsUsed() >= CONFIG.REQUESTS_PER_RUN - 1) {
-        console.log('\n⚠️ Request limit nearly reached, stopping early');
-        break;
-      }
-
-      console.log(`🔍 Checking: ${match.homeTeam?.name || 'Unknown'} vs ${match.awayTeam?.name || 'Unknown'}`);
-      
-      const highlightsData = await this.client.getMatchHighlights(match.id);
-      videosChecked++;
-
-      if (highlightsData && highlightsData.data && Array.isArray(highlightsData.data)) {
-        console.log(`   → Found ${highlightsData.data.length} highlights`);
-        
-        const highlights = highlightsData.data.map(h => ({
-          ...h,
-          matchId: match.id,
-          homeTeam: match.homeTeam,
-          awayTeam: match.awayTeam,
-          league: match.league,
-        }));
-
-        const saved = await this.storage.saveHighlights(highlights);
-        videosSaved += saved;
-      } else {
-        console.log(`   → No highlights available`);
-      }
-    }
+    // Save highlights
+    const videosSaved = await this.storage.saveHighlights(highlightsData.results);
 
     console.log('\n' + '='.repeat(80));
     console.log(`📊 RESULTS:`);
-    console.log(`   Matches checked: ${videosChecked}`);
     console.log(`   New videos saved: ${videosSaved}`);
     console.log(`   API requests used: ${this.client.getRequestsUsed()}/${CONFIG.REQUESTS_PER_RUN}`);
     
     const totalVideos = await this.storage.getVideoCount();
-    console.log(`   Total library: ${totalVideos} videos`);
+    console.log(`   Total Scorebat library: ${totalVideos} videos`);
     console.log('='.repeat(80));
+
+    if (videosSaved > 0) {
+      console.log(`\n✨ Successfully added ${videosSaved} new highlights to your library!`);
+    }
   }
 }
 
@@ -265,7 +255,7 @@ class HighlightlyLatestBot {
 
 async function main() {
   try {
-    const bot = new HighlightlyLatestBot();
+    const bot = new ScorebatBot();
     await bot.run();
     
     console.log('\n✅ BOT RUN COMPLETED SUCCESSFULLY\n');
@@ -279,4 +269,4 @@ async function main() {
 
 main();
 
-module.exports = { HighlightlyLatestBot };
+module.exports = { ScorebatBot };
