@@ -1,6 +1,6 @@
 /**
- * 🎬 PITCHSIDE SCOREBAT BOT - FINAL (NEW API!)
- * Using new endpoint: https://www.scorebat.com/video-api/
+ * 🎬 SCOREBAT BOT - WORKING VERSION
+ * Correctly parses nested Scorebat response
  */
 
 const admin = require('firebase-admin');
@@ -15,7 +15,7 @@ admin.initializeApp({
 const db = admin.firestore();
 
 const CONFIG = {
-  BASE_URL: 'https://www.scorebat.com/video-api/', // NEW ENDPOINT!
+  BASE_URL: 'https://www.scorebat.com/video-api/',
   REQUESTS_PER_RUN: 10,
 };
 
@@ -27,22 +27,34 @@ class ScorebatClient {
 
   async getLatestHighlights() {
     try {
-      console.log(`📡 Fetching from NEW API: ${this.baseURL}`);
+      console.log(`📡 Fetching from: ${this.baseURL}`);
       
       const response = await axios.get(this.baseURL, {
         timeout: 15000,
       });
 
       this.requestCount++;
-      console.log(`✅ Request successful - received data`);
+      console.log(`✅ Request successful`);
+
+      // Parse the response - Scorebat returns matches with nested videos
+      const data = response.data;
+      let allVideos = [];
 
       // Handle different response formats
-      let data = response.data;
-      if (data.response) {
-        data = data.response;
+      if (Array.isArray(data)) {
+        // If it's already an array
+        allVideos = data;
+      } else if (typeof data === 'object') {
+        // If it's an object with matches as keys
+        Object.values(data).forEach(match => {
+          if (match && match.videos && Array.isArray(match.videos)) {
+            allVideos = allVideos.concat(match.videos);
+          }
+        });
       }
-      
-      return Array.isArray(data) ? data : [];
+
+      console.log(`   → Extracted ${allVideos.length} videos from response`);
+      return allVideos;
     } catch (error) {
       console.error(`❌ API Error:`, error.message);
       return [];
@@ -117,7 +129,6 @@ class FirebaseStorage {
 
         await highlightsRef.add(docData);
         saved++;
-        console.log(`✅ Saved: ${video.title}`);
       } catch (error) {
         console.error(`Failed:`, error.message);
       }
@@ -148,7 +159,7 @@ class ScorebatBot {
 
   async run() {
     console.log('\n' + '='.repeat(80));
-    console.log('🤖 SCOREBAT BOT - NEW API (10 req/run)');
+    console.log('🤖 SCOREBAT BOT - WORKING VERSION');
     console.log('='.repeat(80) + '\n');
 
     try {
@@ -160,14 +171,13 @@ class ScorebatBot {
         const highlightsData = await this.client.getLatestHighlights();
 
         if (!highlightsData || highlightsData.length === 0) {
-          console.log('ℹ️  No highlights in this request');
+          console.log('ℹ️  No highlights found');
           continue;
         }
 
-        console.log(`🎬 Found ${highlightsData.length} highlights`);
-
         const saved = await this.storage.saveHighlights(highlightsData);
         totalSaved += saved;
+        console.log(`   → Saved ${saved} new videos`);
 
         if (i < CONFIG.REQUESTS_PER_RUN - 1) {
           await new Promise(resolve => setTimeout(resolve, 500));
