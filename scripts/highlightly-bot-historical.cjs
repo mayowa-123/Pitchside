@@ -1,6 +1,6 @@
 /**
- * 🎬 PITCHSIDE SCOREBAT BOT - Optimized (10 req/run)
- * 9 runs × 10 requests = 90 req/day (safe!)
+ * 🎬 PITCHSIDE SCOREBAT BOT - FINAL (NEW API!)
+ * Using new endpoint: https://www.scorebat.com/video-api/
  */
 
 const admin = require('firebase-admin');
@@ -15,13 +15,9 @@ admin.initializeApp({
 const db = admin.firestore();
 
 const CONFIG = {
-  BASE_URL: 'https://www.scorebat.com/video-api/v3/',
-  REQUESTS_PER_RUN: 10, // 9 runs × 10 = 90/day
+  BASE_URL: 'https://www.scorebat.com/video-api/', // NEW ENDPOINT!
+  REQUESTS_PER_RUN: 10,
 };
-
-// ════════════════════════════════════════════════════════════════════════════
-// 🔗 SCOREBAT API CLIENT
-// ════════════════════════════════════════════════════════════════════════════
 
 class ScorebatClient {
   constructor() {
@@ -31,19 +27,25 @@ class ScorebatClient {
 
   async getLatestHighlights() {
     try {
-      console.log(`📡 Fetching from: ${this.baseURL}`);
+      console.log(`📡 Fetching from NEW API: ${this.baseURL}`);
       
       const response = await axios.get(this.baseURL, {
         timeout: 15000,
       });
 
       this.requestCount++;
-      console.log(`✅ Request ${this.requestCount}/${CONFIG.REQUESTS_PER_RUN} successful`);
+      console.log(`✅ Request successful - received data`);
 
-      return response.data;
+      // Handle different response formats
+      let data = response.data;
+      if (data.response) {
+        data = data.response;
+      }
+      
+      return Array.isArray(data) ? data : [];
     } catch (error) {
       console.error(`❌ API Error:`, error.message);
-      return null;
+      return [];
     }
   }
 
@@ -51,10 +53,6 @@ class ScorebatClient {
     return this.requestCount;
   }
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// 💾 FIREBASE STORAGE
-// ════════════════════════════════════════════════════════════════════════════
 
 class FirebaseStorage {
   async saveHighlights(highlights) {
@@ -68,17 +66,15 @@ class FirebaseStorage {
         const videoId = video.id;
         if (!videoId) continue;
 
-        // Check if already exists
+        // Check if exists
         const existing = await highlightsRef
           .where('videoId', '==', String(videoId))
           .limit(1)
           .get();
 
-        if (!existing.empty) {
-          continue; // Skip, already saved
-        }
+        if (!existing.empty) continue;
 
-        // Parse teams from title
+        // Parse teams
         let homeTeam = '';
         let awayTeam = '';
         let competition = 'Football';
@@ -98,7 +94,7 @@ class FirebaseStorage {
           }
         }
 
-        // Save new video
+        // Save
         const docData = {
           videoId: String(videoId),
           title: video.title || 'Match Highlight',
@@ -123,7 +119,7 @@ class FirebaseStorage {
         saved++;
         console.log(`✅ Saved: ${video.title}`);
       } catch (error) {
-        console.error(`Failed to save:`, error.message);
+        console.error(`Failed:`, error.message);
       }
     }
 
@@ -139,15 +135,10 @@ class FirebaseStorage {
       
       return snap.data().count;
     } catch (error) {
-      console.error('Count error:', error.message);
       return 0;
     }
   }
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// 🤖 MAIN BOT
-// ════════════════════════════════════════════════════════════════════════════
 
 class ScorebatBot {
   constructor() {
@@ -157,19 +148,18 @@ class ScorebatBot {
 
   async run() {
     console.log('\n' + '='.repeat(80));
-    console.log('🤖 SCOREBAT BOT - Optimized (10 req/run)');
+    console.log('🤖 SCOREBAT BOT - NEW API (10 req/run)');
     console.log('='.repeat(80) + '\n');
 
     try {
       let totalSaved = 0;
 
-      // Make 10 requests per run
       for (let i = 0; i < CONFIG.REQUESTS_PER_RUN; i++) {
         console.log(`\n📥 Request ${i + 1}/${CONFIG.REQUESTS_PER_RUN}...`);
 
         const highlightsData = await this.client.getLatestHighlights();
 
-        if (!highlightsData || !Array.isArray(highlightsData) || highlightsData.length === 0) {
+        if (!highlightsData || highlightsData.length === 0) {
           console.log('ℹ️  No highlights in this request');
           continue;
         }
@@ -179,7 +169,6 @@ class ScorebatBot {
         const saved = await this.storage.saveHighlights(highlightsData);
         totalSaved += saved;
 
-        // Small delay between requests
         if (i < CONFIG.REQUESTS_PER_RUN - 1) {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
@@ -198,10 +187,6 @@ class ScorebatBot {
     }
   }
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// 🚀 RUN
-// ════════════════════════════════════════════════════════════════════════════
 
 async function main() {
   try {
