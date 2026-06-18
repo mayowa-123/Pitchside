@@ -2188,6 +2188,9 @@ function fallbackToScoreAxis(matchId, body) {
 }
 
 function buildRealMatchDetailCard(d) {
+  // Store globally for tab access
+  window._currentMatchData = d;
+  
   const statusShort = d.fixture.status.short;
   const isLive = ['1H','2H','ET','HT','P','INT','LIVE'].includes(statusShort);
   const isFT = ['FT','AET','PEN'].includes(statusShort);
@@ -2216,11 +2219,13 @@ function buildRealMatchDetailCard(d) {
       </div>
     </div>
 
-    <div class="match-tabs">
-      <div class="m-tab active" onclick="switchMatchTab(this, 'tab-overview')">Overview</div>
-      <div class="m-tab" onclick="switchMatchTab(this, 'tab-timeline')">Timeline</div>
-      <div class="m-tab" onclick="switchMatchTab(this, 'tab-lineups')">Lineups</div>
-      <div class="m-tab" onclick="switchMatchTab(this, 'tab-stats')" data-league="${d.league.id}" data-season="${d.league.season}">Stats</div>
+    <div class="match-tabs" style="overflow-x:auto;display:flex;gap:8px;padding:8px 0;">
+      <div class="m-tab active" onclick="switchMatchTab(this, 'tab-overview')" style="white-space:nowrap;">Overview</div>
+      <div class="m-tab" onclick="switchMatchTab(this, 'tab-timeline')" style="white-space:nowrap;">Timeline</div>
+      <div class="m-tab" onclick="switchMatchTab(this, 'tab-lineups')" style="white-space:nowrap;">Lineups</div>
+      <div class="m-tab" onclick="switchMatchTab(this, 'tab-stats')" data-league="${d.league.id}" data-season="${d.league.season}" style="white-space:nowrap;">Stats</div>
+      <div class="m-tab" onclick="switchMatchTab(this, 'tab-bookmakers')" style="white-space:nowrap;">💰 Odds</div>
+      <div class="m-tab" onclick="switchMatchTab(this, 'tab-h2h')" style="white-space:nowrap;">📊 H2H</div>
     </div>
 
     <div id="tab-overview" class="m-tab-content active">
@@ -2253,6 +2258,24 @@ function buildRealMatchDetailCard(d) {
         <button class="btn-cancel" onclick="loadLiveTable(${d.league.id}, ${d.league.season})" style="width:100%;">Load Standings</button>
       </div>
     </div>
+
+    <div id="tab-bookmakers" class="m-tab-content">
+      <div style="padding:16px;">
+        <div style="color:var(--text2);font-size:13px;margin-bottom:12px;">📊 Live Odds from Major Bookmakers</div>
+        <div id="bookmakers-list" style="display:grid;gap:12px;">
+          ${d.bookmakers && d.bookmakers.length > 0 ? renderBookmakers(d.bookmakers) : '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">No odds available</div>'}
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-h2h" class="m-tab-content">
+      <div style="padding:16px;">
+        <div style="color:var(--text2);font-size:13px;margin-bottom:12px;">📈 Historical Head-to-Head</div>
+        <div id="h2h-list" style="display:grid;gap:8px;">
+          ${d.h2h && d.h2h.length > 0 ? renderH2H(d.h2h, d.teams.home.name, d.teams.away.name) : '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">No history available</div>'}
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -2262,6 +2285,94 @@ function switchMatchTab(btn, tabId) {
   document.querySelectorAll('.m-tab-content').forEach(c => c.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById(tabId).classList.add('active');
+}
+
+/* Render Bookmakers/Odds */
+function renderBookmakers(bookmakers) {
+  if (!bookmakers || bookmakers.length === 0) {
+    return '<div style="color:var(--text3);text-align:center;padding:20px;">No odds available</div>';
+  }
+
+  return bookmakers.slice(0, 5).map(book => `
+    <div style="background:var(--bg2);padding:12px;border-radius:8px;border-left:3px solid var(--green);">
+      <div style="font-weight:600;color:var(--text);font-size:13px;margin-bottom:8px;">
+        ${book.name || 'Bookmaker'}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px;">
+        <div style="text-align:center;padding:8px;background:var(--bg3);border-radius:6px;">
+          <div style="color:var(--text2);font-size:11px;">Home</div>
+          <div style="color:var(--green);font-weight:600;font-size:14px;">
+            ${book.odds?.home_win?.toFixed(2) || '-'}
+          </div>
+        </div>
+        <div style="text-align:center;padding:8px;background:var(--bg3);border-radius:6px;">
+          <div style="color:var(--text2);font-size:11px;">Draw</div>
+          <div style="color:var(--yellow);font-weight:600;font-size:14px;">
+            ${book.odds?.draw?.toFixed(2) || '-'}
+          </div>
+        </div>
+        <div style="text-align:center;padding:8px;background:var(--bg3);border-radius:6px;">
+          <div style="color:var(--text2);font-size:11px;">Away</div>
+          <div style="color:var(--red);font-weight:600;font-size:14px;">
+            ${book.odds?.away_win?.toFixed(2) || '-'}
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+/* Render Head-to-Head */
+function renderH2H(h2hMatches, homeTeamName, awayTeamName) {
+  if (!h2hMatches || h2hMatches.length === 0) {
+    return '<div style="color:var(--text3);text-align:center;padding:20px;">No history available</div>';
+  }
+
+  const stats = { homeWins: 0, awayWins: 0, draws: 0 };
+
+  const matches = h2hMatches.slice(0, 10).map(match => {
+    const homeGoals = match.goals?.home || 0;
+    const awayGoals = match.goals?.away || 0;
+    
+    if (homeGoals > awayGoals) stats.homeWins++;
+    else if (awayGoals > homeGoals) stats.awayWins++;
+    else stats.draws++;
+
+    const resultClass = homeGoals > awayGoals ? 'var(--green)' : (awayGoals > homeGoals ? 'var(--red)' : 'var(--yellow)');
+    
+    return `
+      <div style="background:var(--bg2);padding:10px;border-radius:8px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:center;">
+        <div style="text-align:right;font-size:12px;color:var(--text);">
+          ${match.teams?.home?.name?.substring(0, 12) || 'Home'}
+        </div>
+        <div style="text-align:center;font-weight:600;color:${resultClass};font-size:14px;">
+          ${homeGoals} - ${awayGoals}
+        </div>
+        <div style="text-align:left;font-size:12px;color:var(--text);">
+          ${match.teams?.away?.name?.substring(0, 12) || 'Away'}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const statsCard = `
+    <div style="background:linear-gradient(135deg,#10b981,#059669);padding:12px;border-radius:8px;margin-bottom:12px;color:white;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center;">
+      <div>
+        <div style="font-size:11px;opacity:0.9;">Home Wins</div>
+        <div style="font-size:16px;font-weight:700;">${stats.homeWins}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;opacity:0.9;">Draws</div>
+        <div style="font-size:16px;font-weight:700;">${stats.draws}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;opacity:0.9;">Away Wins</div>
+        <div style="font-size:16px;font-weight:700;">${stats.awayWins}</div>
+      </div>
+    </div>
+  `;
+
+  return statsCard + matches;
 }
 
 /* Timeline Generator */
