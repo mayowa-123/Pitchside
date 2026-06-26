@@ -1,7 +1,7 @@
 /**
- * 🎯 PITCHSIDE FOOTBALL API - HIGHLIGHTLY INTEGRATION
+ * 🎯 PITCHSIDE FOOTBALL API - HIGHLIGHTLY INTEGRATION (FIXED)
  * Replaces: /api/football
- * Returns: Live scores + Match details (lineups, stats, bookmakers, etc.)
+ * Returns: Live scores + Match details (lineups, stats, bookmakers, odds, etc.)
  */
 
 export default async function handler(req, res) {
@@ -11,10 +11,12 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const HIGHLIGHTLY_API_KEY = process.env.HIGHLIGHTLY_API_KEY_DIRECT;
-  const BASE_URL = 'https://soccer.highlightly.net';
+  // Correct Highlightly API base URL
+  const BASE_URL = 'https://api.highlightly.net/v1';
 
   if (!HIGHLIGHTLY_API_KEY) {
-    return res.status(500).json({ error: 'Highlightly API key not configured' });
+    console.error('❌ Highlightly API key not found in env vars');
+    return res.status(500).json({ error: 'Highlightly API key not configured', errors: {} });
   }
 
   try {
@@ -25,18 +27,28 @@ export default async function handler(req, res) {
     // ════════════════════════════════════════════════════════════════════════════
     if (endpoint === 'fixtures') {
       const fetchDate = date || new Date().toISOString().split('T')[0];
+      console.log(`[Highlightly] Fetching fixtures for date: ${fetchDate}`);
 
       try {
-        // Fetch matches for the given date
+        // Correct Highlightly endpoint with proper auth
         const response = await fetch(
-          `${BASE_URL}/matches?date=${fetchDate}&timezone=Etc/UTC&limit=100`,
+          `${BASE_URL}/fixtures?date=${fetchDate}`,
           {
-            headers: { 'X-RapidAPI-Key': HIGHLIGHTLY_API_KEY },
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${HIGHLIGHTLY_API_KEY}`,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
             timeout: 15000,
           }
         );
 
         if (!response.ok) {
+          console.error(`❌ Highlightly API error: ${response.status} ${response.statusText}`);
+          const errorText = await response.text();
+          console.error('Error response:', errorText);
+          
           return res.status(response.status).json({
             errors: { api: `Highlightly API returned ${response.status}` },
             response: [],
@@ -44,15 +56,17 @@ export default async function handler(req, res) {
         }
 
         const data = await response.json();
+        console.log(`✅ Highlightly returned ${data.data?.length || 0} fixtures`);
 
         if (!data.data || !Array.isArray(data.data)) {
+          console.warn('No fixtures in response');
           return res.status(200).json({ response: [] });
         }
 
-        // Transform Highlightly matches to API-Football format
+        // Transform Highlightly matches to API-Football format (what app.js expects)
         const transformed = data.data.map((match) => ({
           fixture: {
-            id: match.id,
+            id: String(match.id),
             date: match.starting_at,
             timestamp: new Date(match.starting_at).getTime() / 1000,
             timezone: 'UTC',
@@ -72,7 +86,7 @@ export default async function handler(req, res) {
           league: {
             id: match.league?.id || 0,
             name: match.league?.name || 'Unknown League',
-            country: match.league?.country?.code || '',
+            country: match.league?.country?.code || 'XX',
             logo: match.league?.image_path || '',
             flag: '',
             season: match.season?.year || new Date().getFullYear(),
@@ -109,13 +123,13 @@ export default async function handler(req, res) {
           statistics: [],
           lineups: [],
           events: [],
-          // Store original match ID for fetching details
-          _matchId: match.id,
+          odds: match.odds || [],
+          _matchId: String(match.id),
         }));
 
         return res.status(200).json({ response: transformed });
       } catch (error) {
-        console.error('Highlightly fixtures error:', error);
+        console.error('❌ Highlightly fixtures fetch error:', error.message);
         return res.status(500).json({
           errors: { api: error.message },
           response: [],
@@ -127,13 +141,19 @@ export default async function handler(req, res) {
     // 📊 ENDPOINT: MATCH DETAILS (By ID)
     // ════════════════════════════════════════════════════════════════════════════
     if (endpoint === 'fixtures' && id) {
+      console.log(`[Highlightly] Fetching match details for ID: ${id}`);
+      
       try {
-        // Fetch single match details from Highlightly
-        const matchResponse = await fetch(`${BASE_URL}/matches/${id}`, {
-          headers: { 'X-RapidAPI-Key': HIGHLIGHTLY_API_KEY },
+        // Fetch single match details
+        const matchResponse = await fetch(`${BASE_URL}/fixtures/${id}`, {
+          headers: {
+            'Authorization': `Bearer ${HIGHLIGHTLY_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
         });
 
         if (!matchResponse.ok) {
+          console.error(`❌ Match details error: ${matchResponse.status}`);
           return res.status(matchResponse.status).json({ response: [] });
         }
 
@@ -141,88 +161,118 @@ export default async function handler(req, res) {
         const match = matchData.data;
 
         if (!match) {
+          console.error(`❌ Match not found: ${id}`);
           return res.status(404).json({ response: [] });
         }
 
-        // Fetch LINEUPS for this match
+        // Fetch LINEUPS
         let lineups = [];
         try {
           const lineupsResponse = await fetch(
-            `${BASE_URL}/matches/${id}/lineups`,
-            { headers: { 'X-RapidAPI-Key': HIGHLIGHTLY_API_KEY } }
+            `${BASE_URL}/fixtures/${id}/lineups`,
+            {
+              headers: {
+                'Authorization': `Bearer ${HIGHLIGHTLY_API_KEY}`,
+                'Content-Type': 'application/json',
+              }
+            }
           );
           if (lineupsResponse.ok) {
             const lineupsData = await lineupsResponse.json();
             lineups = transformLineups(lineupsData.data) || [];
           }
         } catch (e) {
-          console.warn('Lineups fetch error:', e.message);
+          console.warn('⚠️ Lineups fetch error:', e.message);
         }
 
-        // Fetch EVENTS (goals, cards, subs)
+        // Fetch EVENTS (goals, cards, etc.)
         let events = [];
         try {
           const eventsResponse = await fetch(
-            `${BASE_URL}/matches/${id}/events`,
-            { headers: { 'X-RapidAPI-Key': HIGHLIGHTLY_API_KEY } }
+            `${BASE_URL}/fixtures/${id}/events`,
+            {
+              headers: {
+                'Authorization': `Bearer ${HIGHLIGHTLY_API_KEY}`,
+                'Content-Type': 'application/json',
+              }
+            }
           );
           if (eventsResponse.ok) {
             const eventsData = await eventsResponse.json();
             events = transformEvents(eventsData.data) || [];
           }
         } catch (e) {
-          console.warn('Events fetch error:', e.message);
+          console.warn('⚠️ Events fetch error:', e.message);
         }
 
         // Fetch STATISTICS
         let statistics = [];
         try {
           const statsResponse = await fetch(
-            `${BASE_URL}/matches/${id}/statistics`,
-            { headers: { 'X-RapidAPI-Key': HIGHLIGHTLY_API_KEY } }
+            `${BASE_URL}/fixtures/${id}/statistics`,
+            {
+              headers: {
+                'Authorization': `Bearer ${HIGHLIGHTLY_API_KEY}`,
+                'Content-Type': 'application/json',
+              }
+            }
           );
           if (statsResponse.ok) {
             const statsData = await statsResponse.json();
             statistics = transformStatistics(statsData.data) || [];
           }
         } catch (e) {
-          console.warn('Statistics fetch error:', e.message);
+          console.warn('⚠️ Statistics fetch error:', e.message);
         }
 
         // Fetch BOOKMAKERS/ODDS
         let bookmakers = [];
+        let odds = [];
         try {
           const booksResponse = await fetch(
-            `${BASE_URL}/matches/${id}/bookmakers`,
-            { headers: { 'X-RapidAPI-Key': HIGHLIGHTLY_API_KEY } }
+            `${BASE_URL}/fixtures/${id}/bookmakers`,
+            {
+              headers: {
+                'Authorization': `Bearer ${HIGHLIGHTLY_API_KEY}`,
+                'Content-Type': 'application/json',
+              }
+            }
           );
           if (booksResponse.ok) {
             const booksData = await booksResponse.json();
             bookmakers = booksData.data || [];
+            odds = booksData.data || [];
           }
         } catch (e) {
-          console.warn('Bookmakers fetch error:', e.message);
+          console.warn('⚠️ Bookmakers/odds fetch error:', e.message);
         }
 
         // Fetch HEAD-TO-HEAD
         let h2h = [];
         try {
-          const h2hResponse = await fetch(
-            `${BASE_URL}/fixtures/head-to-head?teamIdOne=${match.home_team?.id}&teamIdTwo=${match.away_team?.id}&limit=10`,
-            { headers: { 'X-RapidAPI-Key': HIGHLIGHTLY_API_KEY } }
-          );
-          if (h2hResponse.ok) {
-            const h2hData = await h2hResponse.json();
-            h2h = h2hData.data || [];
+          if (match.home_team?.id && match.away_team?.id) {
+            const h2hResponse = await fetch(
+              `${BASE_URL}/fixtures/head-to-head?teamIdOne=${match.home_team.id}&teamIdTwo=${match.away_team.id}&limit=10`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${HIGHLIGHTLY_API_KEY}`,
+                  'Content-Type': 'application/json',
+                }
+              }
+            );
+            if (h2hResponse.ok) {
+              const h2hData = await h2hResponse.json();
+              h2h = h2hData.data || [];
+            }
           }
         } catch (e) {
-          console.warn('H2H fetch error:', e.message);
+          console.warn('⚠️ H2H fetch error:', e.message);
         }
 
         // Build complete match detail response
         const completeMatch = {
           fixture: {
-            id: match.id,
+            id: String(match.id),
             date: match.starting_at,
             timestamp: new Date(match.starting_at).getTime() / 1000,
             status: {
@@ -240,7 +290,7 @@ export default async function handler(req, res) {
           league: {
             id: match.league?.id || 0,
             name: match.league?.name || 'Unknown',
-            country: match.league?.country?.code || '',
+            country: match.league?.country?.code || 'XX',
             season: match.season?.year || new Date().getFullYear(),
           },
           teams: {
@@ -272,13 +322,14 @@ export default async function handler(req, res) {
           statistics,
           lineups,
           events,
-          bookmakers, // NEW: Odds and betting
-          h2h, // NEW: Head-to-head history
+          bookmakers,
+          odds,
+          h2h,
         };
 
         return res.status(200).json({ response: [completeMatch] });
       } catch (error) {
-        console.error('Match details error:', error);
+        console.error('❌ Match details error:', error.message);
         return res.status(500).json({
           errors: { api: error.message },
           response: [],
@@ -286,10 +337,10 @@ export default async function handler(req, res) {
       }
     }
 
-    res.status(400).json({ error: 'Invalid endpoint' });
+    res.status(400).json({ error: 'Invalid endpoint', errors: {} });
   } catch (error) {
-    console.error('Handler error:', error);
-    res.status(500).json({ error: error.message });
+    console.error('❌ Handler error:', error);
+    res.status(500).json({ error: error.message, errors: {} });
   }
 }
 
@@ -302,17 +353,18 @@ function getStatusShort(statusDescription) {
   const desc = statusDescription.toLowerCase();
   if (desc.includes('finished') || desc.includes('ended')) return 'FT';
   if (desc.includes('halftime')) return 'HT';
-  if (desc.includes('live') || desc.includes('playing') || desc.includes('progress'))
+  if (desc.includes('live') || desc.includes('playing') || desc.includes('progress') || desc.includes('in progress'))
     return 'LIVE';
   if (desc.includes('postponed')) return 'PST';
   if (desc.includes('cancelled')) return 'CANC';
+  if (desc.includes('not started') || desc.includes('upcoming')) return 'NS';
   return 'NS';
 }
 
 function getElapsedMinutes(startTime, status) {
   if (!status) return null;
   const desc = status.toLowerCase();
-  if (!desc.includes('live') && !desc.includes('playing')) return null;
+  if (!desc.includes('live') && !desc.includes('playing') && !desc.includes('progress')) return null;
   const start = new Date(startTime).getTime();
   const now = Date.now();
   return Math.floor((now - start) / 60000);
