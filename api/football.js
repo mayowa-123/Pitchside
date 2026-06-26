@@ -30,8 +30,8 @@ export default async function handler(req, res) {
       console.log(`[Highlightly] Fetching fixtures for: ${fetchDate}`);
 
       try {
-        // CORRECT endpoint and auth header
-        const url = `${BASE_URL}/matches?date=${fetchDate}`;
+        // CORRECT endpoint, auth header, and timezone param (fixes UTC date-window mismatch)
+        const url = `${BASE_URL}/matches?date=${fetchDate}&timezone=Africa/Lagos`;
         console.log(`[Highlightly] URL: ${url}`);
 
         const response = await fetch(url, {
@@ -56,11 +56,16 @@ export default async function handler(req, res) {
           });
         }
 
-        const data = await response.json();
-        console.log(`✅ Got ${data?.length || 0} matches from Highlightly`);
+        const rawResponse = await response.json();
+        // Highlightly wraps results in a "data" envelope: { data: [...], pagination: {...}, plan: {...} }
+        const data = Array.isArray(rawResponse) ? rawResponse : (rawResponse?.data || []);
+        console.log(`✅ Got ${data.length} matches from Highlightly`);
+        if (rawResponse?.plan) {
+          console.log(`[Highlightly] Plan tier: ${rawResponse.plan.tier} - ${rawResponse.plan.message || ''}`);
+        }
 
-        if (!data || !Array.isArray(data)) {
-          console.log('No matches returned');
+        if (!data || data.length === 0) {
+          console.log('No matches returned for this date/timezone');
           return res.status(200).json({ response: [] });
         }
 
