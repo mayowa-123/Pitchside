@@ -9230,3 +9230,162 @@ const originalOpenSBPlayer = window.openSBPlayer;
 window.openSBPlayer = function(title, videoData) {
   openWatchPage(videoData);
 };
+
+
+/* ═══════════════════════════════════════════
+   WATCH PAGE LOGIC (YOUTUBE STYLE)
+   Unified for All Video Types
+═══════════════════════════════════════════ */
+
+function openWatchPage(videoData) {
+  if (!videoData) return;
+  
+  const overlay = document.getElementById('watch-page-overlay');
+  const playerBody = document.getElementById('watch-player-body');
+  const titleEl = document.getElementById('watch-video-title');
+  const channelNameEl = document.getElementById('watch-channel-name');
+  const channelAvatarEl = document.getElementById('watch-channel-avatar');
+  
+  // Update Basic Info
+  titleEl.textContent = (videoData.title || 'Football Highlight').replace(/\u2019/g, "'");
+  const channel = videoData.channel || videoData.channelTitle || videoData.poster || 'PitchSide Official';
+  channelNameEl.textContent = channel;
+  channelAvatarEl.textContent = channel.charAt(0).toUpperCase();
+
+  // Determine Video Source
+  let src = '';
+  let isNative = false;
+
+  if (videoData.videoUrl || videoData.src || videoData.url) {
+    src = videoData.videoUrl || videoData.src || videoData.url;
+    // Check if it's a direct video file (Cloudinary/Firebase)
+    if (src.includes('.mp4') || src.includes('.mov') || src.includes('cloudinary') || src.includes('firebasestorage')) {
+      isNative = true;
+    }
+  } else if (videoData.videoId || videoData.youtubeId) {
+    const cleanId = String(videoData.videoId || videoData.youtubeId).replace('yt_', '');
+    src = `https://www.youtube-nocookie.com/embed/${cleanId}?rel=0&modestbranding=1&showinfo=0&autoplay=1&mute=0&playsinline=1`;
+  } else if (videoData.embedUrl) {
+    src = videoData.embedUrl;
+  } else if (videoData.embedHtml) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = videoData.embedHtml;
+    const fr = tmp.querySelector('iframe');
+    if (fr) src = fr.src;
+  }
+
+  // Inject Player
+  if (isNative) {
+    playerBody.innerHTML = `
+      <video src="${src}" controls autoplay playsinline style="width:100%;height:100%;background:#000;"></video>
+    `;
+  } else if (src) {
+    if (typeof cleanEmbedUrl === 'function') src = cleanEmbedUrl(src);
+    playerBody.innerHTML = `
+      <div style="width:100%;height:100%;position:relative;">
+        <iframe src="${src}" width="100%" height="100%" style="border:none;" allowfullscreen allow="autoplay; fullscreen; picture-in-picture; encrypted-media"></iframe>
+        <div style="position:absolute;bottom:0;left:0;right:0;height:40px;background:#000;pointer-events:none;z-index:5;"></div>
+      </div>`;
+  } else {
+    playerBody.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#fff;">⚠️ Video unavailable</div>`;
+  }
+
+  // Load Related Content
+  renderRelatedVideos(videoData);
+  
+  overlay.classList.add('open');
+}
+
+function closeWatchPage() {
+  const overlay = document.getElementById('watch-page-overlay');
+  const playerBody = document.getElementById('watch-player-body');
+  overlay.classList.remove('open');
+  playerBody.innerHTML = '';
+}
+
+function renderRelatedVideos(currentVideo) {
+  const grid = document.getElementById('watch-related-grid');
+  if (!grid) return;
+
+  let related = [];
+  if (typeof VIDEOS !== 'undefined') {
+    const type = currentVideo.userPost ? 'fan' : (currentVideo.playerPost ? 'player' : 'official');
+    if (type === 'fan') {
+      related = VIDEOS.filter(v => v.userPost && v.id !== currentVideo.id);
+    } else if (type === 'player') {
+      related = VIDEOS.filter(v => v.playerPost && v.id !== currentVideo.id);
+    } else {
+      related = VIDEOS.filter(v => !v.userPost && !v.playerPost && v.id !== currentVideo.id);
+    }
+
+    if (related.length < 5) {
+      const extras = VIDEOS.filter(v => v.id !== currentVideo.id && !related.find(r => r.id === v.id));
+      related = [...related, ...extras];
+    }
+  }
+
+  related = related.slice(0, 12);
+  
+  grid.innerHTML = related.map((v) => {
+    const thumb = v.thumbnail || 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽';
+    const channel = v.channel || v.channelTitle || v.poster || 'PitchSide';
+    return `
+      <div class="related-card" onclick='swapWatchVideo(${JSON.stringify(v).replace(/'/g, "&apos;")})'>
+        <div class="related-thumb">
+          <img src="${thumb}" onerror="this.src='https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽'">
+        </div>
+        <div class="related-info">
+          <div class="related-title">${(v.title || 'Football Moment').replace(/\u2019/g, "'")}</div>
+          <div class="related-meta">${channel} • ${v.views || '12k'} views</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function swapWatchVideo(videoData) {
+  openWatchPage(videoData);
+  document.querySelector('.watch-content-scroll').scrollTop = 0;
+}
+
+function toggleWatchAction(btn, type) {
+  btn.classList.toggle('active');
+  if (type === 'like' && btn.classList.contains('active')) {
+    document.getElementById('watch-like-count').textContent = '1.3k';
+  } else if (type === 'like') {
+    document.getElementById('watch-like-count').textContent = '1.2k';
+  }
+}
+
+function handleWatchAction(action) {
+  const messages = {
+    'save': 'Video saved to your library! ⚽',
+    'download': 'Starting download... 📥',
+    'share': 'Link copied to clipboard! 🔗',
+    'follow': 'You are now following this channel! ✅'
+  };
+  if (typeof showToast === 'function') showToast(messages[action] || 'Action performed!');
+  else alert(messages[action] || 'Action performed!');
+}
+
+// ── OVERRIDE ALL EXISTING PLAYER FUNCTIONS ──
+window.openSBPlayer = function(title, videoData) { openWatchPage(videoData); };
+window.openHlPlayer = function(id, title, videoUrl, embedHtml, thumbnail, ytSearch, videoId) {
+  openWatchPage({ id, title, videoUrl, embedHtml, thumbnail, videoId });
+};
+const originalOpenHlPlayerById = window.openHlPlayerById;
+window.openHlPlayerById = function(id) {
+  let v = window._hlVideoMap && window._hlVideoMap[id];
+  if (!v) v = (typeof VIDEOS !== 'undefined') && VIDEOS.find(x => String(x.id) === String(id));
+  if (v) openWatchPage(v);
+  else if (originalOpenHlPlayerById) originalOpenHlPlayerById(id);
+};
+window.openMyVideoPlayer = function(idx) {
+  const list = window._mvCurrentList || [];
+  const v = list[idx];
+  if (v) {
+    const modal = document.getElementById('my-videos-overlay');
+    if (modal) modal.classList.remove('open');
+    openWatchPage(v);
+  }
+};
