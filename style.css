@@ -2668,3 +2668,192 @@ body {
   fill: white !important;
 }
 
+
+/* ═══════════════════════════════════════
+   WATCH PAGE (YOUTUBE/XVIDEO STYLE)
+   Added for Discovery-First Experience
+═══════════════════════════════════════ */
+.watch-page-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: var(--bg);
+  flex-direction: column;
+}
+.watch-page-overlay.open { display: flex; }
+
+.watch-player-area {
+  width: 100%;
+  aspect-ratio: 16/9;
+  background: #000;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.watch-content-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--bg);
+}
+
+.watch-info-section {
+  margin-bottom: 20px;
+}
+
+.watch-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+
+.watch-action-bar {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 4px;
+  margin-bottom: 16px;
+}
+.watch-action-bar::-webkit-scrollbar { display: none; }
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg3);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+.action-btn:active { background: var(--border); }
+.action-btn.active { background: var(--green); color: #fff; }
+.action-btn svg { width: 18px; height: 18px; }
+
+.watch-channel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.channel-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.channel-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.channel-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.follow-btn {
+  background: var(--text);
+  color: #fff;
+  border: none;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.related-header {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.related-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.related-card {
+  display: flex;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.related-thumb {
+  width: 140px;
+  aspect-ratio: 16/9;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg3);
+  flex-shrink: 0;
+}
+
+.related-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.related-info {
+  flex: 1;
+}
+
+.related-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.related-meta {
+  font-size: 11px;
+  color: var(--text3);
+}
+
+.watch-back-btn {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  z-index: 20;
+}

@@ -9115,3 +9115,118 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 console.log('✅ Unified Firebase Integration Module Loaded');
+
+
+/* ═══════════════════════════════════════════
+   WATCH PAGE LOGIC (YOUTUBE STYLE)
+═══════════════════════════════════════════ */
+
+function openWatchPage(videoData) {
+  const overlay = document.getElementById('watch-page-overlay');
+  const playerBody = document.getElementById('watch-player-body');
+  const titleEl = document.getElementById('watch-video-title');
+  const channelNameEl = document.getElementById('watch-channel-name');
+  const channelAvatarEl = document.getElementById('watch-channel-avatar');
+  
+  titleEl.textContent = videoData.title || 'Football Highlight';
+  channelNameEl.textContent = videoData.channel || 'PitchSide Official';
+  channelAvatarEl.textContent = (videoData.channel || 'P').charAt(0).toUpperCase();
+
+  let src = '';
+  if (videoData.embedUrl) src = videoData.embedUrl;
+  else if (videoData.src) src = videoData.src;
+  else if (videoData.videoId) {
+    const cleanId = String(videoData.videoId).replace('yt_', '');
+    src = `https://www.youtube.com/embed/${cleanId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
+  } else if (videoData.url) src = videoData.url;
+
+  if (typeof cleanEmbedUrl === 'function') src = cleanEmbedUrl(src);
+
+  playerBody.innerHTML = `
+    <div style="width:100%;height:100%;">
+      <iframe src="${src}" width="100%" height="100%" style="border:none;" allowfullscreen allow="autoplay; fullscreen"></iframe>
+    </div>`;
+
+  renderRelatedVideos(videoData);
+  
+  overlay.classList.add('open');
+}
+
+function closeWatchPage() {
+  const overlay = document.getElementById('watch-page-overlay');
+  const playerBody = document.getElementById('watch-player-body');
+  overlay.classList.remove('open');
+  playerBody.innerHTML = '';
+}
+
+function renderRelatedVideos(currentVideo) {
+  const grid = document.getElementById('watch-related-grid');
+  // Get some videos from the global VIDEOS array (excluding the current one)
+  const related = VIDEOS.filter(v => v.title !== currentVideo.title).slice(0, 10);
+  
+  grid.innerHTML = related.map((v, i) => {
+    const thumb = v.thumbnail || 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽';
+    return `
+      <div class="related-card" onclick='swapWatchVideo(${JSON.stringify(v).replace(/'/g, "&apos;")})'>
+        <div class="related-thumb">
+          <img src="${thumb}" onerror="this.src='https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽'">
+        </div>
+        <div class="related-info">
+          <div class="related-title">${v.title}</div>
+          <div class="related-meta">${v.channel || 'PitchSide'} • ${v.views || '12k'} views</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function swapWatchVideo(videoData) {
+  // Smoothly update the player and info without closing the overlay
+  const playerBody = document.getElementById('watch-player-body');
+  const titleEl = document.getElementById('watch-video-title');
+  const channelNameEl = document.getElementById('watch-channel-name');
+  
+  titleEl.textContent = videoData.title;
+  channelNameEl.textContent = videoData.channel || 'PitchSide Official';
+
+  let src = '';
+  if (videoData.embedUrl) src = videoData.embedUrl;
+  else if (videoData.videoId) {
+    const cleanId = String(videoData.videoId).replace('yt_', '');
+    src = `https://www.youtube.com/embed/${cleanId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
+  }
+
+  playerBody.innerHTML = `
+    <div style="width:100%;height:100%;">
+      <iframe src="${src}" width="100%" height="100%" style="border:none;" allowfullscreen allow="autoplay; fullscreen"></iframe>
+    </div>`;
+    
+  // Scroll back to top of info section
+  document.querySelector('.watch-content-scroll').scrollTop = 0;
+  renderRelatedVideos(videoData);
+}
+
+function toggleWatchAction(btn, type) {
+  btn.classList.toggle('active');
+  if (type === 'like' && btn.classList.contains('active')) {
+    document.getElementById('watch-like-count').textContent = '1.3k';
+  } else if (type === 'like') {
+    document.getElementById('watch-like-count').textContent = '1.2k';
+  }
+}
+
+function handleWatchAction(action) {
+  const messages = {
+    'save': 'Video saved to your library! ⚽',
+    'download': 'Starting download... 📥',
+    'share': 'Link copied to clipboard! 🔗',
+    'follow': 'You are now following this channel! ✅'
+  };
+  alert(messages[action] || 'Action performed!');
+}
+
+// Override the existing openSBPlayer to use our new Watch Page
+const originalOpenSBPlayer = window.openSBPlayer;
+window.openSBPlayer = function(title, videoData) {
+  openWatchPage(videoData);
+};
