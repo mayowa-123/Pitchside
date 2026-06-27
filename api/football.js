@@ -70,72 +70,77 @@ export default async function handler(req, res) {
         }
 
         // Transform Highlightly response to API-Football format
+        // REAL Highlightly match fields: id, round, date, country, homeTeam, awayTeam, league, state{description, clock, score{current}}
         const transformed = data.map((match) => {
-          // Parse Highlightly response structure
-          const homeTeam = match.teams?.home || {};
-          const awayTeam = match.teams?.away || {};
-          const status = match.status?.description || 'Not Started';
+          const homeTeam = match.homeTeam || {};
+          const awayTeam = match.awayTeam || {};
+          const status = match.state?.description || 'Not started';
+
+          // score.current comes as a string like "3 - 1" — must be parsed
+          let homeGoals = null;
+          let awayGoals = null;
+          const scoreStr = match.state?.score?.current;
+          if (scoreStr && typeof scoreStr === 'string') {
+            const parts = scoreStr.split('-').map((p) => p.trim());
+            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+              homeGoals = parseInt(parts[0], 10);
+              awayGoals = parseInt(parts[1], 10);
+            }
+          }
 
           return {
             fixture: {
-              id: String(match.id || match.fixture_id),
-              date: match.starting_at || match.date,
-              timestamp: new Date(match.starting_at || match.date).getTime() / 1000,
+              id: String(match.id),
+              date: match.date,
+              timestamp: new Date(match.date).getTime() / 1000,
               timezone: 'UTC',
               status: {
                 long: status,
                 short: getStatusShort(status),
-                elapsed: getElapsedMinutes(match.starting_at || match.date, status),
+                elapsed: match.state?.clock ?? null,
               },
               venue: {
-                id: match.venue?.id || null,
-                name: match.venue?.name || 'TBD',
-                city: match.venue?.city || '',
+                name: 'TBD',
+                city: '',
               },
               referee: null,
             },
             league: {
               id: match.league?.id || 0,
               name: match.league?.name || 'Unknown',
-              country: match.league?.country?.code || 'XX',
+              country: match.country?.name || match.country?.code || 'XX',
               logo: match.league?.logo || '',
-              flag: '',
-              season: match.season?.year || new Date().getFullYear(),
+              flag: match.country?.logo || '',
+              season: match.league?.season || new Date().getFullYear(),
               round: match.round || null,
             },
             teams: {
               home: {
                 id: homeTeam.id || 0,
                 name: homeTeam.name || 'Home',
-                logo: homeTeam.logo_path || homeTeam.image_path || '⚽',
+                logo: homeTeam.logo || '⚽',
               },
               away: {
                 id: awayTeam.id || 0,
                 name: awayTeam.name || 'Away',
-                logo: awayTeam.logo_path || awayTeam.image_path || '⚽',
+                logo: awayTeam.logo || '⚽',
               },
             },
             goals: {
-              home: match.result?.home ?? match.goals?.home ?? null,
-              away: match.result?.away ?? match.goals?.away ?? null,
+              home: homeGoals,
+              away: awayGoals,
             },
             score: {
-              halftime: {
-                home: match.result_period?.first_half?.home ?? null,
-                away: match.result_period?.first_half?.away ?? null,
-              },
-              fulltime: {
-                home: match.result?.home ?? null,
-                away: match.result?.away ?? null,
-              },
+              halftime: { home: null, away: null },
+              fulltime: { home: homeGoals, away: awayGoals },
               extratime: { home: null, away: null },
               penalty: { home: null, away: null },
             },
             statistics: [],
             lineups: [],
             events: [],
-            bookmakers: match.bookmakers || [],
-            odds: match.odds || [],
+            bookmakers: [],
+            odds: [],
           };
         });
 
@@ -169,71 +174,81 @@ export default async function handler(req, res) {
           return res.status(matchResponse.status).json({ response: [] });
         }
 
-        const matchData = await matchResponse.json();
+        const rawMatchData = await matchResponse.json();
+        // /matches/{id} returns an array: [{...}]
+        const matchData = Array.isArray(rawMatchData) ? rawMatchData[0] : rawMatchData;
 
         if (!matchData) {
           console.error(`❌ Match not found: ${id}`);
           return res.status(404).json({ response: [] });
         }
 
-        const homeTeam = matchData.teams?.home || {};
-        const awayTeam = matchData.teams?.away || {};
-        const status = matchData.status?.description || 'Not Started';
+        const homeTeam = matchData.homeTeam || {};
+        const awayTeam = matchData.awayTeam || {};
+        const status = matchData.state?.description || 'Not started';
+
+        let homeGoals = null;
+        let awayGoals = null;
+        const scoreStr = matchData.state?.score?.current;
+        if (scoreStr && typeof scoreStr === 'string') {
+          const parts = scoreStr.split('-').map((p) => p.trim());
+          if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+            homeGoals = parseInt(parts[0], 10);
+            awayGoals = parseInt(parts[1], 10);
+          }
+        }
 
         const completeMatch = {
           fixture: {
             id: String(matchData.id),
-            date: matchData.starting_at,
-            timestamp: new Date(matchData.starting_at).getTime() / 1000,
+            date: matchData.date,
+            timestamp: new Date(matchData.date).getTime() / 1000,
             status: {
               long: status,
               short: getStatusShort(status),
-              elapsed: getElapsedMinutes(matchData.starting_at, status),
+              elapsed: matchData.state?.clock ?? null,
             },
             venue: {
-              id: matchData.venue?.id || null,
               name: matchData.venue?.name || 'TBD',
               city: matchData.venue?.city || '',
             },
+            referee: matchData.referee?.name || null,
           },
           league: {
             id: matchData.league?.id || 0,
             name: matchData.league?.name || 'Unknown',
-            country: matchData.league?.country?.code || 'XX',
-            season: matchData.season?.year || new Date().getFullYear(),
+            country: matchData.country?.name || matchData.country?.code || 'XX',
+            season: matchData.league?.season || new Date().getFullYear(),
           },
           teams: {
             home: {
               id: homeTeam.id || 0,
               name: homeTeam.name || 'Home',
-              logo: homeTeam.logo_path || homeTeam.image_path || '⚽',
+              logo: homeTeam.logo || '⚽',
             },
             away: {
               id: awayTeam.id || 0,
               name: awayTeam.name || 'Away',
-              logo: awayTeam.logo_path || awayTeam.image_path || '⚽',
+              logo: awayTeam.logo || '⚽',
             },
           },
           goals: {
-            home: matchData.result?.home ?? matchData.goals?.home ?? null,
-            away: matchData.result?.away ?? matchData.goals?.away ?? null,
+            home: homeGoals,
+            away: awayGoals,
           },
           score: {
-            halftime: {
-              home: matchData.result_period?.first_half?.home ?? null,
-              away: matchData.result_period?.first_half?.away ?? null,
-            },
-            fulltime: {
-              home: matchData.result?.home ?? null,
-              away: matchData.result?.away ?? null,
-            },
+            halftime: { home: null, away: null },
+            fulltime: { home: homeGoals, away: awayGoals },
           },
           statistics: matchData.statistics || [],
-          lineups: matchData.lineups || [],
+          lineups: [],
           events: matchData.events || [],
-          bookmakers: matchData.bookmakers || [],
-          odds: matchData.odds || [],
-          h2h: matchData.head_to_head || [],
+          bookmakers: [],
+          odds: [],
+          h2h: [],
+          predictions: matchData.predictions || null,
+          news: matchData.news || [],
+          forecast: matchData.forecast || null,
         };
 
         return res.status(200).json({ response: [completeMatch] });
