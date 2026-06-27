@@ -6346,10 +6346,24 @@ service cloud.firestore {
 const _origOpenMatchDetail = window.openMatchDetail;
 window.openMatchDetail = function(matchId, title) {
   _origOpenMatchDetail && _origOpenMatchDetail(matchId, title);
-  // Add War Room button to overlay after it opens
-  setTimeout(() => {
+  // Add War Room button to overlay only AFTER the real match card has
+  // finished rendering (i.e. the loading spinner is gone). Polling avoids
+  // the previous race where a fixed setTimeout fired before the fetch
+  // completed, and the button got wiped out when body.innerHTML was
+  // later replaced with the real match data.
+  let attempts = 0;
+  const maxAttempts = 40; // ~10s max wait (40 * 250ms)
+  const tryAddBtn = () => {
+    attempts++;
     const body = document.getElementById('match-ov-body');
     if (!body) return;
+
+    const stillLoading = body.querySelector('.ov-loading');
+    if (stillLoading) {
+      if (attempts < maxAttempts) setTimeout(tryAddBtn, 250);
+      return;
+    }
+
     if (body.querySelector('.wr-launch-btn')) return;
     const btn = document.createElement('div');
     btn.className = 'wr-launch-btn';
@@ -6363,7 +6377,8 @@ window.openMatchDetail = function(matchId, title) {
       Join War Room — Live Chat
     </button>`;
     body.appendChild(btn);
-  }, 500);
+  };
+  setTimeout(tryAddBtn, 250);
 };
 
 /* ═══════════════════════════════════════════
