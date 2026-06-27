@@ -23,7 +23,114 @@ export default async function handler(req, res) {
     const { endpoint, date, id } = req.query;
 
     // ════════════════════════════════════════════════════════════════════════════
-    // 📋 ENDPOINT: FIXTURES/MATCHES (Live scores)
+    // 📊 MATCH DETAILS BY ID — must be checked BEFORE the generic list block,
+    // otherwise endpoint==='fixtures' always matches first and id is ignored.
+    // ════════════════════════════════════════════════════════════════════════════
+    if (endpoint === 'fixtures' && id) {
+      console.log(`[Highlightly] Fetching match ${id}`);
+
+      try {
+        const matchResponse = await fetch(`${BASE_URL}/matches/${id}`, {
+          headers: {
+            'x-rapidapi-key': HIGHLIGHTLY_API_KEY,
+            'x-rapidapi-host': 'soccer.highlightly.net',
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!matchResponse.ok) {
+          console.error(`❌ Match details error: ${matchResponse.status}`);
+          return res.status(matchResponse.status).json({ response: [] });
+        }
+
+        const rawMatchData = await matchResponse.json();
+        const matchData = Array.isArray(rawMatchData) ? rawMatchData[0] : rawMatchData;
+
+        if (!matchData) {
+          console.error(`❌ Match not found: ${id}`);
+          return res.status(404).json({ response: [] });
+        }
+
+        const homeTeam = matchData.homeTeam || {};
+        const awayTeam = matchData.awayTeam || {};
+        const status = matchData.state?.description || 'Not started';
+
+        let homeGoals = null;
+        let awayGoals = null;
+        const scoreStr = matchData.state?.score?.current;
+        if (scoreStr && typeof scoreStr === 'string') {
+          const parts = scoreStr.split('-').map((p) => p.trim());
+          if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+            homeGoals = parseInt(parts[0], 10);
+            awayGoals = parseInt(parts[1], 10);
+          }
+        }
+
+        const completeMatch = {
+          fixture: {
+            id: String(matchData.id),
+            date: matchData.date,
+            timestamp: new Date(matchData.date).getTime() / 1000,
+            status: {
+              long: status,
+              short: getStatusShort(status),
+              elapsed: matchData.state?.clock ?? null,
+            },
+            venue: {
+              name: matchData.venue?.name || 'TBD',
+              city: matchData.venue?.city || '',
+            },
+            referee: matchData.referee?.name || null,
+          },
+          league: {
+            id: matchData.league?.id || 0,
+            name: matchData.league?.name || 'Unknown',
+            country: matchData.country?.name || matchData.country?.code || 'XX',
+            season: matchData.league?.season || new Date().getFullYear(),
+          },
+          teams: {
+            home: {
+              id: homeTeam.id || 0,
+              name: homeTeam.name || 'Home',
+              logo: homeTeam.logo || '⚽',
+            },
+            away: {
+              id: awayTeam.id || 0,
+              name: awayTeam.name || 'Away',
+              logo: awayTeam.logo || '⚽',
+            },
+          },
+          goals: {
+            home: homeGoals,
+            away: awayGoals,
+          },
+          score: {
+            halftime: { home: null, away: null },
+            fulltime: { home: homeGoals, away: awayGoals },
+          },
+          statistics: matchData.statistics || [],
+          lineups: [],
+          events: matchData.events || [],
+          bookmakers: [],
+          odds: [],
+          h2h: [],
+          predictions: matchData.predictions || null,
+          news: matchData.news || [],
+          forecast: matchData.forecast || null,
+        };
+
+        return res.status(200).json({ response: [completeMatch] });
+      } catch (error) {
+        console.error('❌ Match details error:', error.message);
+        return res.status(500).json({
+          errors: { api: error.message },
+          response: [],
+        });
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // 📋 ENDPOINT: FIXTURES/MATCHES (Live scores list — only when no id given)
     // ════════════════════════════════════════════════════════════════════════════
     if (endpoint === 'fixtures') {
       const fetchDate = date || new Date().toISOString().split('T')[0];
@@ -154,112 +261,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // ════════════════════════════════════════════════════════════════════════════
-    // 📊 MATCH DETAILS BY ID
-    // ════════════════════════════════════════════════════════════════════════════
-    if (endpoint === 'fixtures' && id) {
-      console.log(`[Highlightly] Fetching match ${id}`);
-
-      try {
-        const matchResponse = await fetch(`${BASE_URL}/matches/${id}`, {
-          headers: {
-            'x-rapidapi-key': HIGHLIGHTLY_API_KEY,
-            'x-rapidapi-host': 'soccer.highlightly.net',
-            'Content-Type': 'application/json',
-          },
-        });
-
-        if (!matchResponse.ok) {
-          console.error(`❌ Match details error: ${matchResponse.status}`);
-          return res.status(matchResponse.status).json({ response: [] });
-        }
-
-        const rawMatchData = await matchResponse.json();
-        // /matches/{id} returns an array: [{...}]
-        const matchData = Array.isArray(rawMatchData) ? rawMatchData[0] : rawMatchData;
-
-        if (!matchData) {
-          console.error(`❌ Match not found: ${id}`);
-          return res.status(404).json({ response: [] });
-        }
-
-        const homeTeam = matchData.homeTeam || {};
-        const awayTeam = matchData.awayTeam || {};
-        const status = matchData.state?.description || 'Not started';
-
-        let homeGoals = null;
-        let awayGoals = null;
-        const scoreStr = matchData.state?.score?.current;
-        if (scoreStr && typeof scoreStr === 'string') {
-          const parts = scoreStr.split('-').map((p) => p.trim());
-          if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-            homeGoals = parseInt(parts[0], 10);
-            awayGoals = parseInt(parts[1], 10);
-          }
-        }
-
-        const completeMatch = {
-          fixture: {
-            id: String(matchData.id),
-            date: matchData.date,
-            timestamp: new Date(matchData.date).getTime() / 1000,
-            status: {
-              long: status,
-              short: getStatusShort(status),
-              elapsed: matchData.state?.clock ?? null,
-            },
-            venue: {
-              name: matchData.venue?.name || 'TBD',
-              city: matchData.venue?.city || '',
-            },
-            referee: matchData.referee?.name || null,
-          },
-          league: {
-            id: matchData.league?.id || 0,
-            name: matchData.league?.name || 'Unknown',
-            country: matchData.country?.name || matchData.country?.code || 'XX',
-            season: matchData.league?.season || new Date().getFullYear(),
-          },
-          teams: {
-            home: {
-              id: homeTeam.id || 0,
-              name: homeTeam.name || 'Home',
-              logo: homeTeam.logo || '⚽',
-            },
-            away: {
-              id: awayTeam.id || 0,
-              name: awayTeam.name || 'Away',
-              logo: awayTeam.logo || '⚽',
-            },
-          },
-          goals: {
-            home: homeGoals,
-            away: awayGoals,
-          },
-          score: {
-            halftime: { home: null, away: null },
-            fulltime: { home: homeGoals, away: awayGoals },
-          },
-          statistics: matchData.statistics || [],
-          lineups: [],
-          events: matchData.events || [],
-          bookmakers: [],
-          odds: [],
-          h2h: [],
-          predictions: matchData.predictions || null,
-          news: matchData.news || [],
-          forecast: matchData.forecast || null,
-        };
-
-        return res.status(200).json({ response: [completeMatch] });
-      } catch (error) {
-        console.error('❌ Match details error:', error.message);
-        return res.status(500).json({
-          errors: { api: error.message },
-          response: [],
-        });
-      }
-    }
 
     res.status(400).json({ error: 'Invalid endpoint' });
   } catch (error) {
