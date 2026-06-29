@@ -6833,51 +6833,93 @@ async function pcPublish() {
     return;
   }
 
-  // ── Helper: single upload attempt with progress ──
+  // ── Helper: capture a thumbnail frame from the video file (R2 has no auto-thumbnail like Cloudinary did) ──
+  function _captureVideoThumbnail(file) {
+    return new Promise((resolve) => {
+      try {
+        const videoEl = document.createElement('video');
+        videoEl.preload = 'metadata';
+        videoEl.muted = true;
+        videoEl.src = URL.createObjectURL(file);
+        videoEl.onloadeddata = () => {
+          videoEl.currentTime = Math.min(0.3, (videoEl.duration || 1) / 2);
+        };
+        videoEl.onseeked = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = 400;
+            canvas.height = 400 * (videoEl.videoHeight / videoEl.videoWidth || 1);
+            canvas.getContext('2d').drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob((blob) => {
+              URL.revokeObjectURL(videoEl.src);
+              resolve(blob || null);
+            }, 'image/jpeg', 0.8);
+          } catch (e) { resolve(null); }
+        };
+        videoEl.onerror = () => resolve(null);
+        setTimeout(() => resolve(null), 5000); // safety timeout
+      } catch (e) { resolve(null); }
+    });
+  }
+
+  // ── Helper: single upload attempt with progress — uploads DIRECTLY to Cloudflare R2 ──
   function _doUpload(file, resourceType) {
-    return new Promise((resolve, reject) => {
-      const formData = new FormData();
-      formData.append('file',           file);
-      formData.append('upload_preset',  CLOUDINARY_PRESET);
-      formData.append('cloud_name',     CLOUDINARY_CLOUD);
-      if (_pcFilter !== 'normal') formData.append('tags', 'filter_' + _pcFilter);
-      const uploadUrl = 'https://api.cloudinary.com/v1_1/' + CLOUDINARY_CLOUD + '/' + resourceType + '/upload';
-      const xhr = new XMLHttpRequest();
-
-      // Generous timeout: 10 min for large videos on Nigerian networks
-      const TIMEOUT_MS = 10 * 60 * 1000;
-      const timer = setTimeout(() => {
-        xhr.abort();
-        reject(new Error('TIMEOUT'));
-      }, TIMEOUT_MS);
-
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable && upProg) {
-          const pct = Math.round((e.loaded / e.total) * 100);
-          upProg.textContent = 'Uploading… ' + pct + '%  (' + (fileMB * pct / 100).toFixed(1) + ' / ' + fileMB.toFixed(1) + ' MB)';
+    return new Promise(async (resolve, reject) => {
+      try {
+        // Step 1: ask our backend for a presigned upload URL (no file bytes sent yet)
+        const presignRes = await fetch('/api/r2-upload-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: file.name,
+            fileType: file.type,
+            uploaderId: (window._psCurrentUser && window._psCurrentUser.uid) || 'anon',
+          }),
+        });
+        const presignData = await presignRes.json();
+        if (!presignRes.ok || !presignData.uploadUrl) {
+          reject(new Error('CLOUDINARY:' + (presignData.error || 'Could not get upload URL')));
+          return;
         }
-      };
 
-      xhr.onload = () => {
-        clearTimeout(timer);
-        try {
-          const data = JSON.parse(xhr.responseText);
-          if (data.error) {
-            // Log exact Cloudinary error for debugging
-            console.error('[Cloudinary]', data.error.message);
-            reject(new Error('CLOUDINARY:' + data.error.message));
-          } else {
-            resolve(data);
+        // Step 2: upload the actual file directly to R2 using that presigned URL
+        const xhr = new XMLHttpRequest();
+        const TIMEOUT_MS = 10 * 60 * 1000; // Generous timeout: 10 min for large videos on Nigerian networks
+        const timer = setTimeout(() => {
+          xhr.abort();
+          reject(new Error('TIMEOUT'));
+        }, TIMEOUT_MS);
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && upProg) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            upProg.textContent = 'Uploading… ' + pct + '%  (' + (fileMB * pct / 100).toFixed(1) + ' / ' + fileMB.toFixed(1) + ' MB)';
           }
-        } catch(e) {
-          reject(new Error('PARSE_ERROR'));
-        }
-      };
+        };
 
-      xhr.onerror = () => { clearTimeout(timer); reject(new Error('NETWORK')); };
-      xhr.onabort = () => reject(new Error('TIMEOUT'));
-      xhr.open('POST', uploadUrl);
-      xhr.send(formData);
+        xhr.onload = () => {
+          clearTimeout(timer);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve({
+              secure_url: presignData.publicUrl,
+              public_id: presignData.objectKey,
+              format: (file.name.split('.').pop() || '').toLowerCase(),
+              duration: null,
+              thumbnail_url: null,
+            });
+          } else {
+            reject(new Error('NETWORK'));
+          }
+        };
+
+        xhr.onerror = () => { clearTimeout(timer); reject(new Error('NETWORK')); };
+        xhr.onabort = () => reject(new Error('TIMEOUT'));
+        xhr.open('PUT', presignData.uploadUrl);
+        xhr.setRequestHeader('Content-Type', file.type);
+        xhr.send(file);
+      } catch (e) {
+        reject(new Error('NETWORK'));
+      }
     });
   }
 
@@ -6934,10 +6976,38 @@ if (!info) return; // safety guard
     upProg.textContent = 'Saving to your feed…';
 
     const rawUrl    = info.secure_url;
-    // FEATURE 5: Apply f_auto,q_auto for bandwidth-efficient delivery (critical for Nigeria)
-    const mediaUrl  = applyCloudinaryQuality(rawUrl);
+    // R2 doesn't support Cloudinary-style URL transforms — use the raw URL directly
+    const mediaUrl  = rawUrl;
     const mediaType = resourceType;
     const finalTitle = (caption || 'My PitchSide Moment ⚽') + (_pcSticker ? ' ' + _pcSticker : '') + (_pcTaggedMatch ? ` 📍 ${_pcTaggedMatch}` : '');
+
+    // For videos, capture a real thumbnail frame client-side (R2 has no auto-thumbnail like Cloudinary did)
+    let capturedThumbUrl = null;
+    if (mediaType === 'video') {
+      try {
+        const thumbBlob = await _captureVideoThumbnail(_pcFile);
+        if (thumbBlob) {
+          const thumbPresignRes = await fetch('/api/r2-upload-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fileName: 'thumb_' + Date.now() + '.jpg',
+              fileType: 'image/jpeg',
+              uploaderId: (window._psCurrentUser && window._psCurrentUser.uid) || 'anon',
+            }),
+          });
+          const thumbPresignData = await thumbPresignRes.json();
+          if (thumbPresignRes.ok && thumbPresignData.uploadUrl) {
+            await fetch(thumbPresignData.uploadUrl, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'image/jpeg' },
+              body: thumbBlob,
+            });
+            capturedThumbUrl = thumbPresignData.publicUrl;
+          }
+        }
+      } catch (e) { console.warn('[PC] Thumbnail capture/upload failed:', e); }
+    }
 
     // Save to Firestore
     const { addDoc, collection, serverTimestamp, db: _db } = window._psFs || {};
@@ -6950,7 +7020,7 @@ if (!info) return; // safety guard
           title: finalTitle, mediaUrl, mediaType,
           publicId: info.public_id, format: info.format,
           duration: info.duration || null,
-          thumbnail: info.thumbnail_url || mediaUrl,
+          thumbnail: capturedThumbUrl || mediaUrl,
           poster: '@' + ((profileData && profileData.name) || 'pitchside').replace(/\s+/g,'').toLowerCase(),
           userId: (_cu && _cu.uid) || 'anonymous',
           userName: (profileData && profileData.name) || 'PitchSide User',
@@ -6966,8 +7036,8 @@ if (!info) return; // safety guard
 
     // Add to local VIDEOS immediately so it appears in feed
     const thumbUrl = mediaType === 'video'
-  ? mediaUrl.replace('/upload/', '/upload/so_0,w_400,h_400,c_fill,f_jpg/').replace('.mp4','.jpg')
-  : (info.thumbnail_url || mediaUrl);
+  ? (capturedThumbUrl || mediaUrl)
+  : (capturedThumbUrl || mediaUrl);
 
 const localVideo = {
       id: 'fs_' + docId,
