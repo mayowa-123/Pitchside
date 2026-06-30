@@ -6908,11 +6908,18 @@ async function pcPublish() {
               thumbnail_url: null,
             });
           } else {
-            reject(new Error('NETWORK'));
+            // TEMP DEBUG: surface the real R2 status + response so we can see the actual rejection reason
+            const snippet = (xhr.responseText || '').slice(0, 200);
+            console.error('[R2 DEBUG] status:', xhr.status, 'response:', snippet);
+            reject(new Error('R2DEBUG:' + xhr.status + ' - ' + (snippet || 'no response body')));
           }
         };
 
-        xhr.onerror = () => { clearTimeout(timer); reject(new Error('NETWORK')); };
+        xhr.onerror = () => {
+          clearTimeout(timer);
+          console.error('[R2 DEBUG] xhr.onerror fired - likely CORS block or network failure, status:', xhr.status);
+          reject(new Error('R2DEBUG:0 - Request blocked before reaching server (likely CORS)'));
+        };
         xhr.onabort = () => reject(new Error('TIMEOUT'));
         xhr.open('PUT', presignData.uploadUrl);
         xhr.setRequestHeader('Content-Type', file.type);
@@ -6962,6 +6969,9 @@ async function pcPublish() {
           showToast('⏱️ Upload timed out after 3 tries. Check your connection and try a shorter video.');
         } else if (lastErr === 'NETWORK') {
           showToast('📡 No internet connection. Please check your network and try again.');
+        } else if (lastErr.startsWith('R2DEBUG:')) {
+          // TEMP DEBUG: shows the real R2 rejection reason so we can diagnose it
+          showToast('DEBUG: ' + lastErr.replace('R2DEBUG:', ''));
         } else {
           showToast('❌ Upload failed after 3 attempts: ' + lastErr);
         }
