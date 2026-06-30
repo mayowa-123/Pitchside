@@ -58,7 +58,10 @@ export default async function handler(req, res) {
     }
 
     // Basic safety: only allow common video formats
-    const allowedTypes = ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska'];
+    const allowedTypes = [
+      'video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska',
+      'image/jpeg', 'image/png', 'image/webp'
+    ];
     if (!allowedTypes.includes(fileType)) {
       return res.status(400).json({
         error: 'Unsupported file type. Allowed: mp4, mov, webm, mkv',
