@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PitchSide Upload Debug</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'DM Sans',sans-serif;margin:0;padding:18px;background:#f7faf9;color:#0f172a}
+    .box{background:#fff;border:1px solid #e6edf3;padding:16px;border-radius:10px;box-shadow:0 6px 18px rgba(2,6,23,0.06)}
+    h1{margin:0 0 12px 0;font-size:18px}
+    pre{background:#0f172a;color:#e6edf3;padding:12px;border-radius:8px;overflow:auto}
+    button{background:#10b981;color:#fff;border:none;padding:10px 12px;border-radius:8px;font-weight:700}
+    .row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+    .small{font-size:13px;color:#64748b}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>PitchSide Upload Debug</h1>
+    <p class="small">This page will request a presigned upload URL from your app and then run the same browser preflight (OPTIONS) and a tiny PUT test. Use this on mobile at your app origin: <strong>https://pitchside-mayowa-123s-projects.vercel.app</strong></p>
+    <div class="row">
+      <button id="run">Run upload debug</button>
+      <button id="runSmall">Run PUT only</button>
+    </div>
+    <div id="out"></div>
+    <h2 style="margin-top:14px;font-size:15px">Logs</h2>
+    <pre id="log">Waiting for action...
+</pre>
+  </div>
+
+<script>
+const out = document.getElementById('out');
+const log = document.getElementById('log');
+function append(s){ log.textContent += '\n' + s; }
+
+async function getPresign(){
+  append('Requesting presigned URL from /api/r2-upload-url ...');
+  try{
+    const resp = await fetch('/api/r2-upload-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName: 'debug_test.mp4', fileType: 'video/mp4', uploaderId: 'debug' })
+    });
+    const data = await resp.json();
+    append('Presign response status: ' + resp.status);
+    append('Presign body: ' + JSON.stringify(data));
+    return data.uploadUrl || null;
+  }catch(e){ append('Presign request failed: ' + e); return null; }
+}
+
+async function runFull(){
+  log.textContent = 'Running full debug...';
+  const url = await getPresign();
+  if(!url){ append('No presigned URL -> abort'); return; }
+  append('Presigned host: ' + (new URL(url)).host);
+
+  // Try OPTIONS
+  append('Performing OPTIONS preflight...');
+  try{
+    const opt = await fetch(url, {
+      method: 'OPTIONS',
+      headers: {
+        'Origin': location.origin,
+        'Access-Control-Request-Method': 'PUT'
+      }
+    });
+    append('OPTIONS status: ' + opt.status);
+    append('OPTIONS response headers:');
+    for(const h of opt.headers.entries()) append('  ' + h[0] + ': ' + h[1]);
+  }catch(e){ append('OPTIONS fetch error: ' + e); }
+
+  // Try PUT with tiny blob
+  append('Performing PUT upload of tiny blob...');
+  try{
+    const blob = new Blob(['pitchside-debug'], { type: 'video/mp4' });
+    const put = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'video/mp4' },
+      body: blob,
+      mode: 'cors'
+    });
+    append('PUT status: ' + put.status + ' ' + put.statusText);
+    let text = '';
+    try{ text = await put.text(); }catch(e){ text = '<no-body>'; }
+    append('PUT response body: ' + text);
+  }catch(e){ append('PUT fetch error: ' + e); }
+}
+
+async function runPutOnly(){
+  log.textContent = 'Running PUT-only debug...';
+  const url = await getPresign();
+  if(!url){ append('No presigned URL -> abort'); return; }
+  append('Presigned host: ' + (new URL(url)).host);
+  append('Performing PUT upload of tiny blob...');
+  try{
+    const blob = new Blob(['pitchside-debug'], { type: 'video/mp4' });
+    const put = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'video/mp4' },
+      body: blob,
+      mode: 'cors'
+    });
+    append('PUT status: ' + put.status + ' ' + put.statusText);
+    let text = '';
+    try{ text = await put.text(); }catch(e){ text = '<no-body>'; }
+    append('PUT response body: ' + text);
+  }catch(e){ append('PUT fetch error: ' + e); }
+}
+
+document.getElementById('run').addEventListener('click', runFull);
+document.getElementById('runSmall').addEventListener('click', runPutOnly);
+</script>
+</body>
+</html>
