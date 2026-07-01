@@ -1,18 +1,16 @@
 /**
  * 🎥 PITCHSIDE FAN VIDEO UPLOAD — Presigned URL Generator
  *
- * Why presigned URLs instead of uploading through this function directly:
- * Vercel serverless functions have a body size limit (~4.5MB on free/hobby tier).
- * A football clip is almost always bigger than that. Instead, this endpoint
- * gives the fan's phone a temporary, secure "permission slip" (a presigned URL)
- * that lets their browser upload the video FILE DIRECTLY to Cloudflare R2 —
- * completely bypassing Vercel and its size limit. This function never touches
- * the actual video bytes; it only generates the permission slip.
- *
- * Flow:
- * 1. Frontend calls this endpoint → gets back a presigned upload URL + public video URL
- * 2. Frontend uploads the raw video file directly to that presigned URL (PUT request)
- * 3. Frontend saves the public video URL + metadata into Firestore (separate step)
+ * Changes made (2026-07-01):
+ * - Removed `ContentType` from the signed PutObjectCommand so the presigned
+ *   URL does NOT require the browser to send an exact Content-Type header.
+ *   This avoids common 403 signature-mismatch errors when mobile browsers
+ *   report slightly different MIME strings.
+ * - Preserve the original MIME in object metadata (`originalContentType`) so
+ *   the file type can be known later when reading the object.
+ * - Kept permissive CORS on this endpoint (this only affects the presign
+ *   endpoint). The bucket's CORS still needs to be configured in the
+ *   Cloudflare dashboard (instructions in docs/UPLOAD_INSTRUCTIONS.md).
  */
 
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
@@ -36,6 +34,7 @@ const s3Client = new S3Client({
 });
 
 export default async function handler(req, res) {
+  // CORS for the presign endpoint (this is NOT the bucket CORS)
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -74,10 +73,17 @@ export default async function handler(req, res) {
     const safeExt = fileName.split('.').pop().toLowerCase();
     const objectKey = `fan-videos/${uploaderId || 'anon'}_${timestamp}_${randomId}.${safeExt}`;
 
+    // IMPORTANT: do NOT include ContentType in the PutObjectCommand when
+    // generating the presigned PUT URL. If ContentType is included, the
+    // browser must sign and send the exact same header value otherwise the
+    // signature will be invalid (common source of 403s). Instead, we store
+    // the original content type as metadata so it can be read later.
     const command = new PutObjectCommand({
       Bucket: R2_BUCKET_NAME,
       Key: objectKey,
-      ContentType: fileType,
+      Metadata: {
+        originalContentType: fileType,
+      },
     });
 
     // This URL is valid for 10 minutes — enough time to complete the upload,
