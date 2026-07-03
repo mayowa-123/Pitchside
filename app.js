@@ -6836,12 +6836,33 @@ async function pcPublish() {
   // ── Helper: capture a thumbnail frame from the video file (R2 has no auto-thumbnail like Cloudinary did) ──
   function _captureVideoThumbnail(file) {
     return new Promise((resolve) => {
+      let settled = false;
+      let videoEl;
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        try { URL.revokeObjectURL(videoEl.src); } catch(e){}
+        try { videoEl.remove(); } catch(e){}
+        resolve(result);
+      };
       try {
-        const videoEl = document.createElement('video');
+        videoEl = document.createElement('video');
         videoEl.preload = 'metadata';
         videoEl.muted = true;
+        videoEl.playsInline = true;
+        // Must be attached to the DOM (off-screen) — on many mobile browsers,
+        // a detached <video> element never reliably fires 'seeked', which was
+        // causing thumbnail capture to silently fail and fall back to a black box.
+        videoEl.style.position = 'fixed';
+        videoEl.style.top = '-9999px';
+        videoEl.style.left = '-9999px';
+        videoEl.style.width = '1px';
+        videoEl.style.height = '1px';
+        document.body.appendChild(videoEl);
         videoEl.src = URL.createObjectURL(file);
-        videoEl.onloadeddata = () => {
+
+        videoEl.onloadedmetadata = () => {
+          // Seek only once metadata (duration/dimensions) is actually known
           videoEl.currentTime = Math.min(0.3, (videoEl.duration || 1) / 2);
         };
         videoEl.onseeked = () => {
@@ -6850,14 +6871,11 @@ async function pcPublish() {
             canvas.width = 400;
             canvas.height = 400 * (videoEl.videoHeight / videoEl.videoWidth || 1);
             canvas.getContext('2d').drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-            canvas.toBlob((blob) => {
-              URL.revokeObjectURL(videoEl.src);
-              resolve(blob || null);
-            }, 'image/jpeg', 0.8);
-          } catch (e) { resolve(null); }
+            canvas.toBlob((blob) => finish(blob || null), 'image/jpeg', 0.8);
+          } catch (e) { finish(null); }
         };
-        videoEl.onerror = () => resolve(null);
-        setTimeout(() => resolve(null), 5000); // safety timeout
+        videoEl.onerror = () => finish(null);
+        setTimeout(() => finish(null), 5000); // safety timeout
       } catch (e) { resolve(null); }
     });
   }
@@ -7030,7 +7048,7 @@ if (!info) return; // safety guard
           title: finalTitle, mediaUrl, mediaType,
           publicId: info.public_id, format: info.format,
           duration: info.duration || null,
-          thumbnail: capturedThumbUrl || mediaUrl,
+          thumbnail: capturedThumbUrl || (mediaType === 'video' ? 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽' : mediaUrl),
           poster: '@' + ((profileData && profileData.name) || 'pitchside').replace(/\s+/g,'').toLowerCase(),
           userId: (_cu && _cu.uid) || 'anonymous',
           userName: (profileData && profileData.name) || 'PitchSide User',
@@ -7046,7 +7064,7 @@ if (!info) return; // safety guard
 
     // Add to local VIDEOS immediately so it appears in feed
     const thumbUrl = mediaType === 'video'
-  ? (capturedThumbUrl || mediaUrl)
+  ? (capturedThumbUrl || 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽')
   : (capturedThumbUrl || mediaUrl);
 
 const localVideo = {
