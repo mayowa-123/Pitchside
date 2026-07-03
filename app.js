@@ -8052,23 +8052,6 @@ function applyAdvancedSearch(videos) {
   return filtered;
 }
 
-/* ──────────────────────────────────────────────────────────────
-   1️⃣2️⃣ PREMIUM UI POLISH
-   Toast notifications, smooth interactions, premium feel
-   ────────────────────────────────────────────────────────────── */
-
-function showToast(message, duration = 2000) {
-  const toast = document.getElementById('toast');
-  if (toast) {
-    toast.textContent = message;
-    toast.style.display = 'block';
-    toast.style.opacity = '1';
-    setTimeout(() => {
-      toast.style.opacity = '0';
-      setTimeout(() => toast.style.display = 'none', 300);
-    }, duration);
-  }
-}
 
 function showPremiumGradient(element) {
   element.style.background = 'linear-gradient(135deg, var(--green), #00d4ff)';
