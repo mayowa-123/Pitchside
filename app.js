@@ -6971,9 +6971,9 @@ async function pcPublish() {
           showToast('📡 No internet connection. Please check your network and try again.');
         } else if (lastErr.startsWith('R2DEBUG:')) {
           // TEMP DEBUG: shows the real R2 rejection reason so we can diagnose it
-          showToast('DEBUG: ' + lastErr.replace('R2DEBUG:', ''));
+          alert('DEBUG: ' + lastErr.replace('R2DEBUG:', ''));
         } else {
-          showToast('❌ Upload failed after 3 attempts: ' + lastErr);
+          alert('❌ Upload failed after 3 attempts: ' + lastErr);
         }
         return;
       }
