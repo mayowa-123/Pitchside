@@ -64,7 +64,7 @@ function renderSBPage(reset) {
   const hasMore = _sbFiltered.length > end;
 
   const cards = slice.map((v, i) => {
-    const thumb = v.thumbnail || 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽';
+    const thumb = v.thumbnail || 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E';
     const title = v.title || 'Highlight';
     const channel = v.channel || '';
     const cardId = `sb-card-${_sbPage}-${i}`;
@@ -76,7 +76,7 @@ function renderSBPage(reset) {
     return `
       <div onclick="openSBPlayerFromCard('${cardId}')" style="cursor:pointer;border-radius:12px;overflow:hidden;background:var(--bg2);box-shadow:var(--shadow-md);">
         <div style="position:relative;aspect-ratio:16/9;background:#111;">
-          <img src="${thumb}" style="width:100%;height:100%;object-fit:cover;" onerror="this.src='https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽'">
+          <img src="${thumb}" style="width:100%;height:100%;object-fit:cover;" onerror="this.src='data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E'">
           <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
             <div style="width:36px;height:36px;border-radius:50%;background:rgba(16,185,129,0.9);display:flex;align-items:center;justify-content:center;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
@@ -2755,13 +2755,13 @@ function _renderExploreAll() {
   const news = [...(_newsAllDocs||[])];
 
   const sbItems = allVideos.filter(v => v.isScorebat).map(v => {
-    const thumb = v.thumbnail || 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽';
+    const thumb = v.thumbnail || 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E';
     const title = (v.sbTitle || '').replace(/'/g, "\\'");
     const embed = (v.sbEmbed || '').replace(/'/g, "\\'");
     return `
       <div class="vcard" onclick="openSBPlayer('${title}','${embed}')" style="cursor:pointer;">
         <div class="vthumb" style="position:relative;">
-          <img src="${thumb}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.src='https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽'">
+          <img src="${thumb}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.src='data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E'">
           <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
             <div style="background:rgba(16,185,129,0.9);border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
               <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -7048,7 +7048,7 @@ if (!info) return; // safety guard
           title: finalTitle, mediaUrl, mediaType,
           publicId: info.public_id, format: info.format,
           duration: info.duration || null,
-          thumbnail: capturedThumbUrl || (mediaType === 'video' ? 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽' : mediaUrl),
+          thumbnail: capturedThumbUrl || (mediaType === 'video' ? 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E' : mediaUrl),
           poster: '@' + ((profileData && profileData.name) || 'pitchside').replace(/\s+/g,'').toLowerCase(),
           userId: (_cu && _cu.uid) || 'anonymous',
           userName: (profileData && profileData.name) || 'PitchSide User',
@@ -7064,7 +7064,7 @@ if (!info) return; // safety guard
 
     // Add to local VIDEOS immediately so it appears in feed
     const thumbUrl = mediaType === 'video'
-  ? (capturedThumbUrl || 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽')
+  ? (capturedThumbUrl || 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E')
   : (capturedThumbUrl || mediaUrl);
 
 const localVideo = {
@@ -7781,7 +7781,7 @@ function getCreatorProfile(userId) {
   if (!creatorProfiles[userId]) {
     creatorProfiles[userId] = {
       name: 'Creator',
-      avatar: 'https://via.placeholder.com/36x36/1a1a2e/fff?text=👤',
+      avatar: 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="36" height="36"%3E%3Crect width="36" height="36" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="18" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%F0%9F%91%A4%3C/text%3E%3C/svg%3E',
       followers: Math.floor(Math.random() * 10000),
       verified: Math.random() > 0.7,
       badge: ['⭐ Pro', '🔥 Hot', '💎 Premium'][Math.floor(Math.random() * 3)],
@@ -9261,11 +9261,11 @@ function renderRelatedVideos(currentVideo) {
   const related = VIDEOS.filter(v => v.title !== currentVideo.title).slice(0, 10);
   
   grid.innerHTML = related.map((v, i) => {
-    const thumb = v.thumbnail || 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽';
+    const thumb = v.thumbnail || 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E';
     return `
       <div class="related-card" onclick='swapWatchVideo(${JSON.stringify(v).replace(/'/g, "&apos;")})'>
         <div class="related-thumb">
-          <img src="${thumb}" onerror="this.src='https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽'">
+          <img src="${thumb}" onerror="this.src='data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E'">
         </div>
         <div class="related-info">
           <div class="related-title">${v.title}</div>
@@ -9423,12 +9423,12 @@ function renderRelatedVideos(currentVideo) {
   related = related.slice(0, 12);
   
   grid.innerHTML = related.map((v) => {
-    const thumb = v.thumbnail || 'https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽';
+    const thumb = v.thumbnail || 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E';
     const channel = v.channel || v.channelTitle || v.poster || 'PitchSide';
     return `
       <div class="related-card" onclick='swapWatchVideo(${JSON.stringify(v).replace(/'/g, "&apos;")})'>
         <div class="related-thumb">
-          <img src="${thumb}" onerror="this.src='https://via.placeholder.com/320x180/1a1a2e/ffffff?text=⚽'">
+          <img src="${thumb}" onerror="this.src='data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E'">
         </div>
         <div class="related-info">
           <div class="related-title">${(v.title || 'Football Moment').replace(/\u2019/g, "'")}</div>
@@ -9485,3 +9485,285 @@ window.openMyVideoPlayer = function(idx) {
     openWatchPage(v);
   }
 };
+
+/* ═══════════════════════════════════════════
+   TIKTOK-STYLE FAN FEED (full-screen vertical swipe)
+   Self-contained addition — does not modify any
+   existing function. Watches #page-fanfeed's class
+   list to know when it's the active page, so it never
+   needs switchPage() itself to be touched.
+═══════════════════════════════════════════ */
+let _ffObserver = null;
+let _ffMuted = true;
+let _ffRendered = false;
+
+function initFanFeed() {
+  const container = document.getElementById('fanfeed-container');
+  if (!container) return;
+
+  // Fan + player posts only, video only (images don't fit a video-swipe feed)
+  const posts = (typeof VIDEOS !== 'undefined' ? VIDEOS : []).filter(
+    v => (v.userPost || v.playerPost) && v.mediaType !== 'image' && v.src
+  );
+
+  if (!posts.length) {
+    container.innerHTML = `<div class="ff-empty">
+      <div style="font-size:48px;">⚽</div>
+      <div style="font-weight:700;font-size:15px;">No fan videos yet</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.6);">Be the first to post one!</div>
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = posts.map(v => _ffRenderSlide(v)).join('');
+  setupFanFeedObserver();
+
+  // Wire horizontal-swipe-to-profile on each slide (TikTok convention: swipe left = profile)
+  document.querySelectorAll('#fanfeed-container .ff-slide').forEach(slideEl => {
+    const uid = slideEl.dataset.uid || '';
+    const posterEl = slideEl.querySelector('.ff-poster');
+    const posterName = posterEl ? posterEl.textContent : '@pitchside';
+    _ffAttachSwipeHandlers(slideEl, uid, posterName);
+  });
+}
+
+function _ffAvatarInitial(name) {
+  return (name || '?').replace('@', '').charAt(0).toUpperCase();
+}
+
+function _ffRenderSlide(v) {
+  const likeCount = (typeof formatCount === 'function') ? formatCount(v.likes || 0) : (v.likes || 0);
+  const commentCount = (typeof formatCount === 'function') ? formatCount(v.comments || 0) : (v.comments || 0);
+  const safeId = _esc(String(v.id));
+  const posterName = v.poster || '@pitchside';
+  const posterUserId = v.userId || '';
+  const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
+  const isMe = myUid && posterUserId === myUid;
+  const alreadyFollowing = (typeof appState !== 'undefined' && appState.following) ? appState.following.includes(posterUserId) : false;
+
+  return `
+    <div class="ff-slide" data-id="${safeId}" data-uid="${_esc(posterUserId)}">
+      <video class="ff-video" src="${v.src}" loop playsinline muted preload="metadata"
+        onclick="_ffHandleVideoTap(this, '${safeId}')"></video>
+
+      <div class="ff-gradient-bottom"></div>
+
+      <div class="ff-info">
+        <div class="ff-poster" onclick="_ffOpenProfile('${_esc(posterUserId)}', '${_esc(posterName)}')" style="cursor:pointer;">${_esc(posterName)}</div>
+        <div class="ff-caption">${_esc(v.title || '')}</div>
+        ${v.music ? `<div class="ff-music">🎵 ${_esc(v.music)}</div>` : ''}
+      </div>
+
+      <div class="ff-rail">
+        <div class="ff-avatar-wrap" onclick="_ffOpenProfile('${_esc(posterUserId)}', '${_esc(posterName)}')">
+          <div class="ff-avatar">${_esc(_ffAvatarInitial(posterName))}</div>
+          ${(!isMe) ? `<div class="ff-follow-badge" onclick="event.stopPropagation(); _ffQuickFollow('${_esc(posterUserId)}', this)">${alreadyFollowing ? '✓' : '+'}</div>` : ''}
+        </div>
+        <div class="ff-rail-btn" onclick="_ffLike('${safeId}', this)">
+          <svg width="28" height="28" fill="#fff" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+          <span class="ff-rail-count">${likeCount}</span>
+        </div>
+        <div class="ff-rail-btn" onclick="_ffComment('${safeId}')">
+          <svg width="26" height="26" fill="#fff" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"/></svg>
+          <span class="ff-rail-count">${commentCount}</span>
+        </div>
+        <div class="ff-rail-btn" onclick="_ffShare('${safeId}')">
+          <svg width="26" height="26" fill="#fff" viewBox="0 0 24 24"><path d="M18 8a3 3 0 1 0-2.83-4H15a3 3 0 0 0 .05.61L8.09 8.55a3 3 0 1 0 0 6.9l6.96 3.94A3 3 0 1 0 18 16a2.99 2.99 0 0 0-2.83 2H15l-6.96-3.94a3 3 0 0 0 0-1.12L15 9.6a2.99 2.99 0 0 0 3-1.6z"/></svg>
+          <span class="ff-rail-count">Share</span>
+        </div>
+        <div class="ff-mute-btn" onclick="_ffToggleMute()">🔇</div>
+      </div>
+    </div>`;
+}
+
+function setupFanFeedObserver() {
+  if (_ffObserver) _ffObserver.disconnect();
+  const slides = document.querySelectorAll('#fanfeed-container .ff-slide');
+
+  _ffObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const video = entry.target.querySelector('video');
+      if (!video) return;
+      if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+        video.muted = _ffMuted;
+        const playPromise = video.play();
+        if (playPromise) playPromise.catch(() => {});
+      } else {
+        video.pause();
+        video.currentTime = 0;
+      }
+    });
+  }, { threshold: [0, 0.6, 1] });
+
+  slides.forEach(slide => _ffObserver.observe(slide));
+}
+
+function _ffToggleMute() {
+  _ffMuted = !_ffMuted;
+  document.querySelectorAll('#fanfeed-container video').forEach(v => v.muted = _ffMuted);
+  document.querySelectorAll('.ff-mute-btn').forEach(b => b.textContent = _ffMuted ? '🔇' : '🔊');
+}
+
+function _ffLike(videoId, el) {
+  const uid = (window._psCurrentUser && window._psCurrentUser.uid) || 'anon';
+  try { if (typeof likeVideo === 'function') likeVideo(videoId, uid); } catch (e) {}
+  const svg = el.querySelector('svg');
+  if (svg) svg.setAttribute('fill', '#f43f5e');
+  el.style.transform = 'scale(1.25)';
+  setTimeout(() => { el.style.transform = 'scale(1)'; }, 150);
+}
+
+function _ffComment(videoId) {
+  window.currentVideoId = videoId;
+  try { if (typeof openComments === 'function') openComments(); } catch (e) {}
+}
+
+function _ffShare(videoId) {
+  try {
+    if (typeof shareVideo === 'function') { shareVideo(videoId, 'copy'); return; }
+  } catch (e) {}
+  if (typeof showToast === 'function') showToast('Share link copied!');
+}
+
+/* ── Profile preview overlay (tap avatar/poster, or swipe left on a slide) ── */
+function _ffOpenProfile(userId, posterName) {
+  const overlay = document.getElementById('ff-profile-overlay');
+  const body = document.getElementById('ff-profile-body');
+  if (!overlay || !body) return;
+
+  const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
+  const isMe = myUid && userId === myUid;
+  const following = (typeof appState !== 'undefined' && appState.following) ? appState.following.includes(userId) : false;
+  const theirVideos = (typeof VIDEOS !== 'undefined' ? VIDEOS : []).filter(v => v.userId === userId);
+
+  body.innerHTML = `
+    <div class="ffp-hdr">
+      <div class="ffp-avatar">${_esc(_ffAvatarInitial(posterName))}</div>
+      <div>
+        <div class="ffp-name">${_esc(posterName || 'PitchSide User')}</div>
+        <div class="ffp-stats"><span>${theirVideos.length} posts</span></div>
+      </div>
+      ${isMe ? '' : `<button class="ffp-follow-btn ${following ? 'following' : ''}" id="ffp-follow-btn" onclick="_ffToggleFollowFromProfile('${_esc(userId)}')">${following ? 'Following' : '+ Follow'}</button>`}
+    </div>
+    <div class="ffp-grid">
+      ${theirVideos.map(v => `
+        <div class="ffp-grid-item" onclick="_ffJumpToSlide('${_esc(String(v.id))}')">
+          <img src="${v.thumbnail || ''}" onerror="this.style.display='none'">
+        </div>`).join('') || '<div style="padding:30px;color:rgba(255,255,255,.5);grid-column:1/-1;text-align:center;">No posts yet</div>'}
+    </div>`;
+
+  overlay.classList.add('open');
+}
+
+function _ffCloseProfile() {
+  const overlay = document.getElementById('ff-profile-overlay');
+  if (overlay) overlay.classList.remove('open');
+}
+
+async function _ffToggleFollowFromProfile(userId) {
+  const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
+  if (!myUid) { if (typeof showToast === 'function') showToast('Please sign in to follow users'); return; }
+  try { if (typeof toggleFollowUser === 'function') await toggleFollowUser(myUid, userId); } catch (e) { console.warn('[FanFeed] follow toggle failed', e); }
+  const btn = document.getElementById('ffp-follow-btn');
+  if (btn) {
+    const nowFollowing = !btn.classList.contains('following');
+    btn.classList.toggle('following', nowFollowing);
+    btn.textContent = nowFollowing ? 'Following' : '+ Follow';
+  }
+}
+
+// Follow badge tapped directly on a video slide (skips opening full profile)
+async function _ffQuickFollow(userId, badgeEl) {
+  const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
+  if (!myUid) { if (typeof showToast === 'function') showToast('Please sign in to follow users'); return; }
+  try { if (typeof toggleFollowUser === 'function') await toggleFollowUser(myUid, userId); } catch (e) { console.warn('[FanFeed] quick follow failed', e); }
+  const nowFollowing = badgeEl.textContent.trim() !== '✓';
+  badgeEl.textContent = nowFollowing ? '✓' : '+';
+}
+
+function _ffJumpToSlide(videoId) {
+  _ffCloseProfile();
+  const slide = document.querySelector(`#fanfeed-container .ff-slide[data-id="${CSS.escape(videoId)}"]`);
+  if (slide) slide.scrollIntoView({ behavior: 'instant', block: 'start' });
+}
+
+/* ── Double-tap-to-like with heart burst (single tap still toggles mute) ── */
+function _ffHandleVideoTap(el, videoId) {
+  const now = Date.now();
+  const last = el.dataset.lastTap ? parseInt(el.dataset.lastTap, 10) : 0;
+  if (now - last < 300) {
+    _ffSpawnHeartBurst(el.parentElement);
+    const uid = (window._psCurrentUser && window._psCurrentUser.uid) || 'anon';
+    try { if (typeof likeVideo === 'function') likeVideo(videoId, uid); } catch (e) {}
+    el.dataset.lastTap = '0';
+  } else {
+    el.dataset.lastTap = String(now);
+    setTimeout(() => {
+      if (el.dataset.lastTap === String(now)) _ffToggleMute();
+    }, 300);
+  }
+}
+
+function _ffSpawnHeartBurst(slideEl) {
+  if (!slideEl) return;
+  const heart = document.createElement('div');
+  heart.className = 'ff-heart-burst';
+  heart.textContent = '❤️';
+  slideEl.appendChild(heart);
+  setTimeout(() => heart.remove(), 800);
+}
+
+/* ── Horizontal swipe → open/close profile (TikTok convention) ── */
+function _ffAttachSwipeHandlers(slideEl, userId, posterName) {
+  let startX = 0, startY = 0, tracking = false;
+  slideEl.addEventListener('touchstart', (e) => {
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    tracking = true;
+  }, { passive: true });
+  slideEl.addEventListener('touchend', (e) => {
+    if (!tracking) return;
+    tracking = false;
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+    if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0) _ffOpenProfile(userId, posterName);
+      else _ffCloseProfile();
+    }
+  }, { passive: true });
+}
+
+
+// #page-fanfeed's 'active' class, without touching switchPage() at all.
+function _ffSetupVisibilityWatcher() {
+  const pageEl = document.getElementById('page-fanfeed');
+  const container = document.getElementById('fanfeed-container');
+  if (!pageEl || !container) return;
+
+  const sync = () => {
+    const isActive = pageEl.classList.contains('active');
+    container.style.display = isActive ? 'block' : 'none';
+    if (isActive) {
+      const nav = document.querySelector('.nav');
+      container.style.bottom = nav ? nav.offsetHeight + 'px' : '0px';
+      if (!_ffRendered) {
+        initFanFeed();
+        _ffRendered = true;
+      } else {
+        setupFanFeedObserver(); // re-attach observers in case DOM was touched
+      }
+    } else {
+      document.querySelectorAll('#fanfeed-container video').forEach(v => v.pause());
+    }
+  };
+
+  new MutationObserver(sync).observe(pageEl, { attributes: true, attributeFilter: ['class'] });
+  sync();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  try { _ffSetupVisibilityWatcher(); } catch (e) { console.warn('[FanFeed] init failed:', e); }
+});
+
+window.initFanFeed = initFanFeed;
+window.setupFanFeedObserver = setupFanFeedObserver;
