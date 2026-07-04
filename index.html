@@ -985,20 +985,36 @@
 </button>
 
 <!-- ════════════════════════════════════════
-     FAN FEED — TikTok-style full-screen swipe
-     (Self-contained: uses position:fixed + a
-     visibility watcher, so it never touches
-     switchPage() or any other existing page.)
+     FAN FEED — TikTok-style full-screen swipe.
+     Opens on demand from any fan/player video tap
+     (openFanFeedOverlay), closed via the back arrow.
+     Fully independent of switchPage/nav — a modal
+     overlay, not a persistent tab.
 ════════════════════════════════════════ -->
 <style>
   #fanfeed-container {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
+    background: #000;
+    z-index: 60;
+    display: none;
+  }
+  #ff-close-btn {
+    position: absolute;
+    top: 16px; left: 14px;
+    z-index: 61;
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.45);
+    border: none;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  #fanfeed-slides {
+    position: absolute;
+    inset: 0;
     overflow-y: scroll;
     scroll-snap-type: y mandatory;
-    background: #000;
-    z-index: 5;
-    display: none;
   }
   .ff-slide {
     position: relative;
@@ -1046,7 +1062,7 @@
     100% { transform: translate(-50%,-50%) scale(1); opacity: 0; }
   }
 
-  #ff-profile-overlay { position: fixed; inset: 0; background: #0b0b14; z-index: 50; display: none; flex-direction: column; overflow-y: auto; }
+  #ff-profile-overlay { position: fixed; inset: 0; background: #0b0b14; z-index: 70; display: none; flex-direction: column; overflow-y: auto; }
   #ff-profile-overlay.open { display: flex; }
   .ffp-hdr { display: flex; align-items: center; gap: 14px; padding: 44px 16px 14px; position: relative; }
   .ffp-avatar { width: 70px; height: 70px; border-radius: 50%; background: linear-gradient(135deg,#10b981,#059669); display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 800; color: #fff; flex-shrink: 0; }
@@ -1059,8 +1075,11 @@
   .ffp-grid-item { position: relative; aspect-ratio: 9/16; background: #111; overflow: hidden; cursor: pointer; }
   .ffp-grid-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 </style>
-<div id="page-fanfeed" class="page">
-  <div id="fanfeed-container"></div>
+<div id="fanfeed-container">
+  <button id="ff-close-btn" onclick="closeFanFeedOverlay()">
+    <svg width="26" height="26" fill="#fff" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+  </button>
+  <div id="fanfeed-slides"></div>
 </div>
 <div id="ff-profile-overlay">
   <button class="ffp-close" onclick="_ffCloseProfile()">✕</button>
@@ -1073,11 +1092,6 @@
   <a href="#" class="nav-item active" onclick="switchPage('explore', this); return false;" style="min-width:52px;">
     <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 10.9c-.61 0-1.1.49-1.1 1.1s.49 1.1 1.1 1.1c.61 0 1.1-.49 1.1-1.1s-.49-1.1-1.1-1.1zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm2.19 12.19L6 18l3.81-8.19L18 6l-3.81 8.19z"/></svg>
     <span>Explore</span>
-  </a>
-
-  <a href="#" class="nav-item" onclick="switchPage('fanfeed', this); return false;" style="min-width:52px;">
-    <svg fill="currentColor" viewBox="0 0 24 24"><path d="M4 4h16v2H4V4zm0 7h16v2H4v-2zm0 7h16v2H4v-2z" opacity="0"/><path d="M12 4l7 4.5v7L12 20l-7-4.5v-7L12 4zm0 2.3L7 9.2v5.6l5 2.9 5-2.9V9.2l-5-2.9z"/><circle cx="12" cy="12" r="2.5"/></svg>
-    <span>Fan Feed</span>
   </a>
   <a href="#" class="nav-item" onclick="switchPage('highlights', this); initHighlights(); return false;" style="min-width:52px;">
     <svg fill="currentColor" viewBox="0 0 24 24"><path d="M10 8l6 4-6 4V8zm11-5H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z"/></svg>
