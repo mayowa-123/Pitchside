@@ -9465,15 +9465,17 @@ function handleWatchAction(action) {
 }
 
 // ── OVERRIDE ALL EXISTING PLAYER FUNCTIONS ──
-window.openSBPlayer = function(title, videoData) { openWatchPage(videoData); };
+// Fan/player posts now open the TikTok-style swipe feed instead of the
+// YouTube-style watch page. Official highlights are completely untouched.
+window.openSBPlayer = function(title, videoData) { _ffRouteToPlayer(videoData); };
 window.openHlPlayer = function(id, title, videoUrl, embedHtml, thumbnail, ytSearch, videoId) {
-  openWatchPage({ id, title, videoUrl, embedHtml, thumbnail, videoId });
+  _ffRouteToPlayer({ id, title, videoUrl, embedHtml, thumbnail, videoId });
 };
 const originalOpenHlPlayerById = window.openHlPlayerById;
 window.openHlPlayerById = function(id) {
   let v = window._hlVideoMap && window._hlVideoMap[id];
   if (!v) v = (typeof VIDEOS !== 'undefined') && VIDEOS.find(x => String(x.id) === String(id));
-  if (v) openWatchPage(v);
+  if (v) _ffRouteToPlayer(v);
   else if (originalOpenHlPlayerById) originalOpenHlPlayerById(id);
 };
 window.openMyVideoPlayer = function(idx) {
@@ -9482,49 +9484,83 @@ window.openMyVideoPlayer = function(idx) {
   if (v) {
     const modal = document.getElementById('my-videos-overlay');
     if (modal) modal.classList.remove('open');
-    openWatchPage(v);
+    _ffRouteToPlayer(v);
   }
 };
 
+// Single decision point: fan/player post → TikTok swipe feed. Everything else
+// (official highlights, news, bot content) → the existing YouTube-style page.
+function _ffRouteToPlayer(v) {
+  if (v && (v.userPost || v.playerPost)) {
+    openFanFeedOverlay(v.id);
+  } else {
+    openWatchPage(v);
+  }
+}
+
+
 /* ═══════════════════════════════════════════
    TIKTOK-STYLE FAN FEED (full-screen vertical swipe)
-   Self-contained addition — does not modify any
-   existing function. Watches #page-fanfeed's class
-   list to know when it's the active page, so it never
-   needs switchPage() itself to be touched.
+   Opens on demand — triggered from the same tap you
+   already use for every video (openHlPlayerById), for
+   fan/player posts only. Official highlights keep the
+   existing YouTube-style watch page untouched.
 ═══════════════════════════════════════════ */
 let _ffObserver = null;
 let _ffMuted = true;
-let _ffRendered = false;
 
-function initFanFeed() {
+// Reads the actual video URL the same way openWatchPage does,
+// since fan posts store it as videoUrl (not "src" — that assumption
+// was wrong in an earlier version and caused "No fan videos yet").
+function _ffGetVideoSrc(v) {
+  return v.videoUrl || v.src || v.url || '';
+}
+
+function openFanFeedOverlay(startVideoId) {
   const container = document.getElementById('fanfeed-container');
-  if (!container) return;
+  const slidesEl = document.getElementById('fanfeed-slides');
+  if (!container || !slidesEl) return;
 
-  // Fan + player posts only, video only (images don't fit a video-swipe feed)
   const posts = (typeof VIDEOS !== 'undefined' ? VIDEOS : []).filter(
-    v => (v.userPost || v.playerPost) && v.mediaType !== 'image' && v.src
+    v => (v.userPost || v.playerPost) && v.mediaType !== 'image' && _ffGetVideoSrc(v)
   );
 
   if (!posts.length) {
-    container.innerHTML = `<div class="ff-empty">
+    slidesEl.innerHTML = `<div class="ff-empty">
       <div style="font-size:48px;">⚽</div>
       <div style="font-weight:700;font-size:15px;">No fan videos yet</div>
       <div style="font-size:12px;color:rgba(255,255,255,.6);">Be the first to post one!</div>
     </div>`;
-    return;
+  } else {
+    slidesEl.innerHTML = posts.map(v => _ffRenderSlide(v)).join('');
+    setupFanFeedObserver();
+
+    // Wire horizontal-swipe-to-profile on each slide (TikTok convention: swipe left = profile)
+    document.querySelectorAll('#fanfeed-slides .ff-slide').forEach(slideEl => {
+      const uid = slideEl.dataset.uid || '';
+      const posterEl = slideEl.querySelector('.ff-poster');
+      const posterName = posterEl ? posterEl.textContent : '@pitchside';
+      _ffAttachSwipeHandlers(slideEl, uid, posterName);
+    });
   }
 
-  container.innerHTML = posts.map(v => _ffRenderSlide(v)).join('');
-  setupFanFeedObserver();
+  container.style.display = 'block';
+  document.body.style.overflow = 'hidden';
 
-  // Wire horizontal-swipe-to-profile on each slide (TikTok convention: swipe left = profile)
-  document.querySelectorAll('#fanfeed-container .ff-slide').forEach(slideEl => {
-    const uid = slideEl.dataset.uid || '';
-    const posterEl = slideEl.querySelector('.ff-poster');
-    const posterName = posterEl ? posterEl.textContent : '@pitchside';
-    _ffAttachSwipeHandlers(slideEl, uid, posterName);
-  });
+  // Jump straight to the video that was actually tapped, instantly (no animation)
+  if (startVideoId != null) {
+    const targetSlide = document.querySelector(`#fanfeed-slides .ff-slide[data-id="${CSS.escape(String(startVideoId))}"]`);
+    if (targetSlide) targetSlide.scrollIntoView({ behavior: 'instant', block: 'start' });
+  }
+}
+
+function closeFanFeedOverlay() {
+  const container = document.getElementById('fanfeed-container');
+  if (!container) return;
+  container.style.display = 'none';
+  document.body.style.overflow = '';
+  document.querySelectorAll('#fanfeed-slides video').forEach(v => v.pause());
+  if (_ffObserver) { _ffObserver.disconnect(); _ffObserver = null; }
 }
 
 function _ffAvatarInitial(name) {
@@ -9543,7 +9579,7 @@ function _ffRenderSlide(v) {
 
   return `
     <div class="ff-slide" data-id="${safeId}" data-uid="${_esc(posterUserId)}">
-      <video class="ff-video" src="${v.src}" loop playsinline muted preload="metadata"
+      <video class="ff-video" src="${_ffGetVideoSrc(v)}" loop playsinline muted preload="metadata"
         onclick="_ffHandleVideoTap(this, '${safeId}')"></video>
 
       <div class="ff-gradient-bottom"></div>
@@ -9578,7 +9614,7 @@ function _ffRenderSlide(v) {
 
 function setupFanFeedObserver() {
   if (_ffObserver) _ffObserver.disconnect();
-  const slides = document.querySelectorAll('#fanfeed-container .ff-slide');
+  const slides = document.querySelectorAll('#fanfeed-slides .ff-slide');
 
   _ffObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
@@ -9600,7 +9636,7 @@ function setupFanFeedObserver() {
 
 function _ffToggleMute() {
   _ffMuted = !_ffMuted;
-  document.querySelectorAll('#fanfeed-container video').forEach(v => v.muted = _ffMuted);
+  document.querySelectorAll('#fanfeed-slides video').forEach(v => v.muted = _ffMuted);
   document.querySelectorAll('.ff-mute-btn').forEach(b => b.textContent = _ffMuted ? '🔇' : '🔊');
 }
 
@@ -9683,7 +9719,7 @@ async function _ffQuickFollow(userId, badgeEl) {
 
 function _ffJumpToSlide(videoId) {
   _ffCloseProfile();
-  const slide = document.querySelector(`#fanfeed-container .ff-slide[data-id="${CSS.escape(videoId)}"]`);
+  const slide = document.querySelector(`#fanfeed-slides .ff-slide[data-id="${CSS.escape(videoId)}"]`);
   if (slide) slide.scrollIntoView({ behavior: 'instant', block: 'start' });
 }
 
@@ -9734,36 +9770,5 @@ function _ffAttachSwipeHandlers(slideEl, userId, posterName) {
 }
 
 
-// #page-fanfeed's 'active' class, without touching switchPage() at all.
-function _ffSetupVisibilityWatcher() {
-  const pageEl = document.getElementById('page-fanfeed');
-  const container = document.getElementById('fanfeed-container');
-  if (!pageEl || !container) return;
-
-  const sync = () => {
-    const isActive = pageEl.classList.contains('active');
-    container.style.display = isActive ? 'block' : 'none';
-    if (isActive) {
-      const nav = document.querySelector('.nav');
-      container.style.bottom = nav ? nav.offsetHeight + 'px' : '0px';
-      if (!_ffRendered) {
-        initFanFeed();
-        _ffRendered = true;
-      } else {
-        setupFanFeedObserver(); // re-attach observers in case DOM was touched
-      }
-    } else {
-      document.querySelectorAll('#fanfeed-container video').forEach(v => v.pause());
-    }
-  };
-
-  new MutationObserver(sync).observe(pageEl, { attributes: true, attributeFilter: ['class'] });
-  sync();
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  try { _ffSetupVisibilityWatcher(); } catch (e) { console.warn('[FanFeed] init failed:', e); }
-});
-
-window.initFanFeed = initFanFeed;
-window.setupFanFeedObserver = setupFanFeedObserver;
+window.openFanFeedOverlay = openFanFeedOverlay;
+window.closeFanFeedOverlay = closeFanFeedOverlay;
