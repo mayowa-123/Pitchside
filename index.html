@@ -1015,7 +1015,10 @@
     inset: 0;
     overflow-y: scroll;
     scroll-snap-type: y mandatory;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
+  #fanfeed-slides::-webkit-scrollbar { display: none; width: 0; height: 0; }
   .ff-slide {
     position: relative;
     width: 100%;
@@ -1025,26 +1028,46 @@
     background: #000;
     overflow: hidden;
   }
+  .ff-video-bg {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scale(1.35); /* pushes blur edge-softening off-screen */
+    filter: blur(35px) brightness(0.55);
+    z-index: 0;
+  }
   .ff-video {
+    position: relative;
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain; /* full frame always visible — nothing cropped */
+    background: transparent;
     display: block;
+    z-index: 1;
   }
   .ff-gradient-bottom {
     position: absolute; left: 0; right: 0; bottom: 0; height: 42%;
     background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
     pointer-events: none;
+    z-index: 2;
   }
   .ff-info {
     position: absolute; left: 14px; right: 78px; bottom: 24px; color: #fff;
+    z-index: 2;
   }
   .ff-poster { font-weight: 700; font-size: 14px; margin-bottom: 5px; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
-  .ff-caption { font-size: 13px; line-height: 1.45; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  .ff-caption {
+    font-size: 13px; line-height: 1.45; text-shadow: 0 1px 4px rgba(0,0,0,.5);
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  }
+  .ff-caption.expanded { -webkit-line-clamp: unset; overflow: visible; }
+  .ff-caption-more { font-size: 12px; font-weight: 700; color: rgba(255,255,255,.75); margin-top: 3px; cursor: pointer; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  .ff-hashtag { color: #7dd3fc; font-weight: 600; }
   .ff-music { font-size: 12px; margin-top: 8px; opacity: .9; }
   .ff-rail {
     position: absolute; right: 10px; bottom: 34px;
     display: flex; flex-direction: column; align-items: center; gap: 22px;
+    z-index: 2;
   }
   .ff-rail-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; transition: transform .15s; }
   .ff-rail-count { color: #fff; font-size: 11px; font-weight: 700; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
@@ -1074,6 +1097,47 @@
   .ffp-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 2px; padding: 2px; }
   .ffp-grid-item { position: relative; aspect-ratio: 9/16; background: #111; overflow: hidden; cursor: pointer; }
   .ffp-grid-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  /* ── Reading mode: TikTok's expanded-caption view ── */
+  #ff-reading-overlay {
+    position: fixed; inset: 0; z-index: 65; display: none; flex-direction: column;
+    background: rgba(10,10,16,0.94);
+  }
+  #ff-reading-overlay.open { display: flex; }
+  .ff-reading-topbar { display: flex; align-items: center; gap: 10px; padding: 14px 14px 10px; flex-shrink: 0; }
+  .ff-reading-back { background: rgba(255,255,255,.1); border: none; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .ff-reading-search-input { flex: 1; background: transparent; border: 1.5px solid rgba(255,255,255,.35); border-radius: 20px; padding: 8px 14px; color: #fff; font-size: 13px; }
+  .ff-reading-search-input::placeholder { color: rgba(255,255,255,.5); }
+  .ff-reading-search-btn { background: none; border: none; color: #fff; font-weight: 700; font-size: 13px; padding: 6px 4px; cursor: pointer; flex-shrink: 0; }
+  #ff-reading-body { position: relative; flex: 1; overflow: hidden; }
+  .ff-reading-watermark {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%) rotate(-8deg);
+    font-size: 26px; font-weight: 800; color: rgba(255,255,255,.06); white-space: nowrap;
+    pointer-events: none; z-index: 0;
+  }
+  .ff-reading-scroll {
+    position: relative; z-index: 1; height: 100%; overflow-y: auto;
+    padding: 4px 16px 20px; color: #fff;
+  }
+  .ff-reading-poster { font-weight: 800; font-size: 15px; margin-bottom: 10px; }
+  .ff-reading-caption { font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+  .ff-reading-less { font-weight: 700; font-size: 13px; color: rgba(255,255,255,.7); margin-top: 14px; cursor: pointer; text-align: right; }
+  .ff-reading-rail {
+    position: absolute; right: 12px; bottom: 90px; z-index: 2;
+    display: flex; flex-direction: column; align-items: center; gap: 18px;
+  }
+  .ff-reading-commentbar {
+    flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: rgba(0,0,0,.5); border-top: 1px solid rgba(255,255,255,.08);
+  }
+  .ff-reading-commentbar input {
+    flex: 1; background: rgba(255,255,255,.1); border: none; border-radius: 20px;
+    padding: 10px 16px; color: #fff; font-size: 14px;
+  }
+  .ff-reading-commentbar input::placeholder { color: rgba(255,255,255,.5); }
+  .ff-reading-commentbar button { background: none; border: none; cursor: pointer; padding: 6px; flex-shrink: 0; }
+
 </style>
 <div id="fanfeed-container">
   <button id="ff-close-btn" onclick="closeFanFeedOverlay()">
@@ -1084,6 +1148,22 @@
 <div id="ff-profile-overlay">
   <button class="ffp-close" onclick="_ffCloseProfile()">✕</button>
   <div id="ff-profile-body"></div>
+</div>
+<div id="ff-reading-overlay">
+  <div class="ff-reading-topbar">
+    <button class="ff-reading-back" onclick="_ffCloseReadingMode()">
+      <svg width="22" height="22" fill="#fff" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+    </button>
+    <input class="ff-reading-search-input" type="text" placeholder="Find related content">
+    <button class="ff-reading-search-btn">Search</button>
+  </div>
+  <div id="ff-reading-body"></div>
+  <div class="ff-reading-commentbar">
+    <input id="ff-reading-comment-input" type="text" placeholder="Add comment..." onkeydown="if(event.key==='Enter'){_ffSubmitReadingComment();}">
+    <button onclick="_ffSubmitReadingComment()">
+      <svg width="20" height="20" fill="#fff" viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+    </button>
+  </div>
 </div>
 
 <!-- Bottom Navigation -->
