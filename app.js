@@ -1047,7 +1047,7 @@ function renderSavedPanel() {
     container.innerHTML = `<div class="empty-state"><div class="empty-icon">🎬</div>No saved highlights yet.<br>Tap the bookmark on any video.</div>`;
   } else {
     container.innerHTML = saved.map(v => `
-      <div class="sel-item" onclick="openVideoOverlay(${v.id})">
+      <div class="sel-item" onclick="openVideoOverlay('${_esc(String(v.id))}')">
         <div class="sel-item-icon">▶️</div>
         <div class="sel-item-name">${v.title}</div>
         <div style="font-size:11px;color:var(--text3);">${v.date}</div>
@@ -8398,7 +8398,7 @@ async function likeVideo(videoId, userId) {
   
   if (!fsApi || !db) return;
 
-  const { collection, doc, updateDoc, arrayUnion, arrayRemove } = fsApi;
+  const { doc, updateDoc, setDoc, arrayUnion, arrayRemove } = fsApi;
 
   try {
     const metricsRef = doc(db, 'videoMetrics', videoId);
@@ -8406,14 +8406,14 @@ async function likeVideo(videoId, userId) {
 
     const isLiked = metricsData?.likes?.includes(userId);
 
+    // updateDoc() throws if the document doesn't exist yet — and no
+    // videoMetrics doc is ever created when a video is first posted.
+    // setDoc(..., {merge:true}) creates it on first write and merges on
+    // every write after, so likes actually persist instead of failing silently.
     if (isLiked) {
-      await updateDoc(metricsRef, {
-        likes: arrayRemove(userId)
-      });
+      await setDoc(metricsRef, { likes: arrayRemove(userId) }, { merge: true });
     } else {
-      await updateDoc(metricsRef, {
-        likes: arrayUnion(userId)
-      });
+      await setDoc(metricsRef, { likes: arrayUnion(userId) }, { merge: true });
 
       // Create notification for video owner
       const video = VIDEOS.find(v => v.id === videoId);
@@ -8710,9 +8710,11 @@ function updateVideoMetricsUI(videoId) {
     const likeBtn = videoCard.querySelector('.like-count');
     if (likeBtn) likeBtn.textContent = metrics.likes?.length || 0;
 
-    // Update comment count
+    // Update comment count — submitComment() writes to "comments", while an
+    // older code path writes "commentCount"; read both so whichever one
+    // actually has data still shows up correctly.
     const commentBtn = videoCard.querySelector('.comment-count');
-    if (commentBtn) commentBtn.textContent = metrics.commentCount || 0;
+    if (commentBtn) commentBtn.textContent = metrics.commentCount ?? metrics.comments ?? 0;
 
     // Update view count
     const viewBtn = videoCard.querySelector('.view-count');
@@ -9556,6 +9558,7 @@ function openFanFeedOverlay(startVideoId) {
   container.style.display = 'block';
   document.body.style.overflow = 'hidden';
   _ffSetChromeHidden(true);
+  _ffSetupPreciseVerticalSwipe();
 
   // Jump straight to the video that was actually tapped, instantly (no animation)
   if (startVideoId != null) {
@@ -9703,6 +9706,7 @@ function _ffOpenReadingMode(videoId) {
   const isSaved = (typeof savedHighlights !== 'undefined') && savedHighlights.has(v.id);
 
   overlay.dataset.videoId = String(videoId);
+  body.dataset.videoId = String(videoId);
 
   body.innerHTML = `
     <div class="ff-reading-watermark">Read the caption.</div>
@@ -9714,11 +9718,11 @@ function _ffOpenReadingMode(videoId) {
     <div class="ff-reading-rail">
       <div class="ff-rail-btn" onclick="_ffLike('${_esc(String(v.id))}', this)">
         <svg width="26" height="26" fill="#fff" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-        <span class="ff-rail-count">${likeCount}</span>
+        <span class="ff-rail-count like-count">${likeCount}</span>
       </div>
       <div class="ff-rail-btn" onclick="_ffComment('${_esc(String(v.id))}')">
         <svg width="24" height="24" fill="#fff" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"/></svg>
-        <span class="ff-rail-count">${commentCount}</span>
+        <span class="ff-rail-count comment-count">${commentCount}</span>
       </div>
       <div class="ff-rail-btn" onclick="_ffSave('${_esc(String(v.id))}', this)">
         <svg width="22" height="22" fill="${isSaved ? '#facc15' : '#fff'}" viewBox="0 0 24 24"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z"/></svg>
@@ -9749,7 +9753,7 @@ function _ffSubmitReadingComment() {
   const videoId = overlay ? overlay.dataset.videoId : null;
   if (!videoId) return;
 
-  window.currentVideoId = videoId;
+  currentVideoId = videoId;
   hiddenInput.value = readingInput.value;
   try {
     const result = submitComment();
@@ -9831,6 +9835,17 @@ function _ffToggleMute() {
 function _ffLike(videoId, el) {
   const uid = (window._psCurrentUser && window._psCurrentUser.uid) || 'anon';
   try { if (typeof likeVideo === 'function') likeVideo(videoId, uid); } catch (e) {}
+  _ffMarkLiked(videoId, el);
+}
+
+// Shared by both the rail heart tap AND the double-tap-on-video gesture,
+// so the heart icon actually reflects "you liked this" either way.
+function _ffMarkLiked(videoId, el) {
+  if (!el) {
+    const slide = document.querySelector(`#fanfeed-slides .ff-slide[data-id="${CSS.escape(String(videoId))}"]`);
+    el = slide ? slide.querySelector('.ff-rail-btn') : null; // first rail button is always like
+  }
+  if (!el) return;
   const svg = el.querySelector('svg');
   if (svg) svg.setAttribute('fill', '#f43f5e');
   el.style.transform = 'scale(1.25)';
@@ -9838,7 +9853,7 @@ function _ffLike(videoId, el) {
 }
 
 function _ffComment(videoId) {
-  window.currentVideoId = videoId;
+  currentVideoId = videoId;
   try { if (typeof openComments === 'function') openComments(); } catch (e) {}
 }
 
@@ -9928,6 +9943,7 @@ function _ffHandleVideoTap(el, videoId) {
     _ffSpawnHeartBurst(el.parentElement);
     const uid = (window._psCurrentUser && window._psCurrentUser.uid) || 'anon';
     try { if (typeof likeVideo === 'function') likeVideo(videoId, uid); } catch (e) {}
+    _ffMarkLiked(videoId, null);
     el.dataset.lastTap = '0';
   } else {
     el.dataset.lastTap = String(now);
@@ -9966,6 +9982,67 @@ function _ffAttachSwipeHandlers(slideEl, userId, posterName) {
   }, { passive: true });
 }
 
+/* ── Precise one-slide-per-swipe vertical navigation (TikTok-exact) ──
+   Native CSS scroll-snap is still in place as a fallback, but a fast/strong
+   flick on mobile Chrome can glide past more than one slide before it
+   catches. This takes over the vertical drag ourselves: the feed follows
+   your finger 1:1, and on release it moves to exactly one slide — never
+   more, never less — regardless of how hard or fast you swiped.
+   Coexists with the horizontal swipe-to-profile handler above: this only
+   engages once a clear vertical intent is detected, so a horizontal drag
+   is left completely alone for that handler to process on touchend. */
+function _ffSetupPreciseVerticalSwipe() {
+  const slidesEl = document.getElementById('fanfeed-slides');
+  if (!slidesEl || slidesEl.dataset.preciseSwipeWired === '1') return;
+  slidesEl.dataset.preciseSwipeWired = '1';
+
+  let startX = 0, startY = 0, startScrollTop = 0, dy = 0, axis = null;
+
+  slidesEl.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    startScrollTop = slidesEl.scrollTop;
+    dy = 0;
+    axis = null;
+  }, { passive: true });
+
+  slidesEl.addEventListener('touchmove', (e) => {
+    const curX = e.touches[0].clientX;
+    const curY = e.touches[0].clientY;
+    const dx = curX - startX;
+    dy = curY - startY;
+
+    if (axis === null) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; // dead zone, direction not clear yet
+      axis = Math.abs(dy) > Math.abs(dx) ? 'v' : 'h';
+    }
+    if (axis === 'v') {
+      // Follow the finger exactly — this is what prevents overshooting
+      // past more than one slide, since we're not relying on momentum.
+      slidesEl.scrollTop = startScrollTop - dy;
+      e.preventDefault();
+    }
+    // If axis === 'h', do nothing here — leave it entirely to the
+    // per-slide horizontal handler's own touchend logic above.
+  }, { passive: false });
+
+  slidesEl.addEventListener('touchend', () => {
+    if (axis !== 'v') return;
+    const h = slidesEl.clientHeight || 1;
+    const currentIndex = Math.round(startScrollTop / h);
+    const maxIndex = Math.max(0, Math.round(slidesEl.scrollHeight / h) - 1);
+    const threshold = h * 0.15; // how far you must drag before it counts as a deliberate swipe
+
+    let targetIndex = currentIndex;
+    if (dy < -threshold) targetIndex = currentIndex + 1;
+    else if (dy > threshold) targetIndex = currentIndex - 1;
+    targetIndex = Math.max(0, Math.min(targetIndex, maxIndex));
+
+    slidesEl.scrollTo({ top: targetIndex * h, behavior: 'smooth' });
+    axis = null;
+  }, { passive: true });
+}
 
 window.openFanFeedOverlay = openFanFeedOverlay;
 window.closeFanFeedOverlay = closeFanFeedOverlay;
