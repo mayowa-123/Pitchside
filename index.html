@@ -1099,6 +1099,12 @@
   .ffp-grid-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
   /* ── Reading mode: TikTok's expanded-caption view ── */
+  /* Defensive override: style.css sets #comment-panel's z-index for the
+     app's original single-page layout, which may sit below our new
+     fixed-position overlays (z-index 60-70). Forcing it higher here
+     guarantees the comment panel is always actually visible. */
+  #comment-panel { z-index: 80 !important; }
+
   #ff-reading-overlay {
     position: fixed; inset: 0; z-index: 65; display: none; flex-direction: column;
     background: rgba(10,10,16,0.94);
