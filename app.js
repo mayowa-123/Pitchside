@@ -8702,8 +8702,10 @@ function updateVideoMetricsUI(videoId) {
   const metrics = appState.videoMetrics[videoId];
   if (!metrics) return;
 
-  const videoCard = document.querySelector(`[data-video-id="${videoId}"]`);
-  if (videoCard) {
+  // querySelectorAll (not querySelector) so this also reaches every
+  // duplicate of a video shown by the fan feed's infinite loop.
+  const videoCards = document.querySelectorAll(`[data-video-id="${videoId}"]`);
+  videoCards.forEach(videoCard => {
     // Update like count
     const likeBtn = videoCard.querySelector('.like-count');
     if (likeBtn) likeBtn.textContent = metrics.likes?.length || 0;
@@ -8715,7 +8717,14 @@ function updateVideoMetricsUI(videoId) {
     // Update view count
     const viewBtn = videoCard.querySelector('.view-count');
     if (viewBtn) viewBtn.textContent = metrics.views || 0;
-  }
+
+    // Fan feed heart fill state (red once liked by the current user)
+    const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
+    const heartSvg = videoCard.querySelector('.ff-rail-btn svg');
+    if (heartSvg && myUid) {
+      heartSvg.setAttribute('fill', metrics.likes?.includes(myUid) ? '#f43f5e' : '#fff');
+    }
+  });
 }
 
 function updateCollectionsUI() {
@@ -8742,6 +8751,7 @@ function updateFollowUI() {
   if (followerStats) followerStats.textContent = followersCount;
 
   console.log('👥 Follow UI updated');
+  try { if (typeof _ffSyncFollowBadges === 'function') _ffSyncFollowBadges(); } catch (e) {}
 }
 
 function updateHeaderProfile() {
@@ -9507,7 +9517,8 @@ function _ffRouteToPlayer(v) {
    existing YouTube-style watch page untouched.
 ═══════════════════════════════════════════ */
 let _ffObserver = null;
-let _ffMuted = true;
+let _ffMuted = false; // TikTok plays with sound by default — silence was the bug
+let _ffCurrentPosts = [];
 
 // Reads the actual video URL the same way openWatchPage does,
 // since fan posts store it as videoUrl (not "src" — that assumption
@@ -9532,20 +9543,19 @@ function openFanFeedOverlay(startVideoId) {
       <div style="font-size:12px;color:rgba(255,255,255,.6);">Be the first to post one!</div>
     </div>`;
   } else {
+    _ffCurrentPosts = posts;
     slidesEl.innerHTML = posts.map(v => _ffRenderSlide(v)).join('');
-    setupFanFeedObserver();
+    _ffWireNewSlides();
 
-    // Wire horizontal-swipe-to-profile on each slide (TikTok convention: swipe left = profile)
-    document.querySelectorAll('#fanfeed-slides .ff-slide').forEach(slideEl => {
-      const uid = slideEl.dataset.uid || '';
-      const posterEl = slideEl.querySelector('.ff-poster');
-      const posterName = posterEl ? posterEl.textContent : '@pitchside';
-      _ffAttachSwipeHandlers(slideEl, uid, posterName);
-    });
+    // Start real Firestore listeners for every video shown, so likes/comments/
+    // views update live instead of being frozen at whatever they were on load.
+    posts.forEach(v => _ffSubscribeMetrics(v.id));
+    _ffSyncFollowBadges();
   }
 
   container.style.display = 'block';
   document.body.style.overflow = 'hidden';
+  _ffSetChromeHidden(true);
 
   // Jump straight to the video that was actually tapped, instantly (no animation)
   if (startVideoId != null) {
@@ -9554,17 +9564,70 @@ function openFanFeedOverlay(startVideoId) {
   }
 }
 
+// Hides/restores the bottom nav bar and the floating "+" post button while
+// the fan feed is open — they were showing through behind the video before.
+function _ffSetChromeHidden(hidden) {
+  const nav = document.querySelector('.nav');
+  const postBtn = document.getElementById('global-post-btn');
+  if (nav) nav.style.display = hidden ? 'none' : '';
+  if (postBtn) postBtn.style.display = hidden ? 'none' : '';
+}
+
+// Wires swipe-to-profile gestures on any slides that don't have them yet
+// (used both on first render and after the infinite-loop extends the feed).
+function _ffWireNewSlides() {
+  document.querySelectorAll('#fanfeed-slides .ff-slide').forEach(slideEl => {
+    if (slideEl.dataset.wired === '1') return;
+    slideEl.dataset.wired = '1';
+    const uid = slideEl.dataset.uid || '';
+    const posterEl = slideEl.querySelector('.ff-poster');
+    const posterName = posterEl ? posterEl.textContent : '@pitchside';
+    _ffAttachSwipeHandlers(slideEl, uid, posterName);
+  });
+  setupFanFeedObserver();
+}
+
+// Subscribes to a video's real-time metrics exactly once per session —
+// reuses the app's existing loadVideoMetrics()/onSnapshot pipeline, it's
+// just never been connected to the fan-feed DOM before.
+const _ffSubscribedVideoIds = new Set();
+function _ffSubscribeMetrics(videoId) {
+  if (_ffSubscribedVideoIds.has(videoId)) return;
+  _ffSubscribedVideoIds.add(videoId);
+  try { if (typeof loadVideoMetrics === 'function') loadVideoMetrics(videoId); } catch (e) {}
+}
+
+// Keeps every visible follow badge in sync with appState.following —
+// called on open, and again automatically whenever updateFollowUI() runs
+// (that hook is added right after this function, see below).
+function _ffSyncFollowBadges() {
+  const following = (typeof appState !== 'undefined' && appState.following) ? appState.following : [];
+  document.querySelectorAll('#fanfeed-slides .ff-follow-badge[data-follow-uid]').forEach(badge => {
+    const uid = badge.dataset.followUid;
+    if (!uid) return;
+    badge.textContent = following.includes(uid) ? '✓' : '+';
+  });
+}
+
 function closeFanFeedOverlay() {
   const container = document.getElementById('fanfeed-container');
   if (!container) return;
   container.style.display = 'none';
   document.body.style.overflow = '';
+  _ffSetChromeHidden(false);
   document.querySelectorAll('#fanfeed-slides video').forEach(v => v.pause());
   if (_ffObserver) { _ffObserver.disconnect(); _ffObserver = null; }
 }
 
 function _ffAvatarInitial(name) {
   return (name || '?').replace('@', '').charAt(0).toUpperCase();
+}
+
+// Turns "Great goal! #NPFL #PitchSide" into styled HTML with hashtags
+// highlighted, matching how TikTok visually distinguishes them.
+function _ffFormatCaption(text) {
+  const escaped = _esc(text || '');
+  return escaped.replace(/(#[\w]+)/g, '<span class="ff-hashtag">$1</span>');
 }
 
 function _ffRenderSlide(v) {
@@ -9578,55 +9641,162 @@ function _ffRenderSlide(v) {
   const alreadyFollowing = (typeof appState !== 'undefined' && appState.following) ? appState.following.includes(posterUserId) : false;
 
   return `
-    <div class="ff-slide" data-id="${safeId}" data-uid="${_esc(posterUserId)}">
-      <video class="ff-video" src="${_ffGetVideoSrc(v)}" loop playsinline muted preload="metadata"
+    <div class="ff-slide" data-id="${safeId}" data-video-id="${safeId}" data-uid="${_esc(posterUserId)}">
+      <video class="ff-video-bg" src="${_ffGetVideoSrc(v)}" loop playsinline muted preload="metadata" aria-hidden="true" tabindex="-1"></video>
+      <video class="ff-video" src="${_ffGetVideoSrc(v)}" loop playsinline preload="metadata"
         onclick="_ffHandleVideoTap(this, '${safeId}')"></video>
 
       <div class="ff-gradient-bottom"></div>
 
       <div class="ff-info">
         <div class="ff-poster" onclick="_ffOpenProfile('${_esc(posterUserId)}', '${_esc(posterName)}')" style="cursor:pointer;">${_esc(posterName)}</div>
-        <div class="ff-caption">${_esc(v.title || '')}</div>
+        <div class="ff-caption" id="ff-cap-${safeId}">${_ffFormatCaption(v.title || '')}</div>
+        <div class="ff-caption-more" onclick="_ffOpenReadingMode('${safeId}')">...more</div>
         ${v.music ? `<div class="ff-music">🎵 ${_esc(v.music)}</div>` : ''}
       </div>
 
       <div class="ff-rail">
         <div class="ff-avatar-wrap" onclick="_ffOpenProfile('${_esc(posterUserId)}', '${_esc(posterName)}')">
           <div class="ff-avatar">${_esc(_ffAvatarInitial(posterName))}</div>
-          ${(!isMe) ? `<div class="ff-follow-badge" onclick="event.stopPropagation(); _ffQuickFollow('${_esc(posterUserId)}', this)">${alreadyFollowing ? '✓' : '+'}</div>` : ''}
+          ${(!isMe) ? `<div class="ff-follow-badge" data-follow-uid="${_esc(posterUserId)}" onclick="event.stopPropagation(); _ffQuickFollow('${_esc(posterUserId)}', this)">${alreadyFollowing ? '✓' : '+'}</div>` : ''}
         </div>
         <div class="ff-rail-btn" onclick="_ffLike('${safeId}', this)">
           <svg width="28" height="28" fill="#fff" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-          <span class="ff-rail-count">${likeCount}</span>
+          <span class="ff-rail-count like-count">${likeCount}</span>
         </div>
         <div class="ff-rail-btn" onclick="_ffComment('${safeId}')">
           <svg width="26" height="26" fill="#fff" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"/></svg>
-          <span class="ff-rail-count">${commentCount}</span>
+          <span class="ff-rail-count comment-count">${commentCount}</span>
+        </div>
+        <div class="ff-rail-btn" onclick="_ffSave('${safeId}', this)">
+          <svg width="24" height="24" fill="${(typeof savedHighlights !== 'undefined' && savedHighlights.has(v.id)) ? '#facc15' : '#fff'}" viewBox="0 0 24 24"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z"/></svg>
+          <span class="ff-rail-count">Save</span>
         </div>
         <div class="ff-rail-btn" onclick="_ffShare('${safeId}')">
           <svg width="26" height="26" fill="#fff" viewBox="0 0 24 24"><path d="M18 8a3 3 0 1 0-2.83-4H15a3 3 0 0 0 .05.61L8.09 8.55a3 3 0 1 0 0 6.9l6.96 3.94A3 3 0 1 0 18 16a2.99 2.99 0 0 0-2.83 2H15l-6.96-3.94a3 3 0 0 0 0-1.12L15 9.6a2.99 2.99 0 0 0 3-1.6z"/></svg>
           <span class="ff-rail-count">Share</span>
         </div>
-        <div class="ff-mute-btn" onclick="_ffToggleMute()">🔇</div>
+        <div class="ff-mute-btn" onclick="_ffToggleMute()">${_ffMuted ? '🔇' : '🔊'}</div>
       </div>
     </div>`;
 }
 
+function _ffToggleCaption(videoId) {
+  const el = document.getElementById(`ff-cap-${videoId}`);
+  if (el) el.classList.toggle('expanded');
+}
+
+/* ── Full-screen "reading mode" for long captions (TikTok's expanded-caption view) ──
+   Triggered by "...more". Video keeps playing behind it (we don't pause).
+   Reuses the real comment-submission pipeline (submitComment()) rather than
+   building a second one — this input actually posts, it isn't decorative. */
+function _ffOpenReadingMode(videoId) {
+  const overlay = document.getElementById('ff-reading-overlay');
+  const body = document.getElementById('ff-reading-body');
+  if (!overlay || !body) return;
+
+  const v = (typeof VIDEOS !== 'undefined' ? VIDEOS : []).find(x => String(x.id) === String(videoId));
+  if (!v) return;
+
+  const likeCount = (typeof formatCount === 'function') ? formatCount(v.likes || 0) : (v.likes || 0);
+  const commentCount = (typeof formatCount === 'function') ? formatCount(v.comments || 0) : (v.comments || 0);
+  const isSaved = (typeof savedHighlights !== 'undefined') && savedHighlights.has(v.id);
+
+  overlay.dataset.videoId = String(videoId);
+
+  body.innerHTML = `
+    <div class="ff-reading-watermark">Read the caption.</div>
+    <div class="ff-reading-scroll">
+      <div class="ff-reading-poster">${_esc(v.poster || '@pitchside')}</div>
+      <div class="ff-reading-caption">${_ffFormatCaption(v.title || '')}</div>
+      <div class="ff-reading-less" onclick="_ffCloseReadingMode()">less</div>
+    </div>
+    <div class="ff-reading-rail">
+      <div class="ff-rail-btn" onclick="_ffLike('${_esc(String(v.id))}', this)">
+        <svg width="26" height="26" fill="#fff" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        <span class="ff-rail-count">${likeCount}</span>
+      </div>
+      <div class="ff-rail-btn" onclick="_ffComment('${_esc(String(v.id))}')">
+        <svg width="24" height="24" fill="#fff" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"/></svg>
+        <span class="ff-rail-count">${commentCount}</span>
+      </div>
+      <div class="ff-rail-btn" onclick="_ffSave('${_esc(String(v.id))}', this)">
+        <svg width="22" height="22" fill="${isSaved ? '#facc15' : '#fff'}" viewBox="0 0 24 24"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z"/></svg>
+        <span class="ff-rail-count">Save</span>
+      </div>
+      <div class="ff-rail-btn" onclick="_ffShare('${_esc(String(v.id))}')">
+        <svg width="24" height="24" fill="#fff" viewBox="0 0 24 24"><path d="M18 8a3 3 0 1 0-2.83-4H15a3 3 0 0 0 .05.61L8.09 8.55a3 3 0 1 0 0 6.9l6.96 3.94A3 3 0 1 0 18 16a2.99 2.99 0 0 0-2.83 2H15l-6.96-3.94a3 3 0 0 0 0-1.12L15 9.6a2.99 2.99 0 0 0 3-1.6z"/></svg>
+        <span class="ff-rail-count">Share</span>
+      </div>
+    </div>`;
+
+  overlay.classList.add('open');
+}
+
+function _ffCloseReadingMode() {
+  const overlay = document.getElementById('ff-reading-overlay');
+  if (overlay) overlay.classList.remove('open');
+}
+
+// Posts a real comment via the app's existing submitComment() pipeline —
+// no duplicate comment system, just a different input box feeding the same one.
+function _ffSubmitReadingComment() {
+  const readingInput = document.getElementById('ff-reading-comment-input');
+  const hiddenInput = document.getElementById('comment-input');
+  if (!readingInput || !hiddenInput) return;
+
+  const overlay = document.getElementById('ff-reading-overlay');
+  const videoId = overlay ? overlay.dataset.videoId : null;
+  if (!videoId) return;
+
+  window.currentVideoId = videoId;
+  hiddenInput.value = readingInput.value;
+  try {
+    const result = submitComment();
+    if (result && typeof result.then === 'function') {
+      result.then(() => { readingInput.value = ''; });
+    } else {
+      readingInput.value = '';
+    }
+  } catch (e) { console.warn('[FanFeed] reading-mode comment failed', e); }
+}
+
+
 function setupFanFeedObserver() {
   if (_ffObserver) _ffObserver.disconnect();
-  const slides = document.querySelectorAll('#fanfeed-slides .ff-slide');
+  const slides = Array.from(document.querySelectorAll('#fanfeed-slides .ff-slide'));
 
   _ffObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
-      const video = entry.target.querySelector('video');
+      const video = entry.target.querySelector('video.ff-video');
+      const videoBg = entry.target.querySelector('video.ff-video-bg');
       if (!video) return;
       if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
         video.muted = _ffMuted;
+        if (videoBg) { videoBg.currentTime = video.currentTime; videoBg.play().catch(() => {}); }
         const playPromise = video.play();
-        if (playPromise) playPromise.catch(() => {});
+        if (playPromise) {
+          playPromise.catch(() => {
+            // Browser blocked unmuted autoplay (varies by device/browser).
+            // Fall back to muted so playback never just silently fails,
+            // and let the person know sound is one tap away.
+            if (!_ffMuted) {
+              _ffMuted = true;
+              document.querySelectorAll('.ff-mute-btn').forEach(b => b.textContent = '🔇');
+              if (typeof showToast === 'function') showToast('Tap the video for sound 🔊');
+            }
+            video.muted = true;
+            video.play().catch(() => {});
+          });
+        }
+        // Endless feed: once we're within 1 slide of the end, seamlessly
+        // extend it instead of ever letting the person hit a hard stop.
+        const idx = slides.indexOf(entry.target);
+        if (idx >= slides.length - 2) _ffExtendFeedLoop();
       } else {
         video.pause();
         video.currentTime = 0;
+        if (videoBg) { videoBg.pause(); videoBg.currentTime = 0; }
       }
     });
   }, { threshold: [0, 0.6, 1] });
@@ -9634,9 +9804,27 @@ function setupFanFeedObserver() {
   slides.forEach(slide => _ffObserver.observe(slide));
 }
 
+// Appends another full pass of the same posts so swiping never runs out —
+// a real infinite loop rather than a list with a visible end.
+let _ffExtending = false;
+function _ffExtendFeedLoop() {
+  if (_ffExtending || !_ffCurrentPosts.length) return;
+  _ffExtending = true;
+  const slidesEl = document.getElementById('fanfeed-slides');
+  if (slidesEl) {
+    slidesEl.insertAdjacentHTML('beforeend', _ffCurrentPosts.map(v => _ffRenderSlide(v)).join(''));
+    _ffCurrentPosts.forEach(v => _ffSubscribeMetrics(v.id));
+    _ffWireNewSlides();
+    _ffSyncFollowBadges();
+  }
+  setTimeout(() => { _ffExtending = false; }, 500);
+}
+
 function _ffToggleMute() {
   _ffMuted = !_ffMuted;
-  document.querySelectorAll('#fanfeed-slides video').forEach(v => v.muted = _ffMuted);
+  // Only the foreground (real) video's audio matters — the background layer
+  // is a purely decorative blurred duplicate and must always stay muted.
+  document.querySelectorAll('#fanfeed-slides video.ff-video').forEach(v => v.muted = _ffMuted);
   document.querySelectorAll('.ff-mute-btn').forEach(b => b.textContent = _ffMuted ? '🔇' : '🔊');
 }
 
@@ -9652,6 +9840,15 @@ function _ffLike(videoId, el) {
 function _ffComment(videoId) {
   window.currentVideoId = videoId;
   try { if (typeof openComments === 'function') openComments(); } catch (e) {}
+}
+
+function _ffSave(videoId, el) {
+  try { if (typeof toggleSaveVideo === 'function') toggleSaveVideo(videoId); } catch (e) {}
+  const nowSaved = (typeof savedHighlights !== 'undefined') && savedHighlights.has(videoId);
+  const svg = el.querySelector('svg');
+  if (svg) svg.setAttribute('fill', nowSaved ? '#facc15' : '#fff');
+  el.style.transform = 'scale(1.2)';
+  setTimeout(() => { el.style.transform = 'scale(1)'; }, 150);
 }
 
 function _ffShare(videoId) {
