@@ -9982,65 +9982,40 @@ function _ffAttachSwipeHandlers(slideEl, userId, posterName) {
   }, { passive: true });
 }
 
-/* ── Precise one-slide-per-swipe vertical navigation (TikTok-exact) ──
-   Native CSS scroll-snap is still in place as a fallback, but a fast/strong
-   flick on mobile Chrome can glide past more than one slide before it
-   catches. This takes over the vertical drag ourselves: the feed follows
-   your finger 1:1, and on release it moves to exactly one slide — never
-   more, never less — regardless of how hard or fast you swiped.
-   Coexists with the horizontal swipe-to-profile handler above: this only
-   engages once a clear vertical intent is detected, so a horizontal drag
-   is left completely alone for that handler to process on touchend. */
+/* ── One-slide-per-swipe vertical navigation (TikTok-exact) ──
+   Native CSS scroll-snap (scroll-snap-type: y mandatory + scroll-snap-stop:
+   always on #fanfeed-slides / .ff-slide, set in index.html) is what actually
+   moves the feed. scroll-snap-stop:always is specifically designed to stop
+   at every slide even on a fast flick, so the browser's own GPU-composited
+   scroll handles this correctly on its own — no JS should touch scrollTop
+   during the gesture, since that's what caused the draggy, un-native feel.
+
+   This function is now just a safety net: after the native scroll settles,
+   it checks whether we landed exactly on a slide boundary (we always should,
+   given scroll-snap-stop:always) and nudges into place only if not — e.g.
+   if content/layout shifted mid-scroll. It never intercepts touch events. */
 function _ffSetupPreciseVerticalSwipe() {
   const slidesEl = document.getElementById('fanfeed-slides');
   if (!slidesEl || slidesEl.dataset.preciseSwipeWired === '1') return;
   slidesEl.dataset.preciseSwipeWired = '1';
 
-  let startX = 0, startY = 0, startScrollTop = 0, dy = 0, axis = null;
+  let settleTimer = null;
 
-  slidesEl.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) return;
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    startScrollTop = slidesEl.scrollTop;
-    dy = 0;
-    axis = null;
-  }, { passive: true });
+  slidesEl.addEventListener('scroll', () => {
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => {
+      const h = slidesEl.clientHeight || 1;
+      const nearestIndex = Math.round(slidesEl.scrollTop / h);
+      const maxIndex = Math.max(0, Math.round(slidesEl.scrollHeight / h) - 1);
+      const targetIndex = Math.max(0, Math.min(nearestIndex, maxIndex));
+      const targetTop = targetIndex * h;
 
-  slidesEl.addEventListener('touchmove', (e) => {
-    const curX = e.touches[0].clientX;
-    const curY = e.touches[0].clientY;
-    const dx = curX - startX;
-    dy = curY - startY;
-
-    if (axis === null) {
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; // dead zone, direction not clear yet
-      axis = Math.abs(dy) > Math.abs(dx) ? 'v' : 'h';
-    }
-    if (axis === 'v') {
-      // Follow the finger exactly — this is what prevents overshooting
-      // past more than one slide, since we're not relying on momentum.
-      slidesEl.scrollTop = startScrollTop - dy;
-      e.preventDefault();
-    }
-    // If axis === 'h', do nothing here — leave it entirely to the
-    // per-slide horizontal handler's own touchend logic above.
-  }, { passive: false });
-
-  slidesEl.addEventListener('touchend', () => {
-    if (axis !== 'v') return;
-    const h = slidesEl.clientHeight || 1;
-    const currentIndex = Math.round(startScrollTop / h);
-    const maxIndex = Math.max(0, Math.round(slidesEl.scrollHeight / h) - 1);
-    const threshold = h * 0.15; // how far you must drag before it counts as a deliberate swipe
-
-    let targetIndex = currentIndex;
-    if (dy < -threshold) targetIndex = currentIndex + 1;
-    else if (dy > threshold) targetIndex = currentIndex - 1;
-    targetIndex = Math.max(0, Math.min(targetIndex, maxIndex));
-
-    slidesEl.scrollTo({ top: targetIndex * h, behavior: 'smooth' });
-    axis = null;
+      // Only correct if we're meaningfully off — avoids fighting native
+      // scroll-snap on every normal swipe, which already lands correctly.
+      if (Math.abs(slidesEl.scrollTop - targetTop) > 2) {
+        slidesEl.scrollTo({ top: targetTop, behavior: 'smooth' });
+      }
+    }, 120); // fires once the user has stopped scrolling
   }, { passive: true });
 }
 
