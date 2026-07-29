@@ -2560,23 +2560,89 @@ let profileData = {
   team: 'Real Madrid',
   initials: 'JD',
   avatarUrl: null,
+  handle: null,
 };
 
 function triggerAvatarUpload() {
   document.getElementById('avatar-file-input').click();
 }
 
-function handleAvatarUpload(e) {
+// Prefer the user's actual reserved @handle; fall back to deriving one from
+// their display name for anyone who hasn't set a handle yet (legacy posts,
+// or a user who hasn't opened the edit-profile form since this was added).
+function _getPosterHandle() {
+  if (profileData && profileData.handle) return '@' + profileData.handle;
+  return '@' + ((profileData && profileData.name) || 'pitchside').replace(/\s+/g,'').toLowerCase();
+}
+
+async function handleAvatarUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
-  const url = URL.createObjectURL(file);
-  profileData.avatarUrl = url;
+
   const img = document.getElementById('profile-avatar-img');
   const initials = document.getElementById('profile-initials');
-  img.src = url;
+
+  // Show it immediately from the local file so it feels instant — swapped
+  // for the real hosted URL once the upload actually finishes.
+  const localPreviewUrl = URL.createObjectURL(file);
+  img.src = localPreviewUrl;
   img.style.display = 'block';
   initials.style.display = 'none';
-  showToast('Profile photo updated ✓');
+
+  const _cu = window._psCurrentUser;
+  if (!_cu) {
+    showToast('⚠️ Please sign in to save your profile photo');
+    return;
+  }
+
+  try {
+    showToast('Uploading photo…');
+    const presignRes = await fetch('/api/r2-upload-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: 'avatar_' + _cu.uid + '_' + Date.now() + '.jpg',
+        fileType: file.type,
+        uploaderId: _cu.uid,
+      }),
+    });
+    const presignData = await presignRes.json();
+    if (!presignRes.ok || !presignData.uploadUrl) {
+      throw new Error(presignData.error || 'Could not get upload URL');
+    }
+
+    const putRes = await fetch(presignData.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+    if (!putRes.ok) throw new Error('Upload to storage failed');
+
+    const hostedUrl = presignData.publicUrl;
+    profileData.avatarUrl = hostedUrl;
+    img.src = hostedUrl; // swap from local blob to the real, permanent URL
+    URL.revokeObjectURL(localPreviewUrl);
+
+    // Persist to Firestore so it's still there next time they open the app,
+    // and so other people viewing this profile see it too.
+    const { doc, setDoc, db } = window._psFs || {};
+    if (doc && db) {
+      await setDoc(doc(db, 'users', _cu.uid), { avatarUrl: hostedUrl }, { merge: true });
+    }
+
+    showToast('Profile photo updated ✓');
+  } catch (err) {
+    console.warn('[Avatar] upload failed:', err);
+    showToast('⚠️ Could not save photo — check your connection and try again');
+    URL.revokeObjectURL(localPreviewUrl);
+    // Revert to whatever was showing before the failed attempt
+    if (profileData.avatarUrl) {
+      img.src = profileData.avatarUrl;
+    } else {
+      img.style.display = 'none';
+      initials.style.display = 'flex';
+    }
+  }
 }
 
 function updateProfileStats() {
@@ -2640,6 +2706,7 @@ function updateProfileStats() {
 }
 
 function openEditProfile() {
+  document.getElementById('edit-username').value = profileData.handle || '';
   document.getElementById('edit-name').value  = profileData.name;
   document.getElementById('edit-email').value = profileData.email;
   document.getElementById('edit-team').value  = profileData.team;
@@ -2654,19 +2721,72 @@ function closeEditProfile() {
   document.getElementById('profile-menu-items').style.display = '';
 }
 
-function saveProfile() {
+async function saveProfile() {
+  const usernameRaw = document.getElementById('edit-username').value.trim();
   const name  = document.getElementById('edit-name').value.trim()  || profileData.name;
   const email = document.getElementById('edit-email').value.trim() || profileData.email;
   const team  = document.getElementById('edit-team').value.trim()  || profileData.team;
-  profileData = { ...profileData, name, email, team,
+
+  const _cu = window._psCurrentUser;
+  const { doc, getDoc, setDoc, db } = window._psFs || {};
+
+  // ── Validate + reserve the username, if it was changed ──
+  let handle = profileData.handle || '';
+  if (usernameRaw) {
+    const normalized = usernameRaw.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (normalized.length < 3 || normalized.length > 20) {
+      showToast('⚠️ Username must be 3–20 characters (letters, numbers, underscore only)');
+      return;
+    }
+    if (normalized !== handle) {
+      if (doc && getDoc && db) {
+        try {
+          const takenSnap = await getDoc(doc(db, 'handles', normalized));
+          if (takenSnap.exists() && takenSnap.data().uid !== (_cu && _cu.uid)) {
+            showToast('⚠️ @' + normalized + ' is already taken — try another');
+            return;
+          }
+        } catch (e) {
+          // If we can't verify uniqueness (offline, etc.), don't silently
+          // let a possible collision through — block and ask them to retry.
+          console.warn('[Profile] username check failed:', e);
+          showToast('⚠️ Could not verify that username — check your connection and try again');
+          return;
+        }
+      }
+      handle = normalized;
+    }
+  }
+
+  profileData = { ...profileData, name, email, team, handle,
     initials: name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase() };
+
   document.getElementById('profile-name').textContent  = name;
   document.getElementById('profile-email').textContent = email;
+  const usernameEl = document.getElementById('profile-username');
+  if (usernameEl) usernameEl.textContent = handle ? '@' + handle : '';
   if (!profileData.avatarUrl) {
     document.getElementById('profile-initials').textContent = profileData.initials;
   }
   closeEditProfile();
-  showToast('Profile updated ✓');
+
+  // ── Persist to Firestore so it survives a refresh and other people see it ──
+  if (_cu && doc && setDoc && db) {
+    try {
+      await setDoc(doc(db, 'users', _cu.uid), {
+        name, email, favoriteTeam: team, handle,
+      }, { merge: true });
+      if (handle) {
+        await setDoc(doc(db, 'handles', handle), { uid: _cu.uid }, { merge: true });
+      }
+      showToast('Profile updated ✓');
+    } catch (e) {
+      console.warn('[Profile] Firestore save failed:', e);
+      showToast('⚠️ Shown here, but saving to your account failed — check your connection and try again');
+    }
+  } else {
+    showToast('Profile updated ✓');
+  }
 }
 
 function confirmSignOut() {
@@ -5937,12 +6057,48 @@ async function fetchUserStreak(uid) {
       const data = snap.data();
       fanStreak   = data.streakCount || 0;
       lastCheckIn = data.lastLogin ? new Date(data.lastLogin.toDate()).toDateString() : '';
+      _applyStoredProfileData(data);
     } else {
       const u = window._psCurrentUser;
       await setDoc(userDocRef, { username: (u && u.displayName) || 'Anonymous', favoriteTeam: '', streakCount: 0, lastLogin: null });
     }
   } catch(e) { console.warn('[Streak] fetchUserStreak:', e); }
   checkFanStreak();
+}
+
+// Applies whatever profile fields exist in the user's Firestore doc onto
+// profileData + the visible UI — avatar, name, email — so a real returning
+// user sees their own info instead of the hardcoded "John Doe" placeholder.
+function _applyStoredProfileData(data) {
+  if (!data) return;
+  if (data.avatarUrl) profileData.avatarUrl = data.avatarUrl;
+  // 'name' is the current field; 'username' is what older saves used for
+  // display name before the real @handle field existed — support both.
+  if (data.name)      profileData.name = data.name;
+  else if (data.username) profileData.name = data.username;
+  if (data.email)     profileData.email = data.email;
+  if (data.favoriteTeam) profileData.team = data.favoriteTeam;
+  if (data.handle)    profileData.handle = data.handle;
+  if (profileData.name) {
+    profileData.initials = profileData.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  }
+
+  const img = document.getElementById('profile-avatar-img');
+  const initials = document.getElementById('profile-initials');
+  const nameEl = document.getElementById('profile-name');
+  const emailEl = document.getElementById('profile-email');
+  const usernameEl = document.getElementById('profile-username');
+
+  if (profileData.avatarUrl && img && initials) {
+    img.src = profileData.avatarUrl;
+    img.style.display = 'block';
+    initials.style.display = 'none';
+  } else if (initials) {
+    initials.textContent = profileData.initials;
+  }
+  if (nameEl) nameEl.textContent = profileData.name;
+  if (emailEl) emailEl.textContent = profileData.email;
+  if (usernameEl) usernameEl.textContent = profileData.handle ? '@' + profileData.handle : '';
 }
 
 
@@ -6880,8 +7036,119 @@ async function pcPublish() {
     });
   }
 
+  // ── Helper: poll Cloudflare Stream until the uploaded video has finished
+  //    transcoding (typically a few seconds to ~1 min depending on length) ──
+  function _streamPollUntilReady(uid, onProgress) {
+    return new Promise((resolve, reject) => {
+      const startedAt = Date.now();
+      const MAX_WAIT_MS = 3 * 60 * 1000; // give up after 3 minutes
+
+      const poll = async () => {
+        if (Date.now() - startedAt > MAX_WAIT_MS) {
+          reject(new Error('STREAM_TIMEOUT'));
+          return;
+        }
+        try {
+          const r = await fetch(`/api/stream-status?uid=${encodeURIComponent(uid)}`);
+          const data = await r.json();
+          if (!r.ok) { reject(new Error('STREAM_STATUS_ERROR')); return; }
+
+          if (data.state === 'error') {
+            reject(new Error('STREAM_PROCESSING_ERROR'));
+            return;
+          }
+          if (data.ready) {
+            resolve(data);
+            return;
+          }
+          if (onProgress) onProgress();
+          setTimeout(poll, 2500);
+        } catch (e) {
+          reject(new Error('STREAM_STATUS_ERROR'));
+        }
+      };
+      poll();
+    });
+  }
+
+  // ── Helper: upload a video directly to Cloudflare Stream (transcodes into
+  //    multiple quality renditions automatically — replaces raw R2 upload
+  //    for videos only; images still go straight to R2, see _doUpload) ──
+  function _doStreamUpload(file) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        // Step 1: ask our backend for a one-time Stream direct-upload URL
+        const presignRes = await fetch('/api/stream-upload-url', { method: 'POST' });
+        const presignData = await presignRes.json();
+        if (!presignRes.ok || !presignData.uploadURL) {
+          reject(new Error('STREAM_PRESIGN:' + (presignData.error || 'Could not get Stream upload URL')));
+          return;
+        }
+
+        // Step 2: upload the file directly to Cloudflare Stream
+        const form = new FormData();
+        form.append('file', file);
+
+        const xhr = new XMLHttpRequest();
+        const TIMEOUT_MS = 10 * 60 * 1000; // Generous timeout for large videos on Nigerian networks
+        const timer = setTimeout(() => {
+          xhr.abort();
+          reject(new Error('TIMEOUT'));
+        }, TIMEOUT_MS);
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && upProg) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            upProg.textContent = 'Uploading… ' + pct + '%  (' + (fileMB * pct / 100).toFixed(1) + ' / ' + fileMB.toFixed(1) + ' MB)';
+          }
+        };
+
+        xhr.onload = async () => {
+          clearTimeout(timer);
+          if (xhr.status < 200 || xhr.status >= 300) {
+            const snippet = (xhr.responseText || '').slice(0, 200);
+            reject(new Error('STREAM_UPLOAD:' + xhr.status + ' - ' + (snippet || 'no response body')));
+            return;
+          }
+          // Step 3: wait for Cloudflare to finish transcoding before we use it
+          try {
+            upProg.textContent = 'Processing video…';
+            const ready = await _streamPollUntilReady(presignData.uid, () => {
+              upProg.textContent = 'Processing video… almost there';
+            });
+            resolve({
+              secure_url: ready.hlsUrl,
+              public_id: presignData.uid,
+              streamUid: presignData.uid,
+              format: 'hls',
+              duration: null,
+              thumbnail_url: ready.thumbnail,
+            });
+          } catch (e) {
+            reject(e);
+          }
+        };
+
+        xhr.onerror = () => {
+          clearTimeout(timer);
+          reject(new Error('STREAM_UPLOAD:0 - Request blocked before reaching Cloudflare (network/CORS)'));
+        };
+        xhr.onabort = () => reject(new Error('TIMEOUT'));
+        xhr.open('POST', presignData.uploadURL);
+        xhr.send(form);
+      } catch (e) {
+        reject(new Error('NETWORK'));
+      }
+    });
+  }
+
   // ── Helper: single upload attempt with progress — uploads DIRECTLY to Cloudflare R2 ──
   function _doUpload(file, resourceType) {
+    // Videos go through Cloudflare Stream (adaptive quality + transcoding).
+    // Images keep using the existing direct-to-R2 flow — no change there.
+    if (resourceType === 'video') {
+      return _doStreamUpload(file);
+    }
     return new Promise(async (resolve, reject) => {
       try {
         // Step 1: ask our backend for a presigned upload URL (no file bytes sent yet)
@@ -6979,6 +7246,21 @@ async function pcPublish() {
         return;
       }
 
+      if (lastErr.startsWith('STREAM_PRESIGN:') || lastErr === 'STREAM_PROCESSING_ERROR') {
+        // Stream rejected the file or failed to process it — retrying won't help
+        upDiv.classList.remove('show');
+        btn.disabled = false;
+        showToast('⚠️ Video processing failed. Try a different file or format.');
+        return;
+      }
+
+      if (lastErr === 'STREAM_TIMEOUT') {
+        upDiv.classList.remove('show');
+        btn.disabled = false;
+        showToast('⏱️ Video is taking longer than usual to process. Check back in a minute.');
+        return;
+      }
+
       if (attempt === MAX_ATTEMPTS) {
         // All attempts failed
         upDiv.classList.remove('show');
@@ -6990,6 +7272,8 @@ async function pcPublish() {
         } else if (lastErr.startsWith('R2DEBUG:')) {
           // TEMP DEBUG: shows the real R2 rejection reason so we can diagnose it
           alert('DEBUG: ' + lastErr.replace('R2DEBUG:', ''));
+        } else if (lastErr.startsWith('STREAM_UPLOAD:')) {
+          alert('DEBUG (Stream): ' + lastErr.replace('STREAM_UPLOAD:', ''));
         } else {
           alert('❌ Upload failed after 3 attempts: ' + lastErr);
         }
@@ -7048,8 +7332,9 @@ if (!info) return; // safety guard
           title: finalTitle, mediaUrl, mediaType,
           publicId: info.public_id, format: info.format,
           duration: info.duration || null,
+          streamUid: info.streamUid || null,
           thumbnail: capturedThumbUrl || (mediaType === 'video' ? 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E' : mediaUrl),
-          poster: '@' + ((profileData && profileData.name) || 'pitchside').replace(/\s+/g,'').toLowerCase(),
+          poster: _getPosterHandle(),
           userId: (_cu && _cu.uid) || 'anonymous',
           userName: (profileData && profileData.name) || 'PitchSide User',
           cat: 'Trending', likes: 0, comments: 0, userPost: true, playerPost: window._hlIsPlayerPost || false,
@@ -7073,13 +7358,14 @@ const localVideo = {
       date: new Date().toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}),
       cat: 'Trending',
       src: mediaType === 'video' ? mediaUrl : '',
+      streamUid: info.streamUid || null,
       thumbnail: thumbUrl,
       embed: '', embedUrl: mediaType === 'video' ? mediaUrl : '',
       userPost: true,
       userId: (_cu && _cu.uid) || 'anonymous',  // ← ADD THIS LINE
       mediaType: mediaType,
       isImage: mediaType === 'image',
-      poster: '@' + ((profileData && profileData.name) || 'pitchside').replace(/\s+/g,'').toLowerCase(),
+      poster: _getPosterHandle(),
       avatarSeed: 'user',
       likes: 0, comments: 0,
       music: _pcMusic || null,
@@ -9529,6 +9815,54 @@ function _ffGetVideoSrc(v) {
   return v.videoUrl || v.src || v.url || '';
 }
 
+// ── HLS playback support for Cloudflare Stream videos ──
+// Safari plays .m3u8 natively; every other mobile/desktop browser (Chrome,
+// the majority of your users on Android) needs hls.js to play adaptive
+// streams. Legacy videos already uploaded to R2 are plain .mp4 and don't
+// need any of this — they just use src directly, same as before.
+let _hlsJsLoadPromise = null;
+function _loadHlsJs() {
+  if (window.Hls) return Promise.resolve();
+  if (_hlsJsLoadPromise) return _hlsJsLoadPromise;
+  _hlsJsLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load hls.js'));
+    document.head.appendChild(script);
+  });
+  return _hlsJsLoadPromise;
+}
+
+// Attaches the right playback method to a <video> element based on the URL.
+// Safe to call multiple times on the same element — it no-ops if already wired.
+async function _ffAttachVideoSource(videoEl, url) {
+  if (!videoEl || !url || videoEl.dataset.srcWired === url) return;
+  videoEl.dataset.srcWired = url;
+
+  const isHls = url.includes('.m3u8');
+  if (!isHls) {
+    videoEl.src = url; // legacy R2 mp4 — unchanged behavior
+    return;
+  }
+
+  const canPlayNatively = videoEl.canPlayType('application/vnd.apple.mpegurl');
+  if (canPlayNatively) {
+    videoEl.src = url; // Safari / iOS — native HLS support
+    return;
+  }
+
+  try {
+    await _loadHlsJs();
+    const hls = new window.Hls({ maxBufferLength: 15 }); // keep buffering modest on mobile data
+    hls.loadSource(url);
+    hls.attachMedia(videoEl);
+    videoEl._hlsInstance = hls; // kept for cleanup if the slide is ever removed
+  } catch (e) {
+    console.warn('[FanFeed] hls.js failed to load, video will not play:', e);
+  }
+}
+
 function openFanFeedOverlay(startVideoId) {
   const container = document.getElementById('fanfeed-container');
   const slidesEl = document.getElementById('fanfeed-slides');
@@ -9586,6 +9920,12 @@ function _ffWireNewSlides() {
     const posterEl = slideEl.querySelector('.ff-poster');
     const posterName = posterEl ? posterEl.textContent : '@pitchside';
     _ffAttachSwipeHandlers(slideEl, uid, posterName);
+
+    // Set up playback source (HLS via hls.js, or plain mp4 src for legacy posts)
+    const fgVideo = slideEl.querySelector('video.ff-video');
+    const bgVideo = slideEl.querySelector('video.ff-video-bg');
+    if (fgVideo && fgVideo.dataset.videoUrl) _ffAttachVideoSource(fgVideo, fgVideo.dataset.videoUrl);
+    if (bgVideo && bgVideo.dataset.videoUrl) _ffAttachVideoSource(bgVideo, bgVideo.dataset.videoUrl);
   });
   setupFanFeedObserver();
 }
@@ -9645,8 +9985,8 @@ function _ffRenderSlide(v) {
 
   return `
     <div class="ff-slide" data-id="${safeId}" data-video-id="${safeId}" data-uid="${_esc(posterUserId)}">
-      <video class="ff-video-bg" src="${_ffGetVideoSrc(v)}" loop playsinline muted preload="metadata" aria-hidden="true" tabindex="-1"></video>
-      <video class="ff-video" src="${_ffGetVideoSrc(v)}" loop playsinline preload="metadata"
+      <video class="ff-video-bg" data-video-url="${_ffGetVideoSrc(v)}" loop playsinline muted preload="metadata" aria-hidden="true" tabindex="-1"></video>
+      <video class="ff-video" data-video-url="${_ffGetVideoSrc(v)}" loop playsinline preload="metadata"
         onclick="_ffHandleVideoTap(this, '${safeId}')"></video>
 
       <div class="ff-gradient-bottom"></div>
