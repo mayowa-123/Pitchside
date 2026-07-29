@@ -676,12 +676,18 @@
       <input type="file" id="avatar-file-input" accept="image/*" style="display:none;" onchange="handleAvatarUpload(event)">
 
       <div class="profile-name" id="profile-name">John Doe</div>
+      <div class="profile-username" id="profile-username" style="font-size:13px;color:var(--text3,#888);margin-top:-2px;"></div>
       <div class="profile-email" id="profile-email"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="f69c999e98d8929993b6869f82959e859f9293d895999b">[email&#160;protected]</a></div>
       <div class="profile-badge">⭐ Pro Member</div>
 
       <!-- Edit Profile Form -->
       <div class="edit-profile-form" id="edit-profile-form">
         <div style="height:16px;"></div>
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" class="form-inp" id="edit-username" placeholder="e.g. mayowa_10" autocapitalize="off" autocorrect="off">
+          <div style="font-size:11px;color:var(--text3,#888);margin-top:4px;">Lowercase letters, numbers, underscore only. This is your public @handle.</div>
+        </div>
         <div class="form-group">
           <label class="form-label">Display Name</label>
           <input type="text" class="form-inp" id="edit-name" placeholder="Your name">
