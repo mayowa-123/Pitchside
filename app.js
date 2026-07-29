@@ -9780,17 +9780,28 @@ function setupFanFeedObserver() {
         if (videoBg) { videoBg.currentTime = video.currentTime; videoBg.play().catch(() => {}); }
         const playPromise = video.play();
         if (playPromise) {
-          playPromise.catch(() => {
-            // Browser blocked unmuted autoplay (varies by device/browser).
-            // Fall back to muted so playback never just silently fails,
-            // and let the person know sound is one tap away.
-            if (!_ffMuted) {
-              _ffMuted = true;
-              document.querySelectorAll('.ff-mute-btn').forEach(b => b.textContent = '🔇');
-              if (typeof showToast === 'function') showToast('Tap the video for sound 🔊');
+          playPromise.catch((err) => {
+            // Only NotAllowedError means the browser actually blocked
+            // unmuted autoplay — that's the one case we should fall back
+            // to muted playback for. Other rejections (AbortError from a
+            // stall/reflow interrupting play(), NotSupportedError from a
+            // network hiccup mid-buffer, etc.) are connection noise, not
+            // an autoplay policy — muting for those was the bug causing
+            // sound to drop out whenever the network got shaky.
+            if (err && err.name === 'NotAllowedError') {
+              if (!_ffMuted) {
+                _ffMuted = true;
+                document.querySelectorAll('.ff-mute-btn').forEach(b => b.textContent = '🔇');
+                if (typeof showToast === 'function') showToast('Tap the video for sound 🔊');
+              }
+              video.muted = true;
+              video.play().catch(() => {});
+            } else {
+              // Just a stall/interruption — retry playback quietly at the
+              // current mute state, don't touch _ffMuted or show a toast.
+              video.muted = _ffMuted;
+              video.play().catch(() => {});
             }
-            video.muted = true;
-            video.play().catch(() => {});
           });
         }
         // Endless feed: once we're within 1 slide of the end, seamlessly
