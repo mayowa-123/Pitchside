@@ -9530,10 +9530,19 @@ async function _ffAttachVideoSource(videoEl, url) {
 
   try {
     await _loadHlsJs();
-    const hls = new window.Hls({ maxBufferLength: 15 }); // keep buffering modest on mobile data
+    const hls = new window.Hls({
+      maxBufferLength: 15,   // keep buffering modest on mobile data
+      startLevel: 0,         // start at the LOWEST quality tier, not an auto-guess.
+                             // On a weak connection, guessing high means the video
+                             // buffer runs dry (frozen frame, audio keeps playing —
+                             // audio needs far less bandwidth so it doesn't stall the
+                             // same way). Starting low loads fast and reliably, then
+                             // hls.js raises quality automatically once it has a real
+                             // bandwidth measurement.
+    });
     hls.loadSource(url);
     hls.attachMedia(videoEl);
-    videoEl._hlsInstance = hls; // kept for cleanup if the slide is ever removed
+    videoEl._hlsInstance = hls; // kept so we can pause/resume loading or destroy it later
   } catch (e) {
     console.warn('[FanFeed] hls.js failed to load, video will not play:', e);
   }
@@ -9791,19 +9800,27 @@ function setupFanFeedObserver() {
       const video = entry.target.querySelector('video.ff-video');
       const videoBg = entry.target.querySelector('video.ff-video-bg');
       if (!video) return;
+      const idx = slides.indexOf(entry.target);
+
       if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+        // Each play attempt gets a token. If a *newer* play/pause decision
+        // happens before this one's play() promise resolves, the resolved
+        // callback checks the token and backs off instead of blindly
+        // starting playback — this is what was causing a video to start
+        // itself back up after you'd already swiped past it on a fast swipe.
+        const myToken = (video._ffPlayToken = (video._ffPlayToken || 0) + 1);
+
         video.muted = _ffMuted;
-        if (videoBg) { videoBg.currentTime = video.currentTime; videoBg.play().catch(() => {}); }
+        if (video._hlsInstance) video._hlsInstance.startLoad(); // resume fetching segments
+        if (videoBg) {
+          videoBg.currentTime = video.currentTime;
+          if (videoBg._hlsInstance) videoBg._hlsInstance.startLoad();
+          videoBg.play().catch(() => {});
+        }
         const playPromise = video.play();
         if (playPromise) {
           playPromise.catch((err) => {
-            // Only NotAllowedError means the browser actually blocked
-            // unmuted autoplay — that's the one case we should fall back
-            // to muted playback for. Other rejections (AbortError from a
-            // stall/reflow interrupting play(), NotSupportedError from a
-            // network hiccup mid-buffer, etc.) are connection noise, not
-            // an autoplay policy — muting for those was the bug causing
-            // sound to drop out whenever the network got shaky.
+            if (video._ffPlayToken !== myToken) return; // superseded — don't fight the current state
             if (err && err.name === 'NotAllowedError') {
               if (!_ffMuted) {
                 _ffMuted = true;
@@ -9813,8 +9830,6 @@ function setupFanFeedObserver() {
               video.muted = true;
               video.play().catch(() => {});
             } else {
-              // Just a stall/interruption — retry playback quietly at the
-              // current mute state, don't touch _ffMuted or show a toast.
               video.muted = _ffMuted;
               video.play().catch(() => {});
             }
@@ -9822,12 +9837,26 @@ function setupFanFeedObserver() {
         }
         // Endless feed: once we're within 1 slide of the end, seamlessly
         // extend it instead of ever letting the person hit a hard stop.
-        const idx = slides.indexOf(entry.target);
         if (idx >= slides.length - 2) _ffExtendFeedLoop();
+
+        // Preload the next slide's video so it's already buffering by the
+        // time you swipe to it, instead of only starting to fetch once it's
+        // already the one on screen — this is what was causing the load delay.
+        const nextSlide = slides[idx + 1];
+        if (nextSlide) {
+          const nextVideo = nextSlide.querySelector('video.ff-video');
+          if (nextVideo && nextVideo.dataset.videoUrl) _ffAttachVideoSource(nextVideo, nextVideo.dataset.videoUrl);
+        }
       } else {
+        video._ffPlayToken = (video._ffPlayToken || 0) + 1; // invalidate any in-flight play() for this video
         video.pause();
         video.currentTime = 0;
         if (videoBg) { videoBg.pause(); videoBg.currentTime = 0; }
+        // Stop fetching more HLS segments for an off-screen video instead of
+        // leaving it silently running in the background — this is what was
+        // making the feed feel like it was "hanging" the longer you scrolled.
+        if (video._hlsInstance) video._hlsInstance.stopLoad();
+        if (videoBg && videoBg._hlsInstance) videoBg._hlsInstance.stopLoad();
       }
     });
   }, { threshold: [0, 0.6, 1] });
