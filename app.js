@@ -50,11 +50,6 @@ async function loadSBHighlights(filter) {
   renderSBPage(true);
 }
 
-function _renderHighlightsFromVideos() {
-  if (typeof _sbCurrentFilter !== 'undefined') {
-    loadSBHighlights(_sbCurrentFilter);
-  }
-}
 
 function renderSBPage(reset) {
   const grid = document.getElementById('sb-video-grid');
@@ -1500,14 +1495,6 @@ function _stopInCard(videoId) {
 function openVideoOverlay(videoId) { openHlPlayerById(String(videoId)); }
 function closeVideoOverlay() {
   if (currentVideoId !== null) _stopInCard(currentVideoId);
-}
-function navigateVideo(direction) {
-  const idx = VIDEOS.findIndex(v => v.id === currentVideoId);
-  if (idx === -1) return;
-  const nextIdx = direction === 'next'
-    ? (idx + 1) % VIDEOS.length
-    : (idx - 1 + VIDEOS.length) % VIDEOS.length;
-  _playInCard(VIDEOS[nextIdx].id);
 }
 
 function renderVideoEmbed(v) {
@@ -3230,101 +3217,13 @@ function closeComments() {
   document.getElementById('comment-input').value = '';
 }
 
-function renderComments(videoId) {
-  const list = document.getElementById('comment-list');
-  const mock = MOCK_COMMENTS[videoId] || [];
-  const user = userComments[videoId] || [];
-  const all = [...mock, ...user];
 
-  document.getElementById('comment-count').textContent = `(${all.length})`;
-
-  if (all.length === 0) {
-    list.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text3);font-size:13px;">No comments yet. Be the first!</div>`;
-    return;
-  }
-
-  // XSS-SAFE: use createElement + textContent instead of innerHTML with user data
-  list.innerHTML = '';
-  all.forEach(c => {
-    const item = document.createElement('div');
-    item.className = 'comment-item';
-
-    const avatar = document.createElement('div');
-    avatar.className = 'comment-avatar';
-    avatar.textContent = c.initials;
-
-    const bubble = document.createElement('div');
-    bubble.className = 'comment-bubble';
-
-    const user = document.createElement('div');
-    user.className = 'comment-user';
-    user.textContent = c.user;
-
-    const text = document.createElement('div');
-    text.className = 'comment-text';
-    text.textContent = c.text;
-
-    const time = document.createElement('div');
-    time.className = 'comment-time';
-    time.textContent = c.time;
-
-    bubble.appendChild(user);
-    bubble.appendChild(text);
-    bubble.appendChild(time);
-    item.appendChild(avatar);
-    item.appendChild(bubble);
-    list.appendChild(item);
-  });
-
-  // Scroll to bottom so newest is visible
-  list.scrollTop = list.scrollHeight;
-}
-
-function submitComment() {
-  const input = document.getElementById('comment-input');
-  const text = input.value.trim();
-  if (!text || !currentVideoId) return;
-
-  if (!userComments[currentVideoId]) userComments[currentVideoId] = [];
-  userComments[currentVideoId].push({
-    user: 'You',
-    initials: 'JD',
-    text,
-    time: 'Just now',
-  });
-
-  input.value = '';
-  renderComments(currentVideoId);
-  showToast('Comment posted ✓');
-}
 
 // comment enter key handled in master init above
 
 /* ═══════════════════════════════════════════
    SHARE
 ═══════════════════════════════════════════ */
-function shareVideo() {
-  const v = VIDEOS.find(x => x.id === currentVideoId);
-  if (!v) return;
-
-  const shareData = {
-    title: 'PitchSide – ' + v.title,
-    text: '⚽ Check out this football highlight: ' + v.title,
-    url: window.location.href,
-  };
-
-  if (navigator.share) {
-    navigator.share(shareData)
-      .then(() => showToast('Shared! ✓'))
-      .catch(() => {}); // user cancelled — no toast needed
-  } else {
-    // Fallback: copy link to clipboard
-    const textToCopy = shareData.text + '\n' + shareData.url;
-    navigator.clipboard.writeText(textToCopy)
-      .then(() => showToast('Link copied to clipboard ✓'))
-      .catch(() => showToast('Share: ' + window.location.href));
-  }
-}
 
 /* ═══════════════════════════════════════════
    POST STUDIO
@@ -8094,31 +7993,7 @@ function renderCreatorBadge(userId) {
    Deep links, social intent, copy link functionality
    ────────────────────────────────────────────────────────────── */
 
-function generateDeepLink(videoId) {
-  const baseUrl = window.location.origin;
-  return `${baseUrl}?video=${videoId}&shared=true`;
-}
 
-function shareVideo(videoId, platform) {
-  const deepLink = generateDeepLink(videoId);
-  const video = VIDEOS.find(v => v.id === videoId);
-  const title = video?.title || 'Check out this amazing football highlight!';
-  
-  const shareUrls = {
-    whatsapp: `https://wa.me/?text=${encodeURIComponent(title + ' ' + deepLink)}`,
-    twitter: `https://twitter.com/intent/tweet?text=${encodeURIComponent(title)}&url=${encodeURIComponent(deepLink)}`,
-    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(deepLink)}`,
-    telegram: `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(title)}`,
-    copy: null
-  };
-  
-  if (platform === 'copy') {
-    navigator.clipboard.writeText(deepLink);
-    showToast('✓ Link copied!');
-  } else if (shareUrls[platform]) {
-    window.open(shareUrls[platform], '_blank', 'width=600,height=400');
-  }
-}
 
 function showShareMenu(videoId) {
   const menu = `
@@ -8198,36 +8073,14 @@ function isInCollection(videoId, collectionName = 'favorites') {
 let userFollowing = new Set(); // Stores user IDs you follow
 let userFollowers = new Set(); // Stores users following you
 
-function followUser(userId) {
-  userFollowing.add(userId);
-  addNotification('follow', `You're now following ${getCreatorProfile(userId).name}`, '👥');
-  showToast('✓ Following!');
-}
 
-function unfollowUser(userId) {
-  userFollowing.delete(userId);
-  showToast('Unfollowed');
-}
 
-function isFollowing(userId) {
-  return userFollowing.has(userId);
-}
 
 /* ──────────────────────────────────────────────────────────────
    7️⃣ TRENDING VIDEOS SYSTEM
    Show trending videos based on engagement
    ────────────────────────────────────────────────────────────── */
 
-function getTrendingVideos(limit = 10) {
-  return VIDEOS
-    .filter(v => !v.userPost)
-    .sort((a, b) => {
-      const metricsA = videoMetrics[a.id] || { views: 0, likes: [] };
-      const metricsB = videoMetrics[b.id] || { views: 0, likes: [] };
-      return (metricsB.views + metricsB.likes.length * 10) - (metricsA.views + metricsA.likes.length * 10);
-    })
-    .slice(0, limit);
-}
 
 function renderTrendingSection() {
   const trending = getTrendingVideos(5);
@@ -8718,7 +8571,7 @@ async function addVideoComment(videoId, userId, text) {
   
   if (!fsApi || !db) return;
 
-  const { collection, addDoc, updateDoc, doc, increment } = fsApi;
+  const { collection, addDoc, setDoc, doc, increment } = fsApi;
 
   try {
     // Add comment to Firestore
@@ -8731,10 +8584,15 @@ async function addVideoComment(videoId, userId, text) {
       createdAt: new Date()
     });
 
-    // Update video metrics
-    await updateDoc(doc(db, 'videoMetrics', videoId), {
+    // setDoc(...,{merge:true}) — not updateDoc — because updateDoc throws if
+    // the videoMetrics doc doesn't exist yet (e.g. this is the video's very
+    // first comment and nobody's liked it yet to create the doc first). That
+    // was silently breaking comment counts AND the owner notification below,
+    // since the throw skipped everything after it. Same fix already applied
+    // to likeVideo() above.
+    await setDoc(doc(db, 'videoMetrics', videoId), {
       commentCount: increment(1)
-    });
+    }, { merge: true });
 
     // Notify video owner
     const video = VIDEOS.find(v => v.id === videoId);
@@ -8883,29 +8741,34 @@ async function toggleFollowUser(currentUserId, targetUserId) {
   
   if (!fsApi || !db) return;
 
-  const { collection, doc, updateDoc, arrayUnion, arrayRemove } = fsApi;
+  // setDoc(...,{merge:true}) instead of updateDoc everywhere below — same
+  // fix as likeVideo/addVideoComment. This one mattered most: updateDoc
+  // throws if a userFollowing/{uid} doc doesn't exist yet, which is true
+  // for EVERY new user until their first follow succeeds — so follow was
+  // silently failing for anyone who'd never followed or been followed before.
+  const { collection, doc, setDoc, arrayUnion, arrayRemove } = fsApi;
 
   try {
     const isFollowing = appState.following?.includes(targetUserId);
 
     if (isFollowing) {
       // Unfollow
-      await updateDoc(doc(db, 'userFollowing', currentUserId), {
+      await setDoc(doc(db, 'userFollowing', currentUserId), {
         following: arrayRemove(targetUserId)
-      });
+      }, { merge: true });
 
-      await updateDoc(doc(db, 'userFollowing', targetUserId), {
+      await setDoc(doc(db, 'userFollowing', targetUserId), {
         followers: arrayRemove(currentUserId)
-      });
+      }, { merge: true });
     } else {
       // Follow
-      await updateDoc(doc(db, 'userFollowing', currentUserId), {
+      await setDoc(doc(db, 'userFollowing', currentUserId), {
         following: arrayUnion(targetUserId)
-      });
+      }, { merge: true });
 
-      await updateDoc(doc(db, 'userFollowing', targetUserId), {
+      await setDoc(doc(db, 'userFollowing', targetUserId), {
         followers: arrayUnion(currentUserId)
-      });
+      }, { merge: true });
 
       // Create notification
       createNotification(
@@ -9392,96 +9255,7 @@ async function updateShareCount(videoId) {
 // 👥 FOLLOW SYSTEM - Real-Time User Following
 // ════════════════════════════════════════════════════════════════
 
-async function followUser(userId) {
-  try {
-    const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
-    if (!currentUser?.uid) {
-      showToast('Please log in to follow');
-      return;
-    }
 
-    if (currentUser.uid === userId) {
-      showToast('Cannot follow yourself');
-      return;
-    }
-
-    const db = window._psDb;
-    const fsApi = window._psFs;
-
-    if (!db || !fsApi) {
-      showToast('Database not ready');
-      return;
-    }
-
-    // Check if already following
-    const followingRef = fsApi.collection(db, 'userFollowing');
-    const q = fsApi.query(
-      followingRef,
-      fsApi.where('followerId', '==', currentUser.uid),
-      fsApi.where('followingId', '==', userId)
-    );
-    const snap = await fsApi.getDocs(q);
-
-    if (!snap.empty) {
-      // Already following - unfollow
-      const docId = snap.docs[0].id;
-      await fsApi.deleteDoc(fsApi.doc(db, 'userFollowing', docId));
-      showToast('Unfollowed');
-      return;
-    }
-
-    // Add follow
-    await fsApi.addDoc(followingRef, {
-      followerId: currentUser.uid,
-      followerName: currentUser.displayName || 'User',
-      followerAvatar: currentUser.photoURL || '',
-      followingId: userId,
-      createdAt: new Date(),
-    });
-
-    showToast('Following ✓');
-
-    // Add notification
-    const notifRef = fsApi.collection(db, 'notifications');
-    await fsApi.addDoc(notifRef, {
-      type: 'follow',
-      fromUserId: currentUser.uid,
-      fromUserName: currentUser.displayName || 'User',
-      toUserId: userId,
-      message: `${currentUser.displayName || 'Someone'} started following you`,
-      timestamp: new Date(),
-      read: false,
-    }).catch(() => {});
-  } catch (error) {
-    console.error('Follow error:', error);
-    showToast('Failed to follow user');
-  }
-}
-
-async function isFollowing(userId) {
-  try {
-    const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
-    if (!currentUser?.uid) return false;
-
-    const db = window._psDb;
-    const fsApi = window._psFs;
-
-    if (!db || !fsApi) return false;
-
-    const followingRef = fsApi.collection(db, 'userFollowing');
-    const q = fsApi.query(
-      followingRef,
-      fsApi.where('followerId', '==', currentUser.uid),
-      fsApi.where('followingId', '==', userId)
-    );
-    const snap = await fsApi.getDocs(q);
-    
-    return !snap.empty;
-  } catch (error) {
-    console.error('Check following error:', error);
-    return false;
-  }
-}
 
 function generateDeepLink(videoId) {
   const baseUrl = window.location.origin;
@@ -9515,109 +9289,11 @@ console.log('✅ Unified Firebase Integration Module Loaded');
    WATCH PAGE LOGIC (YOUTUBE STYLE)
 ═══════════════════════════════════════════ */
 
-function openWatchPage(videoData) {
-  const overlay = document.getElementById('watch-page-overlay');
-  const playerBody = document.getElementById('watch-player-body');
-  const titleEl = document.getElementById('watch-video-title');
-  const channelNameEl = document.getElementById('watch-channel-name');
-  const channelAvatarEl = document.getElementById('watch-channel-avatar');
-  
-  titleEl.textContent = videoData.title || 'Football Highlight';
-  channelNameEl.textContent = videoData.channel || 'PitchSide Official';
-  channelAvatarEl.textContent = (videoData.channel || 'P').charAt(0).toUpperCase();
 
-  let src = '';
-  if (videoData.embedUrl) src = videoData.embedUrl;
-  else if (videoData.src) src = videoData.src;
-  else if (videoData.videoId) {
-    const cleanId = String(videoData.videoId).replace('yt_', '');
-    src = `https://www.youtube.com/embed/${cleanId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
-  } else if (videoData.url) src = videoData.url;
 
-  if (typeof cleanEmbedUrl === 'function') src = cleanEmbedUrl(src);
 
-  playerBody.innerHTML = `
-    <div style="width:100%;height:100%;">
-      <iframe src="${src}" width="100%" height="100%" style="border:none;" allowfullscreen allow="autoplay; fullscreen"></iframe>
-    </div>`;
 
-  renderRelatedVideos(videoData);
-  
-  overlay.classList.add('open');
-}
 
-function closeWatchPage() {
-  const overlay = document.getElementById('watch-page-overlay');
-  const playerBody = document.getElementById('watch-player-body');
-  overlay.classList.remove('open');
-  playerBody.innerHTML = '';
-}
-
-function renderRelatedVideos(currentVideo) {
-  const grid = document.getElementById('watch-related-grid');
-  // Get some videos from the global VIDEOS array (excluding the current one)
-  const related = VIDEOS.filter(v => v.title !== currentVideo.title).slice(0, 10);
-  
-  grid.innerHTML = related.map((v, i) => {
-    const thumb = v.thumbnail || 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E';
-    return `
-      <div class="related-card" onclick='swapWatchVideo(${JSON.stringify(v).replace(/'/g, "&apos;")})'>
-        <div class="related-thumb">
-          <img src="${thumb}" onerror="this.src='data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E'">
-        </div>
-        <div class="related-info">
-          <div class="related-title">${v.title}</div>
-          <div class="related-meta">${v.channel || 'PitchSide'} • ${v.views || '12k'} views</div>
-        </div>
-      </div>
-    `;
-  }).join('');
-}
-
-function swapWatchVideo(videoData) {
-  // Smoothly update the player and info without closing the overlay
-  const playerBody = document.getElementById('watch-player-body');
-  const titleEl = document.getElementById('watch-video-title');
-  const channelNameEl = document.getElementById('watch-channel-name');
-  
-  titleEl.textContent = videoData.title;
-  channelNameEl.textContent = videoData.channel || 'PitchSide Official';
-
-  let src = '';
-  if (videoData.embedUrl) src = videoData.embedUrl;
-  else if (videoData.videoId) {
-    const cleanId = String(videoData.videoId).replace('yt_', '');
-    src = `https://www.youtube.com/embed/${cleanId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
-  }
-
-  playerBody.innerHTML = `
-    <div style="width:100%;height:100%;">
-      <iframe src="${src}" width="100%" height="100%" style="border:none;" allowfullscreen allow="autoplay; fullscreen"></iframe>
-    </div>`;
-    
-  // Scroll back to top of info section
-  document.querySelector('.watch-content-scroll').scrollTop = 0;
-  renderRelatedVideos(videoData);
-}
-
-function toggleWatchAction(btn, type) {
-  btn.classList.toggle('active');
-  if (type === 'like' && btn.classList.contains('active')) {
-    document.getElementById('watch-like-count').textContent = '1.3k';
-  } else if (type === 'like') {
-    document.getElementById('watch-like-count').textContent = '1.2k';
-  }
-}
-
-function handleWatchAction(action) {
-  const messages = {
-    'save': 'Video saved to your library! ⚽',
-    'download': 'Starting download... 📥',
-    'share': 'Link copied to clipboard! 🔗',
-    'follow': 'You are now following this channel! ✅'
-  };
-  alert(messages[action] || 'Action performed!');
-}
 
 // Override the existing openSBPlayer to use our new Watch Page
 const originalOpenSBPlayer = window.openSBPlayer;
