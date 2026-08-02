@@ -5158,89 +5158,41 @@ async function handlePlayerSearch(val) {
         return;
       }
 
-      // ── Step 2: Try Sportmonks API first ──
+      // ── Step 2: Search Highlightly (your existing, working integration) ──
       let players = [];
       try {
-        const sportmonksRes = await fetch(
-          `/api/sportmonks?endpoint=players&filters[name]=${encodeURIComponent(query)}&include=team`,
-          { signal: AbortSignal.timeout(7000) }
+        const hlRes = await fetch(
+          `${HIGHLIGHTLY_BASE}?endpoint=players&name=${encodeURIComponent(query)}&limit=10`,
+          { signal: AbortSignal.timeout(8000) }
         );
-        if (sportmonksRes.ok) {
-          const sportmonksData = await sportmonksRes.json();
-          if (sportmonksData.data && Array.isArray(sportmonksData.data)) {
-            players = sportmonksData.data.slice(0, 10).map(p => ({
+        if (hlRes.ok) {
+          const hlData = await hlRes.json();
+          const items = hlData.data || hlData.players || hlData || [];
+          if (Array.isArray(items)) {
+            // Mapped into the same {player, statistics} shape the render
+            // functions below already expect — Highlightly's exact field
+            // names may need a small tweak once you see a real response,
+            // this covers the most likely ones defensively.
+            players = items.map(pl => ({
               player: {
-                id: p.id,
-                firstname: p.first_name || '',
-                lastname: p.last_name || '',
-                photo: p.image_path || '',
-                nationality: p.nationality || '—',
-                age: p.date_of_birth ? new Date().getFullYear() - new Date(p.date_of_birth).getFullYear() : null,
-                position: p.position?.name || '—'
+                id:          pl.id || pl.playerId,
+                firstname:   pl.firstName || (pl.name||'').split(' ')[0] || '',
+                lastname:    pl.lastName  || (pl.name||'').split(' ').slice(1).join(' ') || '',
+                photo:       pl.image || pl.photo || pl.logo || '',
+                nationality: pl.nationality || pl.country || '—',
+                age:         pl.age || null,
+                position:    pl.position || '—',
               },
               statistics: [{
-                team: { name: p.team?.name || '—', logo: p.team?.image_path || '' },
-                games: { position: p.position?.name || '—', appearences: null, rating: null },
-                goals: { total: null, assists: null }
-              }]
+                team:  { name: pl.team?.name || pl.club || '—', logo: pl.team?.logo || '' },
+                games: { position: pl.position || '—', appearences: null, rating: null },
+                goals: { total: null, assists: null },
+              }],
             }));
           }
         }
       } catch(e) {
-        console.warn('Sportmonks API failed:', e);
-      }
-
-      // ── Step 3: Fall back to original football API ──
-      if (!players.length) {
-        try {
-          const response = await fetch(
-            `/api/football?endpoint=players&search=${encodeURIComponent(query)}&league=332&season=2025`,
-            { signal: AbortSignal.timeout(7000) }
-          );
-
-          if (response.ok) {
-            let data = await response.json();
-            
-            // Detect API-level errors
-            if (data.errors && (data.errors.requests || data.errors.token || Object.keys(data.errors).length)) {
-              const errMsg = data.errors.requests || data.errors.token || JSON.stringify(data.errors);
-              res.innerHTML = `
-                <div class="player-empty">
-                  <div class="player-empty-icon">⚠️</div>
-                  <div class="player-empty-text">API Error: ${errMsg}</div>
-                </div>`;
-              return;
-            }
-
-            players = data.response || [];
-
-            // If no results in NPFL, widen search to all leagues
-            if (!players.length) {
-              const r2 = await fetch(
-                `/api/football?endpoint=players&search=${encodeURIComponent(query)}&season=2025`,
-                { signal: AbortSignal.timeout(7000) }
-              );
-              if (r2.ok) {
-                const d2 = await r2.json();
-                players = d2.response || [];
-                
-                // Fallback to 2024 if 2025 has no results
-                if (!players.length) {
-                  const r3 = await fetch(
-                    `/api/football?endpoint=players&search=${encodeURIComponent(query)}&season=2024`,
-                    { signal: AbortSignal.timeout(7000) }
-                  );
-                  if (r3.ok) {
-                    const d3 = await r3.json();
-                    players = d3.response || [];
-                  }
-                }
-              }
-            }
-          }
-        } catch(e) {
-          console.warn('Football API also failed:', e);
-        }
+        console.warn('[Players] Highlightly search failed:', e);
       }
 
       _playerCache[queryLower] = players;
@@ -5257,41 +5209,6 @@ async function handlePlayerSearch(val) {
 }
 
 /* ── Render search results list ── */
-function _safeParseJSON(text) {
-  try {
-    // Remove markdown fences
-    let clean = text.replace(/```json|```/g, '').trim();
-    // Extract first JSON object found
-    const match = clean.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]);
-    return {};
-  } catch(_) { return {}; }
-}
-
-async function _fetchPlayerStatsFromAI(playerName, nationality, position) {
-  try {
-    const res = await fetch('/api/ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        max_tokens: 300,
-        system: 'You are a football stats expert. Respond with a single JSON object only. No text before or after. No markdown.',
-        messages: [{ role: 'user', content: `Provide the most recent statistics (2024/2025 or 2025/2026) for the football player ${playerName} (${nationality}, ${position}). The current date is May 4, 2026. Ensure the "club" is their current club as of today (e.g., Osimhen is at Galatasaray, Messi is at Inter Miami). If you do not have the exact data for the current season, provide the most recent confirmed numbers from the previous season. Reply with ONLY this JSON format: {"goals":number,"assists":number,"apps":number,"rating":number,"club":"string"}` }]
-      })
-    });
-    const data = await res.json();
-    const text = data.content?.[0]?.text || '{}';
-    const parsed = _safeParseJSON(text);
-    return {
-      goals:   parsed.goals   ?? 0,
-      assists: parsed.assists ?? 0,
-      apps:    parsed.apps    ?? 0,
-      rating:  parsed.rating  ?? '—',
-      club:    parsed.club    || 'Unknown'
-    };
-  } catch(_) { return { goals:0, assists:0, apps:0, rating:'—', club:'Unknown' }; }
-}
-
 function _renderPlayerResults(players, query) {
   const res = document.getElementById('player-results');
   if (!players.length) {
@@ -5337,7 +5254,7 @@ function _renderPlayerResults(players, query) {
           </div>
         </div>
         <div style="padding:6px 12px 8px;font-size:11px;color:var(--text3);display:flex;align-items:center;gap:4px;border-top:1px solid var(--border);">
-          <span>📖</span> Tap to view full Wikipedia profile
+          <span>📊</span> Tap for stats &amp; profile
         </div>
       </div>`;
   }).join('');
@@ -5557,7 +5474,7 @@ async function openPlayerProfile(playerId, fbName) {
     <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg2);">
       <button onclick="closePlayerProfile()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;flex-shrink:0;">&#8249;</button>
       <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.04em;flex:1;">PLAYER PROFILE</span>
-      <span style="font-size:10px;color:var(--text3);background:var(--bg3);padding:3px 8px;border-radius:10px;">Wikipedia</span>
+      <span style="font-size:10px;color:var(--text3);background:var(--bg3);padding:3px 8px;border-radius:10px;">Highlightly + Wikipedia</span>
     </div>
     <div style="flex:1;display:flex;align-items:center;justify-content:center;">
       <div style="text-align:center;">
@@ -5567,23 +5484,40 @@ async function openPlayerProfile(playerId, fbName) {
     </div>`;
   overlay.style.display = 'flex';
 
-  // API-Football (for photo)
+  // Highlightly (your existing, working integration) — real season stats
   if (!_playerDetailCache[playerId]) {
     try {
-      let url;
-      if (playerId && playerId !== 0) url = `/api/football?endpoint=players&id=${playerId}&season=2025`;
-      else if (fbName) url = `/api/football?endpoint=players&search=${encodeURIComponent(fbName)}&season=2025`;
-      if (url) {
-        const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-        const data = await res.json();
-        let result = data.response?.[0] || null;
-        if (!result) {
-          const res2 = await fetch(url.replace('season=2025','season=2024'), { signal: AbortSignal.timeout(8000) });
-          result = (await res2.json()).response?.[0] || null;
-        }
-        _playerDetailCache[playerId] = result;
+      let result = null;
+      if (playerId && playerId !== 0) {
+        const profRes = await fetch(`${HIGHLIGHTLY_BASE}?endpoint=players/${playerId}`, { signal: AbortSignal.timeout(8000) });
+        const statsRes = await fetch(`${HIGHLIGHTLY_BASE}?endpoint=players/${playerId}/statistics`, { signal: AbortSignal.timeout(8000) });
+        const prof = profRes.ok ? await profRes.json() : {};
+        const stats = statsRes.ok ? await statsRes.json() : {};
+        // Defensive field mapping — adjust these key names once you see a
+        // real Highlightly response; docs don't publish a full example.
+        const pd = prof.data || prof.player || prof || {};
+        const seasons = stats.data || stats.statistics || stats || [];
+        const latest = Array.isArray(seasons) ? seasons[0] : seasons;
+        result = {
+          player: {
+            id: playerId,
+            firstname: pd.firstName || (pd.name||'').split(' ')[0] || '',
+            lastname:  pd.lastName  || (pd.name||'').split(' ').slice(1).join(' ') || '',
+            photo:     pd.image || pd.photo || '',
+            nationality: pd.nationality || pd.country || '—',
+            age:       pd.age || null,
+            position:  pd.position || '—',
+            height:    pd.height || '',
+          },
+          statistics: [{
+            team:  { name: latest?.team?.name || pd.team?.name || '—', logo: latest?.team?.logo || '' },
+            games: { position: pd.position || '—', appearences: latest?.appearances ?? latest?.apps ?? null, rating: latest?.rating ?? null },
+            goals: { total: latest?.goals ?? null, assists: latest?.assists ?? null },
+          }],
+        };
       }
-    } catch(e) { _playerDetailCache[playerId] = null; }
+      _playerDetailCache[playerId] = result;
+    } catch(e) { console.warn('[Players] Highlightly profile fetch failed:', e); _playerDetailCache[playerId] = null; }
   }
 
   const entry      = _playerDetailCache[playerId];
@@ -5640,7 +5574,7 @@ async function openPlayerProfile(playerId, fbName) {
     <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg2);">
       <button onclick="closePlayerProfile()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;flex-shrink:0;">&#8249;</button>
       <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.04em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${displayName.toUpperCase()}</span>
-      <span style="font-size:10px;color:var(--text3);background:var(--bg3);padding:3px 8px;border-radius:10px;white-space:nowrap;">Wikipedia</span>
+      <span style="font-size:10px;color:var(--text3);background:var(--bg3);padding:3px 8px;border-radius:10px;white-space:nowrap;">Highlightly + Wikipedia</span>
     </div>
     <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0;">
 
@@ -5650,6 +5584,20 @@ async function openPlayerProfile(playerId, fbName) {
       <div style="padding:0 16px;">
         ${intro ? renderText(intro) : `<p style="font-size:14px;color:var(--text3);font-style:italic;">No Wikipedia article found.</p>`}
       </div>
+
+      ${main.games?.appearences != null || main.goals?.total != null ? `
+      <div style="margin:12px 16px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg2);">
+        <div style="padding:12px;text-align:center;border-bottom:1px solid var(--border);background:rgba(16,185,129,0.06);">
+          <div style="font-size:14px;font-weight:700;color:var(--text);">Season Stats — ${main.team?.name || 'Current Club'}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);text-align:center;padding:14px 8px;">
+          <div><div style="font-size:20px;font-weight:700;color:var(--text);">${main.games?.appearences ?? '—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">APPS</div></div>
+          <div><div style="font-size:20px;font-weight:700;color:var(--text);">${main.goals?.total ?? '—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">GOALS</div></div>
+          <div><div style="font-size:20px;font-weight:700;color:var(--text);">${main.goals?.assists ?? '—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">ASSISTS</div></div>
+          <div><div style="font-size:20px;font-weight:700;color:var(--text);">${main.games?.rating ?? '—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">RATING</div></div>
+        </div>
+        <div style="padding:6px 12px;font-size:10px;color:var(--text3);border-top:1px solid var(--border);text-align:center;">Source: Highlightly · current season</div>
+      </div>` : ''}
 
       <div style="margin:12px 16px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg2);">
         <div style="padding:12px;text-align:center;border-bottom:1px solid var(--border);background:rgba(16,185,129,0.06);">
