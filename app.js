@@ -9791,6 +9791,8 @@ function _ffSubmitReadingComment() {
 }
 
 
+let _ffCurrentVisibleIdx = 0;
+
 function setupFanFeedObserver() {
   if (_ffObserver) _ffObserver.disconnect();
   const slides = Array.from(document.querySelectorAll('#fanfeed-slides .ff-slide'));
@@ -9803,15 +9805,14 @@ function setupFanFeedObserver() {
       const idx = slides.indexOf(entry.target);
 
       if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
-        // Each play attempt gets a token. If a *newer* play/pause decision
-        // happens before this one's play() promise resolves, the resolved
-        // callback checks the token and backs off instead of blindly
-        // starting playback — this is what was causing a video to start
-        // itself back up after you'd already swiped past it on a fast swipe.
+        _ffCurrentVisibleIdx = idx;
         const myToken = (video._ffPlayToken = (video._ffPlayToken || 0) + 1);
 
         video.muted = _ffMuted;
-        if (video._hlsInstance) video._hlsInstance.startLoad(); // resume fetching segments
+        // A slide this far away may have had its player fully torn down
+        // (see the release step below) — reattach if so, same as a fresh load.
+        if (!video._hlsInstance && video.dataset.videoUrl) _ffAttachVideoSource(video, video.dataset.videoUrl);
+        if (video._hlsInstance) video._hlsInstance.startLoad();
         if (videoBg) {
           videoBg.currentTime = video.currentTime;
           if (videoBg._hlsInstance) videoBg._hlsInstance.startLoad();
@@ -9820,7 +9821,7 @@ function setupFanFeedObserver() {
         const playPromise = video.play();
         if (playPromise) {
           playPromise.catch((err) => {
-            if (video._ffPlayToken !== myToken) return; // superseded — don't fight the current state
+            if (video._ffPlayToken !== myToken) return;
             if (err && err.name === 'NotAllowedError') {
               if (!_ffMuted) {
                 _ffMuted = true;
@@ -9835,33 +9836,54 @@ function setupFanFeedObserver() {
             }
           });
         }
-        // Endless feed: once we're within 1 slide of the end, seamlessly
-        // extend it instead of ever letting the person hit a hard stop.
         if (idx >= slides.length - 2) _ffExtendFeedLoop();
 
-        // Preload the next slide's video so it's already buffering by the
-        // time you swipe to it, instead of only starting to fetch once it's
-        // already the one on screen — this is what was causing the load delay.
         const nextSlide = slides[idx + 1];
         if (nextSlide) {
           const nextVideo = nextSlide.querySelector('video.ff-video');
           if (nextVideo && nextVideo.dataset.videoUrl) _ffAttachVideoSource(nextVideo, nextVideo.dataset.videoUrl);
         }
       } else {
-        video._ffPlayToken = (video._ffPlayToken || 0) + 1; // invalidate any in-flight play() for this video
+        video._ffPlayToken = (video._ffPlayToken || 0) + 1;
         video.pause();
         video.currentTime = 0;
         if (videoBg) { videoBg.pause(); videoBg.currentTime = 0; }
-        // Stop fetching more HLS segments for an off-screen video instead of
-        // leaving it silently running in the background — this is what was
-        // making the feed feel like it was "hanging" the longer you scrolled.
-        if (video._hlsInstance) video._hlsInstance.stopLoad();
-        if (videoBg && videoBg._hlsInstance) videoBg._hlsInstance.stopLoad();
+
+        const distance = Math.abs(idx - _ffCurrentVisibleIdx);
+        if (distance > 3) {
+          // Far enough away that you won't swipe back to it soon — fully
+          // release its memory instead of just pausing. This is the actual
+          // fix for the phone-wide hang: every paused-but-not-released video
+          // was still holding its buffered data and decoder alive, and on an
+          // endless feed that adds up until the device itself runs out of
+          // memory. Reattached automatically (above) if you do scroll back.
+          _ffReleaseVideoMemory(video);
+          if (videoBg) _ffReleaseVideoMemory(videoBg);
+        } else if (video._hlsInstance) {
+          // Still nearby (likely to be swiped back to) — just stop fetching
+          // more data rather than fully tearing down the player.
+          video._hlsInstance.stopLoad();
+          if (videoBg && videoBg._hlsInstance) videoBg._hlsInstance.stopLoad();
+        }
       }
     });
   }, { threshold: [0, 0.6, 1] });
 
   slides.forEach(slide => _ffObserver.observe(slide));
+}
+
+// Fully tears down a video's player and buffered data so the browser can
+// actually free that memory — not just pausing it. Safe to call repeatedly;
+// re-attaches automatically next time this slide scrolls back into range.
+function _ffReleaseVideoMemory(videoEl) {
+  if (!videoEl) return;
+  if (videoEl._hlsInstance) {
+    try { videoEl._hlsInstance.destroy(); } catch (e) {}
+    videoEl._hlsInstance = null;
+  }
+  videoEl.removeAttribute('src');
+  videoEl.load(); // tells the browser to actually drop the buffered data
+  delete videoEl.dataset.srcWired; // lets _ffAttachVideoSource reattach cleanly later
 }
 
 // Appends another full pass of the same posts so swiping never runs out —
