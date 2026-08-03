@@ -2138,14 +2138,30 @@ async function openMatchDetail(matchId, title) {
   body.innerHTML = `<div class="ov-loading"><div class="spinner"></div>Loading live match data...</div>`;
 
   try {
-    // Fetch Fixture Data (Overview, Timeline, Lineups, Stats)
-    const res = await fetch(`/api/football?endpoint=fixtures&id=${matchId}`, {
-      headers: {}
-    });
-    const data = await res.json();
+    // Fetch Fixture Data (Overview, Timeline) + Lineups + Statistics in parallel —
+    // these live at separate Highlightly endpoints, not bundled into one call.
+    const [fixtureRes, lineupsRes, statsRes] = await Promise.all([
+      fetch(`/api/football?endpoint=fixtures&id=${matchId}`),
+      fetch(`/api/football?endpoint=lineups&id=${matchId}`).catch(() => null),
+      fetch(`/api/football?endpoint=match-statistics&id=${matchId}`).catch(() => null),
+    ]);
+    const data = await fixtureRes.json();
     const fixtureData = data.response && data.response[0];
 
     if (fixtureData) {
+      try {
+        if (lineupsRes && lineupsRes.ok) {
+          const lu = await lineupsRes.json();
+          if (Array.isArray(lu.response) && lu.response.length) fixtureData.lineups = lu.response;
+        }
+      } catch(e) { console.warn('[Match] lineups fetch failed:', e); }
+      try {
+        if (statsRes && statsRes.ok) {
+          const st = await statsRes.json();
+          if (Array.isArray(st.response) && st.response.length) fixtureData.statistics = st.response;
+        }
+      } catch(e) { console.warn('[Match] statistics fetch failed:', e); }
+
       body.innerHTML = buildRealMatchDetailCard(fixtureData);
       
       // Animate stat bars after rendering
@@ -2250,7 +2266,7 @@ function buildRealMatchDetailCard(d) {
       <div style="padding:16px;">
         <div style="color:var(--text2);font-size:13px;margin-bottom:12px;">📊 Live Odds from Major Bookmakers</div>
         <div id="bookmakers-list" style="display:grid;gap:12px;">
-          ${d.bookmakers && d.bookmakers.length > 0 ? renderBookmakers(d.bookmakers) : '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">No odds available</div>'}
+          <button class="btn-cancel" onclick="loadMatchOdds('${d.fixture.id}')" style="width:100%;">Load Odds</button>
         </div>
       </div>
     </div>
@@ -2259,11 +2275,43 @@ function buildRealMatchDetailCard(d) {
       <div style="padding:16px;">
         <div style="color:var(--text2);font-size:13px;margin-bottom:12px;">📈 Historical Head-to-Head</div>
         <div id="h2h-list" style="display:grid;gap:8px;">
-          ${d.h2h && d.h2h.length > 0 ? renderH2H(d.h2h, d.teams.home.name, d.teams.away.name) : '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">No history available</div>'}
+          <button class="btn-cancel" onclick="loadMatchH2H('${d.teams.home.id}','${d.teams.away.id}','${d.teams.home.name}','${d.teams.away.name}')" style="width:100%;">Load Head-to-Head</button>
         </div>
       </div>
     </div>
   `;
+}
+
+/* Load odds on demand — separate endpoint, paid tier only */
+async function loadMatchOdds(matchId) {
+  const container = document.getElementById('bookmakers-list');
+  container.innerHTML = `<div class="ov-loading"><div class="spinner"></div>Fetching odds...</div>`;
+  try {
+    const res = await fetch(`/api/football?endpoint=odds&id=${matchId}`);
+    const data = await res.json();
+    const bookmakers = data.response || [];
+    container.innerHTML = bookmakers.length > 0
+      ? renderBookmakers(bookmakers)
+      : '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">No odds available yet</div>';
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">No odds available yet</div>';
+  }
+}
+
+/* Load H2H on demand — needs both team IDs */
+async function loadMatchH2H(teamIdOne, teamIdTwo, homeName, awayName) {
+  const container = document.getElementById('h2h-list');
+  container.innerHTML = `<div class="ov-loading"><div class="spinner"></div>Fetching history...</div>`;
+  try {
+    const res = await fetch(`/api/football?endpoint=h2h&teamIdOne=${teamIdOne}&teamIdTwo=${teamIdTwo}`);
+    const data = await res.json();
+    const matches = data.response || [];
+    container.innerHTML = matches.length > 0
+      ? renderH2H(matches, homeName, awayName)
+      : '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">No history available</div>';
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">No history available</div>';
+  }
 }
 
 /* Tab Switcher Logic */
@@ -5158,41 +5206,21 @@ async function handlePlayerSearch(val) {
         return;
       }
 
-      // ── Step 2: Search Highlightly (your existing, working integration) ──
+      // ── Step 2: Search via Highlightly (real integration — api/football.js) ──
       let players = [];
       try {
         const hlRes = await fetch(
-          `${HIGHLIGHTLY_BASE}?endpoint=players&name=${encodeURIComponent(query)}&limit=10`,
+          `/api/football?endpoint=players&search=${encodeURIComponent(query)}`,
           { signal: AbortSignal.timeout(8000) }
         );
         if (hlRes.ok) {
           const hlData = await hlRes.json();
-          const items = hlData.data || hlData.players || hlData || [];
-          if (Array.isArray(items)) {
-            // Mapped into the same {player, statistics} shape the render
-            // functions below already expect — Highlightly's exact field
-            // names may need a small tweak once you see a real response,
-            // this covers the most likely ones defensively.
-            players = items.map(pl => ({
-              player: {
-                id:          pl.id || pl.playerId,
-                firstname:   pl.firstName || (pl.name||'').split(' ')[0] || '',
-                lastname:    pl.lastName  || (pl.name||'').split(' ').slice(1).join(' ') || '',
-                photo:       pl.image || pl.photo || pl.logo || '',
-                nationality: pl.nationality || pl.country || '—',
-                age:         pl.age || null,
-                position:    pl.position || '—',
-              },
-              statistics: [{
-                team:  { name: pl.team?.name || pl.club || '—', logo: pl.team?.logo || '' },
-                games: { position: pl.position || '—', appearences: null, rating: null },
-                goals: { total: null, assists: null },
-              }],
-            }));
-          }
+          // football.js already transforms Highlightly's response into this
+          // {player, statistics} shape server-side — use it directly.
+          players = Array.isArray(hlData.response) ? hlData.response : [];
         }
       } catch(e) {
-        console.warn('[Players] Highlightly search failed:', e);
+        console.warn('[Players] search failed:', e);
       }
 
       _playerCache[queryLower] = players;
@@ -5484,40 +5512,29 @@ async function openPlayerProfile(playerId, fbName) {
     </div>`;
   overlay.style.display = 'flex';
 
-  // Highlightly (your existing, working integration) — real season stats
+  // Highlightly (real integration — api/football.js) — real season stats
   if (!_playerDetailCache[playerId]) {
     try {
       let result = null;
       if (playerId && playerId !== 0) {
-        const profRes = await fetch(`${HIGHLIGHTLY_BASE}?endpoint=players/${playerId}`, { signal: AbortSignal.timeout(8000) });
-        const statsRes = await fetch(`${HIGHLIGHTLY_BASE}?endpoint=players/${playerId}/statistics`, { signal: AbortSignal.timeout(8000) });
-        const prof = profRes.ok ? await profRes.json() : {};
-        const stats = statsRes.ok ? await statsRes.json() : {};
-        // Defensive field mapping — adjust these key names once you see a
-        // real Highlightly response; docs don't publish a full example.
-        const pd = prof.data || prof.player || prof || {};
-        const seasons = stats.data || stats.statistics || stats || [];
-        const latest = Array.isArray(seasons) ? seasons[0] : seasons;
+        const profRes = await fetch(`/api/football?endpoint=players&id=${playerId}`, { signal: AbortSignal.timeout(8000) });
+        const statsRes = await fetch(`/api/football?endpoint=player-stats&id=${playerId}`, { signal: AbortSignal.timeout(8000) });
+        const prof = profRes.ok ? await profRes.json() : { response: [] };
+        const statsData = statsRes.ok ? await statsRes.json() : { response: [] };
+        const p = (prof.response || [])[0]?.player || {};
+        const seasons = statsData.response || [];
+        const latest = seasons[0] || {};
         result = {
-          player: {
-            id: playerId,
-            firstname: pd.firstName || (pd.name||'').split(' ')[0] || '',
-            lastname:  pd.lastName  || (pd.name||'').split(' ').slice(1).join(' ') || '',
-            photo:     pd.image || pd.photo || '',
-            nationality: pd.nationality || pd.country || '—',
-            age:       pd.age || null,
-            position:  pd.position || '—',
-            height:    pd.height || '',
-          },
+          player: p,
           statistics: [{
-            team:  { name: latest?.team?.name || pd.team?.name || '—', logo: latest?.team?.logo || '' },
-            games: { position: pd.position || '—', appearences: latest?.appearances ?? latest?.apps ?? null, rating: latest?.rating ?? null },
+            team:  { name: latest?.team?.name || '—', logo: latest?.team?.logo || '' },
+            games: { position: p.position || '—', appearences: latest?.appearances ?? latest?.apps ?? null, rating: latest?.rating ?? null },
             goals: { total: latest?.goals ?? null, assists: latest?.assists ?? null },
           }],
         };
       }
       _playerDetailCache[playerId] = result;
-    } catch(e) { console.warn('[Players] Highlightly profile fetch failed:', e); _playerDetailCache[playerId] = null; }
+    } catch(e) { console.warn('[Players] profile fetch failed:', e); _playerDetailCache[playerId] = null; }
   }
 
   const entry      = _playerDetailCache[playerId];
