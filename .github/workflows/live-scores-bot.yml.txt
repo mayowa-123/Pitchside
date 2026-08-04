@@ -1,0 +1,41 @@
+name: ⚽ Live Scores Bot
+
+on:
+  # GitHub Actions cannot schedule more frequently than every 5 minutes —
+  # this is a hard platform limit, not a choice. Even at 5 minutes, exact
+  # timing isn't guaranteed (can be delayed during platform-wide load).
+  schedule:
+    - cron: '*/5 * * * *'
+
+  # Allow manual trigger for testing
+  workflow_dispatch:
+
+jobs:
+  fetch-live-scores:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18.x
+
+      - name: 📦 Install dependencies
+        run: |
+          npm install firebase-admin axios
+
+      - name: ⚽ Run Live Scores Bot
+        env:
+          HIGHLIGHTLY_KEY: ${{ secrets.HIGHLIGHTLY_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          node scripts/live-scores-bot.cjs
+
+      - name: 📊 Log completion
+        if: always()
+        run: |
+          echo "✅ Bot run completed at $(date)"
+          echo "📡 ~288 requests/day at 5-minute intervals (1 request per run)"
