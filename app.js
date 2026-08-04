@@ -3947,7 +3947,14 @@ function aiRemoveAttach(i) {
   renderAttachPreview();
 }
 
+let _aiRequestInFlight = false;
+
 async function sendAiMessage(presetText) {
+  if (_aiRequestInFlight) {
+    if (typeof showToast === 'function') showToast('⏳ Still waiting on the previous reply — one sec');
+    return;
+  }
+
   const input = document.getElementById('ai-input');
   const text  = (presetText || input.value).trim();
   const attachments = [...aiPendingAttachments];
@@ -3991,6 +3998,7 @@ async function sendAiMessage(presetText) {
 
   aiMessages.push({ role: 'user', content: userContent.length === 1 && userContent[0].type === 'text' ? userContent[0].text : userContent });
   showAiTyping();
+  _aiRequestInFlight = true;
 
   try {
     const res = await fetch('/api/ai', {
@@ -4013,16 +4021,25 @@ async function sendAiMessage(presetText) {
       if (aiMessages.length > 40) aiMessages = aiMessages.slice(-40);
     } else if (data.error) {
       const errMsg = data.error.message || 'Something went wrong.';
-      const friendly = errMsg.includes('x-api-key') || errMsg.includes('api-key') || errMsg.includes('API key')
-        ? '⚠️ AI service is currently unavailable. The app owner needs to add an Anthropic API key to enable this feature.'
+      const friendly = errMsg.includes('x-api-key') || errMsg.includes('api-key') || errMsg.includes('API key') || errMsg.includes('Invalid API Key')
+        ? '⚠️ AI service is currently unavailable. The app owner needs to check the Groq API key.'
         : `⚠️ ${errMsg}`;
       appendAiMessage('bot', friendly);
+      // A failed request still added a 'user' message to aiMessages above —
+      // remove it so the next real request doesn't send two user turns in a
+      // row (which is what was corrupting message order and causing more
+      // failures downstream).
+      if (aiMessages.length && aiMessages[aiMessages.length - 1].role === 'user') aiMessages.pop();
     } else {
       appendAiMessage('bot', "Hmm, I didn't get a response. Please try again! ⚽");
+      if (aiMessages.length && aiMessages[aiMessages.length - 1].role === 'user') aiMessages.pop();
     }
   } catch(e) {
     hideAiTyping();
     appendAiMessage('bot', "⚠️ Couldn't connect to AI. Check your connection and try again.");
+    if (aiMessages.length && aiMessages[aiMessages.length - 1].role === 'user') aiMessages.pop();
+  } finally {
+    _aiRequestInFlight = false;
   }
 }
 
