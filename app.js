@@ -4018,7 +4018,24 @@ async function sendAiMessage(presetText) {
       const reply = data.content[0].text;
       appendAiMessage('bot', reply);
       aiMessages.push({ role: 'assistant', content: reply });
-      if (aiMessages.length > 40) aiMessages = aiMessages.slice(-40);
+
+      // Keep history short — resending the WHOLE conversation on every
+      // message was the actual cause of "Request Entity Too Large" and
+      // rate-limit errors after just a couple of messages. 10 messages
+      // (~5 exchanges) is plenty of context without ballooning token count.
+      if (aiMessages.length > 10) aiMessages = aiMessages.slice(-10);
+
+      // Strip image data from older messages in history — only the message
+      // it was actually sent with needs the real image bytes; carrying full
+      // base64 images forward in every subsequent request is what made
+      // token/size usage explode fastest of anything in the history.
+      aiMessages = aiMessages.map((m, i) => {
+        if (i === aiMessages.length - 1) return m; // leave the most recent message untouched
+        if (Array.isArray(m.content)) {
+          return { ...m, content: m.content.filter(c => c.type !== 'image').map(c => c.type === 'text' ? c : { type: 'text', text: '[image sent earlier]' }) };
+        }
+        return m;
+      });
     } else if (data.error) {
       const errMsg = data.error.message || 'Something went wrong.';
       const friendly = errMsg.includes('x-api-key') || errMsg.includes('api-key') || errMsg.includes('API key') || errMsg.includes('Invalid API Key')
