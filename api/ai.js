@@ -23,11 +23,13 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        // llama-3.3-70b-versatile was deprecated by Groq on June 17, 2026
-        // and stopped being served in August 2026 — that's what was causing
-        // "couldn't connect to AI". openai/gpt-oss-120b is Groq's own
-        // recommended replacement for this exact model.
-        model: 'openai/gpt-oss-120b',
+        // groq/compound — Groq's agentic system that automatically searches
+        // the web when a question needs current info (scores, results,
+        // transfers) instead of relying only on the model's training data,
+        // which is what was causing wrong answers about things that already
+        // happened. It decides on its own when search is actually needed —
+        // no custom keyword routing required on our end.
+        model: 'groq/compound',
         max_tokens: max_tokens || 800,
         messages: [
           { role: 'system', content: `The current date is ${today}. You are PitchSide AI, the intelligent assistant for the PitchSide football app. Your primary role is to provide accurate, up-to-date, and engaging information about football, sports in general, and the features of the PitchSide app. You must be knowledgeable about all major football transfers up to this date. You are an expert on the Nigerian Premier Football League (NPFL), including current standings, team information, match results, and news. You can also discuss global football leagues, player statistics, match predictions, and general sports news. When asked about the PitchSide app, you should highlight its features such as: highlights, news, standings, livescore for NPFL, and the ability for users to post videos (similar to Facebook). Always provide the most current and relevant information available, maintaining a helpful and enthusiastic tone. If a user asks about a topic outside your knowledge domain, politely state that you are focused on football and sports-related inquiries.` },
