@@ -195,107 +195,81 @@ document.addEventListener('DOMContentLoaded', () => {
 let lsCurrentFilter = 'all';
 let lsData = [];
 
+// ── Shared live-scores source: ONE Firestore listener, read by both the
+//    ticker and the main Live Scores view. Populated by scripts/live-scores-bot.cjs
+//    every 5 minutes — nothing on the frontend ever calls Highlightly directly
+//    for this anymore, which is what was actually burning through the daily
+//    request budget before (the ticker alone polled every 20s, per user).
+let _liveScoresUnsub = null;
+let _liveScoresSubscribers = [];
+
+function _subscribeLiveScoresFirestore() {
+  if (_liveScoresUnsub) return; // already subscribed, nothing to do
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  if (!fsApi || !db) {
+    console.warn('[LiveScores] Firestore not ready yet, will use cache only');
+    return;
+  }
+  const { doc, onSnapshot } = fsApi;
+  _liveScoresUnsub = onSnapshot(doc(db, 'liveScores', 'current'), (snap) => {
+    if (!snap.exists()) return;
+    const data = snap.data();
+    const matches = data.matches || [];
+    _liveScoresSubscribers.forEach(cb => { try { cb(matches, data.hasLive); } catch(e) {} });
+  }, (err) => {
+    console.warn('[LiveScores] Firestore listener error:', err);
+  });
+}
+
+function _unsubscribeLiveScoresFirestore() {
+  if (_liveScoresUnsub) { _liveScoresUnsub(); _liveScoresUnsub = null; }
+}
+
 function initLiveScores() {
   // Never run on the NPFL page — it has its own isolated Firestore fetch
   if (currentPage === 'npfl') return;
-  // Start clean — show loader while live API fetches
+  // Start clean — show loader, then try instant cache while Firestore connects
   const wrap = document.getElementById('ls-wrap');
   if (wrap) wrap.innerHTML = `<div class="ls-loading"><div class="spinner"></div>Scanning for live matches…</div>`;
   fetchLiveScores();
 }
 
-// Auto-refresh configuration
-let liveScoresRefreshInterval = null;
+let liveScoresRefreshInterval = null; // kept only for backward compatibility with old callers
 let liveScoresLastUpdate = 0;
-const LIVESCORE_REFRESH_INTERVAL = 300000; // 15 seconds
+const LIVESCORE_REFRESH_INTERVAL = 300000;
 
-async function fetchLiveScores() {
-  // Never fetch global API data when the user is on the NPFL page
+function fetchLiveScores() {
+  // Never fetch when the user is on the NPFL page
   if (currentPage === 'npfl') return;
 
   const CACHE_KEY = 'pitchside_livescores_v4';
-  const today     = new Date().toISOString().split('T')[0];
-  const now       = Date.now();
+  const today = new Date().toISOString().split('T')[0];
 
-  // ── Smart cache: 3 min when live games are on, 30 min when not ───────────
-  // Keeps daily API usage well under the 100-request free tier limit.
+  // ── Instant paint from local cache while Firestore's first snapshot arrives ──
   try {
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
-      const { timestamp, dateKey, data, hasLive } = JSON.parse(cached);
-      const age = now - timestamp;
-      const TTL = hasLive ? 3 * 60 * 1000 : 30 * 60 * 1000;
-      if (dateKey === today && age < TTL) {
+      const { dateKey, data } = JSON.parse(cached);
+      if (dateKey === today && data) {
         lsData = data;
         renderLiveScores(lsData, lsCurrentFilter);
-        liveScoresLastUpdate = timestamp;
-        return;
       }
     }
   } catch(_) {}
 
-  // ── Fetch from API ────────────────────────────────────────────────────────
-  try {
-    console.log('[PitchSide] Fetching live scores from API...');
-    const res = await fetch(`/api/football?endpoint=fixtures&date=${today}`, {
-      signal: AbortSignal.timeout(8000)
-    });
-
-    if (res.status === 429) {
-      console.warn('[PitchSide] Rate limit (429) — using cache.');
-      _lsUseStaleCache(); return;
-    }
-    if (!res.ok) {
-      console.warn('[PitchSide] API error', res.status, '— using cache.');
-      _lsUseStaleCache(); return;
-    }
-
-    const data = await res.json();
-
-    // api-sports returns errors inside the body even on 200
-    // Check for specific subscription or rate limit errors
-    if (data.errors && Object.keys(data.errors).length > 0) {
-      const errorMsg = JSON.stringify(data.errors);
-      console.warn('[PitchSide] API body error:', errorMsg);
-      
-      // If it's a critical error (like token/key), we should still try to use cache
-      _lsUseStaleCache(); 
-      
-      // Update UI to show error if cache is empty
-      if (!lsData || lsData.length === 0) {
-        const wrap = document.getElementById('ls-wrap');
-        if (wrap) wrap.innerHTML = `<div class="ls-loading" style="color:var(--text3);"><div style="font-size:32px;">⚠️</div>API Error: ${errorMsg.slice(0, 50)}...</div>`;
-      }
-      return;
-    }
-
-    if (!data.response || data.response.length === 0) {
-      // If no data from API, check if it's because of an error or just no matches
-      if (data.errors && Object.keys(data.errors).length > 0) {
-        console.warn('[PitchSide] API returned error in body:', data.errors);
-        _lsUseStaleCache();
-        return;
-      }
-      lsData = [];
-      renderLiveScores(lsData, lsCurrentFilter);
-      _lsSaveCache([], false, today);
-      return;
-    }
-
-    // Transform into grouped league format
+  // ── Real data: subscribe once, re-render every time the bot updates it ──
+  const handler = (rawMatches, hasLive) => {
     const grouped = {};
-    let hasLive = false;
-    data.response.forEach(f => {
+    rawMatches.forEach(f => {
       const key = f.league.id;
       if (!grouped[key]) grouped[key] = {
         league: f.league.name, country: f.league.country,
         flag: countryFlag(f.league.country), matches: []
       };
-      const st     = f.fixture.status.short;
+      const st = f.fixture.status.short;
       const isLive = ['1H','2H','ET','BT','P','INT','LIVE'].includes(st);
-      if (isLive) hasLive = true;
-      
-      // Determine display status
+
       let displayStatus = st;
       if (isLive) {
         displayStatus = f.fixture.status.elapsed ? f.fixture.status.elapsed + "'" : 'Live';
@@ -320,44 +294,27 @@ async function fetchLiveScores() {
     });
 
     lsData = Object.values(grouped);
-    renderLiveScores(lsData, lsCurrentFilter);
-    liveScoresLastUpdate = now;
-    _lsSaveCache(lsData, hasLive, today);
+    if (currentPage !== 'npfl') renderLiveScores(lsData, lsCurrentFilter);
+    liveScoresLastUpdate = Date.now();
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), dateKey: today, data: lsData, hasLive }));
+    } catch(_) {}
+  };
 
-  } catch(e) {
-    console.warn('[PitchSide] fetchLiveScores error:', e.message);
-    _lsUseStaleCache();
-  }
-}
-
-function _lsSaveCache(data, hasLive, dateKey) {
-  try {
-    localStorage.setItem('pitchside_livescores_v4', JSON.stringify({
-      timestamp: Date.now(), dateKey, data, hasLive
-    }));
-  } catch(_) {}
-}
-
-function _lsUseStaleCache() {
-  try {
-    const raw = localStorage.getItem('pitchside_livescores_v4');
-    if (raw) {
-      const { data } = JSON.parse(raw);
-      if (data) { lsData = data; renderLiveScores(lsData, lsCurrentFilter); }
-    }
-  } catch(_) {}
+  if (!_liveScoresSubscribers.includes(handler)) _liveScoresSubscribers.push(handler);
+  _subscribeLiveScoresFirestore();
 }
 
 function startLiveScoresRefresh() {
-  // Clear existing interval if any
-  if (liveScoresRefreshInterval) clearInterval(liveScoresRefreshInterval);
-  // NOTE: initLiveScores() already fetches immediately — don't double-fetch here
-  liveScoresRefreshInterval = setInterval(() => {
-    fetchLiveScores();
-  }, LIVESCORE_REFRESH_INTERVAL);
+  // No more interval — Firestore pushes updates automatically the moment
+  // the bot writes new data, so there's nothing to poll on this end.
+  _subscribeLiveScoresFirestore();
 }
 
 function stopLiveScoresRefresh() {
+  // Left as a no-op-ish teardown for the interval that no longer exists;
+  // the Firestore subscription itself stays alive since the ticker may
+  // still need it even when the Live Scores page isn't open.
   if (liveScoresRefreshInterval) {
     clearInterval(liveScoresRefreshInterval);
     liveScoresRefreshInterval = null;
@@ -1099,75 +1056,44 @@ function initExplore() {
 }
 
 /* ═══════════════════════════════════════════
-   TICKER — live API only, no hardcoded data
+   TICKER — reads the same shared Firestore feed as Live Scores.
+   Previously polled Highlightly directly every 20 seconds, per user,
+   unconditionally — that alone was ~4,320 requests/day for a SINGLE user,
+   which would have blown the entire daily budget almost by itself once
+   there was real traffic. Now it just listens to what the bot already wrote.
 ═══════════════════════════════════════════ */
-let tickerRefreshInterval = null;
-const TICKER_REFRESH_INTERVAL = 20000; // 20 seconds
+let _tickerSubscribed = false;
 
-async function initTicker() {
-  // Start empty — show a waiting state while the API loads
+function initTicker() {
+  // Start empty — show a waiting state while Firestore connects
   renderTicker([]);
 
-  // Attempt live fetch
-  try {
-    const res = await fetch('/api/football?endpoint=fixtures&live=all', {
-      headers: {},
-      signal: AbortSignal.timeout(3000)
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.response && data.response.length > 0) {
-          const matches = data.response.slice(0, 6).map(f => ({
-            home: f.teams.home.name,
-            away: f.teams.away.name,
-            score: `${f.goals.home ?? 0} - ${f.goals.away ?? 0}`,
-            status: ['1H','2H','ET','BT','P','INT','LIVE'].includes(f.fixture.status.short) ? 'LIVE' : f.fixture.status.short,
-            matchId: String(f.fixture.id),
-            minute: f.fixture.status.elapsed
-          }));
-        renderTicker(matches);
-      }
-    }
-  } catch(e) {
-    // API unreachable — ticker stays empty, no dummy data shown
-  }
+  const handler = (rawMatches) => {
+    const matches = rawMatches.slice(0, 6).map(f => ({
+      home: f.teams.home.name,
+      away: f.teams.away.name,
+      score: `${f.goals.home ?? 0} - ${f.goals.away ?? 0}`,
+      status: ['1H','2H','ET','BT','P','INT','LIVE'].includes(f.fixture.status.short) ? 'LIVE' : f.fixture.status.short,
+      matchId: String(f.fixture.id),
+      minute: f.fixture.status.elapsed,
+    }));
+    renderTicker(matches);
+  };
 
-  startTickerRefresh();
+  if (!_tickerSubscribed) {
+    _liveScoresSubscribers.push(handler);
+    _tickerSubscribed = true;
+  }
+  _subscribeLiveScoresFirestore();
 }
 
 function startTickerRefresh() {
-  if (tickerRefreshInterval) clearInterval(tickerRefreshInterval);
-  tickerRefreshInterval = setInterval(async () => {
-    try {
-      const res = await fetch('/api/football?endpoint=fixtures&live=all', {
-        headers: {},
-        signal: AbortSignal.timeout(3000)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.response && data.response.length > 0) {
-          const matches = data.response.slice(0, 6).map(f => ({
-            home: f.teams.home.name,
-            away: f.teams.away.name,
-            score: `${f.goals.home ?? 0} - ${f.goals.away ?? 0}`,
-            status: ['1H','2H','ET','BT','P','INT','LIVE'].includes(f.fixture.status.short) ? 'LIVE' : f.fixture.status.short,
-            matchId: String(f.fixture.id),
-            minute: f.fixture.status.elapsed
-          }));
-          renderTicker(matches);
-        }
-      }
-    } catch(e) {
-      // silently continue
-    }
-  }, TICKER_REFRESH_INTERVAL);
+  // No-op — Firestore pushes updates automatically now, nothing to poll.
 }
 
 function stopTickerRefresh() {
-  if (tickerRefreshInterval) {
-    clearInterval(tickerRefreshInterval);
-    tickerRefreshInterval = null;
-  }
+  // Left as a safe no-op for existing callers; the shared Firestore
+  // subscription stays alive since Live Scores may still need it.
 }
 
 function renderTicker(matches) {
@@ -4435,7 +4361,12 @@ function _renderHighlightsFromVideos() {
           ? `<img src="${thumb}" alt="${_esc(title)}" loading="lazy" onerror="this.style.display='none'">`
           : `<div style="width:100%;height:100%;background:linear-gradient(135deg,#0f172a,#1e293b);display:flex;align-items:center;justify-content:center;font-size:48px;">⚽</div>`
         }
-        <div class="hlcard-play"><div class="hlcard-play-btn"><svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>
+        ${v.nigeriaRestricted ? `
+        <div style="position:absolute;inset:0;background:rgba(0,0,0,0.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;padding:8px;">
+          <span style="font-size:20px;">🌍</span>
+          <span style="font-size:11px;color:#fff;font-weight:600;line-height:1.3;">Not available in your region<br><span style="font-weight:400;color:rgba(255,255,255,0.7);">Licensing restriction</span></span>
+        </div>` : `
+        <div class="hlcard-play"><div class="hlcard-play-btn"><svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>`}
         <div class="hlcard-league">${_esc(league).toUpperCase().slice(0,20)}</div>
         <div class="hlcard-badge">
           <span class="verified-badge">
@@ -4461,6 +4392,10 @@ function openHlPlayerById(id) {
   let v = window._hlVideoMap && window._hlVideoMap[id];
   if (!v) v = (typeof VIDEOS !== 'undefined') && VIDEOS.find(x => String(x.id) === String(id));
   if (!v) { console.warn('[HL] Video not found:', id); return; }
+  if (v.nigeriaRestricted) {
+    if (typeof showToast === 'function') showToast('🌍 Not available in your region — licensing restriction');
+    return;
+  }
   // Also register in map for future lookups
   if (!window._hlVideoMap) window._hlVideoMap = {};
   window._hlVideoMap[String(v.id)] = v;
@@ -5494,20 +5429,20 @@ async function openPlayerProfile(playerId, fbName) {
   if (!overlay) {
     overlay = document.createElement('div');
     overlay.id = 'player-profile-overlay';
-    overlay.style.cssText = `position:fixed;inset:0;z-index:2000;background:var(--bg);display:flex;flex-direction:column;font-family:'DM Sans',sans-serif;animation:fadeIn .25s ease;`;
+    overlay.className = 'gp-white';
+    overlay.style.cssText = `position:fixed;inset:0;z-index:2000;display:flex;flex-direction:column;font-family:'DM Sans',sans-serif;animation:fadeIn .25s ease;`;
     document.body.appendChild(overlay);
   }
 
   overlay.innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg2);">
-      <button onclick="closePlayerProfile()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;flex-shrink:0;">&#8249;</button>
-      <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.04em;flex:1;">PLAYER PROFILE</span>
-      <span style="font-size:10px;color:var(--text3);background:var(--bg3);padding:3px 8px;border-radius:10px;">Highlightly + Wikipedia</span>
+    <div class="gp-header">
+      <button class="gp-back-btn" onclick="closePlayerProfile()">&#8249;</button>
+      <span class="gp-header-title">Player Profile</span>
     </div>
-    <div style="flex:1;display:flex;align-items:center;justify-content:center;">
+    <div class="gp-body" style="display:flex;align-items:center;justify-content:center;">
       <div style="text-align:center;">
-        <div style="width:52px;height:52px;border-radius:50%;border:3px solid rgba(16,185,129,0.15);border-top-color:#10b981;animation:spin .9s linear infinite;margin:0 auto 12px;"></div>
-        <div style="color:var(--text2);font-size:13px;">Loading player profile&#8230;</div>
+        <div style="width:44px;height:44px;border-radius:50%;border:3px solid #e5e7eb;border-top-color:#1a73e8;animation:spin .9s linear infinite;margin:0 auto 12px;"></div>
+        <div style="color:#5f6368;font-size:13px;">Loading player profile&#8230;</div>
       </div>
     </div>`;
   overlay.style.display = 'flex';
@@ -5527,7 +5462,7 @@ async function openPlayerProfile(playerId, fbName) {
         result = {
           player: p,
           statistics: [{
-            team:  { name: latest?.team?.name || '—', logo: latest?.team?.logo || '' },
+            team:  { id: latest?.team?.id || null, name: latest?.team?.name || '—', logo: latest?.team?.logo || '' },
             games: { position: p.position || '—', appearences: latest?.appearances ?? latest?.apps ?? null, rating: latest?.rating ?? null },
             goals: { total: latest?.goals ?? null, assists: latest?.assists ?? null },
           }],
@@ -5543,7 +5478,13 @@ async function openPlayerProfile(playerId, fbName) {
   const main       = stats[0] || {};
   const playerName = fbName || (`${p.firstname||''} ${p.lastname||''}`).trim() || 'Unknown';
 
-  const wikiData = await _fetchWikipediaData(playerName);
+  const [wikiData, recentMatchData] = await Promise.all([
+    _fetchWikipediaData(playerName),
+    main.team?.id ? fetch(`/api/football?endpoint=recent-match&teamId=${main.team.id}&playerId=${playerId}`, { signal: AbortSignal.timeout(8000) })
+        .then(r => r.ok ? r.json() : { response: null }).catch(() => ({ response: null }))
+      : Promise.resolve({ response: null }),
+  ]);
+  const recentMatch = recentMatchData?.response || null;
   const infobox  = wikiData ? _parseWikiInfobox(wikiData.wikitext) : {};
   const { intro, sections } = _parseExtractSections(wikiData?.extract || '');
 
@@ -5588,59 +5529,82 @@ async function openPlayerProfile(playerId, fbName) {
   const iR = (infobox.intlCareer ||[]).map(c=>`<tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;font-size:13px;color:var(--text2);">${c.years}</td><td style="padding:8px 12px;font-size:13px;color:#6ba3e0;font-weight:500;">${c.team}</td><td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">${c.apps||'&#8212;'}</td><td style="padding:8px 12px;font-size:13px;color:var(--text);text-align:center;">(${c.goals||'&#8212;'})</td></tr>`).join('');
 
   overlay.innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg2);">
-      <button onclick="closePlayerProfile()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;flex-shrink:0;">&#8249;</button>
-      <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.04em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${displayName.toUpperCase()}</span>
-      <span style="font-size:10px;color:var(--text3);background:var(--bg3);padding:3px 8px;border-radius:10px;white-space:nowrap;">Highlightly + Wikipedia</span>
+    <div class="gp-header">
+      <button class="gp-back-btn" onclick="closePlayerProfile()">&#8249;</button>
+      <span class="gp-header-title">${displayName}</span>
     </div>
-    <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0;">
+    <div class="gp-body">
 
-      <div style="padding:20px 16px 0;">
-        <h1 style="font-size:26px;font-weight:700;color:var(--text);margin:0 0 16px;line-height:1.2;">${displayName}</h1>
+      <div class="gp-card">
+        <div class="gp-name-row">
+          ${photo
+            ? `<img class="gp-photo" src="${photo}" onerror="this.outerHTML='<div class=&quot;gp-photo-fallback&quot;>&#9917;</div>'">`
+            : `<div class="gp-photo-fallback">&#9917;</div>`}
+          <div>
+            <div class="gp-name">${displayName}</div>
+            <div class="gp-subtitle">${[p.nationality, main.games?.position || p.position].filter(Boolean).join(' &middot; ')}</div>
+            ${main.team?.name ? `<div class="gp-subtitle">${main.team.name}</div>` : ''}
+          </div>
+        </div>
       </div>
-      <div style="padding:0 16px;">
-        ${intro ? renderText(intro) : `<p style="font-size:14px;color:var(--text3);font-style:italic;">No Wikipedia article found.</p>`}
+
+      ${recentMatch ? `
+      <div class="gp-card">
+        <div class="gp-section-title">Recent match</div>
+        <div class="gp-match-meta">${recentMatch.status}${recentMatch.date ? ' &middot; ' + new Date(recentMatch.date).toLocaleDateString() : ''}</div>
+        <div class="gp-recent-match-row">
+          <div class="gp-team-col">
+            ${recentMatch.home.logo ? `<img class="gp-team-badge" src="${recentMatch.home.logo}" onerror="this.style.display='none'">` : `<div class="gp-team-badge"></div>`}
+            <div class="gp-team-name">${recentMatch.home.name}</div>
+          </div>
+          <div class="gp-score">${recentMatch.score}</div>
+          <div class="gp-team-col">
+            ${recentMatch.away.logo ? `<img class="gp-team-badge" src="${recentMatch.away.logo}" onerror="this.style.display='none'">` : `<div class="gp-team-badge"></div>`}
+            <div class="gp-team-name">${recentMatch.away.name}</div>
+          </div>
+        </div>
+        ${recentMatch.playerLine ? `
+        <div class="gp-player-line">
+          ${displayName} stats: ${(recentMatch.playerLine.minutesPlayed ?? recentMatch.playerLine.minutes) ?? '—'} mins,
+          ${(recentMatch.playerLine.shots ?? recentMatch.playerLine.totalShots) ?? 0} shots,
+          ${recentMatch.playerLine.goals ?? 0} goals,
+          ${recentMatch.playerLine.assists ?? 0} assists
+        </div>` : `<div class="gp-player-line">Detailed player stats for this match aren't available yet</div>`}
+      </div>` : ''}
+
+      <div class="gp-card">
+        <div class="gp-section-title">Overview</div>
+        <div class="gp-overview-text">
+          ${intro ? intro.split('\n\n')[0] : `${displayName} is a professional footballer.`}
+          ${wikiData?.pageTitle ? ` <a href="https://en.wikipedia.org/wiki/${encodeURIComponent(wikiData.pageTitle)}" target="_blank" style="color:#1a73e8;text-decoration:none;">Wikipedia &rsaquo;</a>` : ''}
+        </div>
       </div>
 
       ${main.games?.appearences != null || main.goals?.total != null ? `
-      <div style="margin:12px 16px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg2);">
-        <div style="padding:12px;text-align:center;border-bottom:1px solid var(--border);background:rgba(16,185,129,0.06);">
-          <div style="font-size:14px;font-weight:700;color:var(--text);">Season Stats — ${main.team?.name || 'Current Club'}</div>
+      <div class="gp-card">
+        <div class="gp-section-title">Stats &middot; ${main.team?.name || 'Current club'}</div>
+        <div class="gp-stat-grid">
+          <div><div class="gp-stat-num">${main.games?.appearences ?? '—'}</div><div class="gp-stat-label">MATCHES</div></div>
+          <div><div class="gp-stat-num">${main.goals?.total ?? '—'}</div><div class="gp-stat-label">GOALS</div></div>
+          <div><div class="gp-stat-num">${main.goals?.assists ?? '—'}</div><div class="gp-stat-label">ASSISTS</div></div>
+          <div><div class="gp-stat-num">${main.games?.rating ?? '—'}</div><div class="gp-stat-label">RATING</div></div>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);text-align:center;padding:14px 8px;">
-          <div><div style="font-size:20px;font-weight:700;color:var(--text);">${main.games?.appearences ?? '—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">APPS</div></div>
-          <div><div style="font-size:20px;font-weight:700;color:var(--text);">${main.goals?.total ?? '—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">GOALS</div></div>
-          <div><div style="font-size:20px;font-weight:700;color:var(--text);">${main.goals?.assists ?? '—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">ASSISTS</div></div>
-          <div><div style="font-size:20px;font-weight:700;color:var(--text);">${main.games?.rating ?? '—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">RATING</div></div>
-        </div>
-        <div style="padding:6px 12px;font-size:10px;color:var(--text3);border-top:1px solid var(--border);text-align:center;">Source: Highlightly · current season</div>
+        <div class="gp-source-tag">Source: Highlightly &middot; current season</div>
       </div>` : ''}
 
-      <div style="margin:12px 16px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg2);">
-        <div style="padding:12px;text-align:center;border-bottom:1px solid var(--border);background:rgba(16,185,129,0.06);">
-          <div style="font-size:15px;font-weight:700;color:var(--text);">${displayName}</div>
-        </div>
-        ${photo?`<div style="text-align:center;padding:12px;border-bottom:1px solid var(--border);"><img src="${photo}" style="max-width:220px;max-height:260px;width:100%;object-fit:cover;border-radius:4px;" onerror="this.parentElement.style.display='none'">${infobox.caption?`<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4;">${infobox.caption}</div>`:''}</div>`:''}
+      <div class="gp-card" style="padding:0;overflow:hidden;">
         ${personalRows.length?sHdr('Personal information')+`<table style="width:100%;border-collapse:collapse;">${personalRows.map(([l,v])=>iTr(l,v,false)).join('')}</table>`:''}
         ${teamRows.length    ?sHdr('Team information')    +`<table style="width:100%;border-collapse:collapse;">${teamRows.map(([l,v])=>iTr(l,v,true)).join('')}</table>`:''}
         ${yR?sHdr('Youth career')              +`<table style="width:100%;border-collapse:collapse;">${yR}</table>`:''}
         ${sR?sHdr('Senior career*')            +`<table style="width:100%;border-collapse:collapse;">${cTh}${sR}</table>`:''}
         ${iR?sHdr('International career&#8225;')+`<table style="width:100%;border-collapse:collapse;">${cTh}${iR}</table>`:''}
-        ${!personalRows.length&&!yR&&!sR?`<div style="padding:16px;text-align:center;color:var(--text3);font-size:13px;">Detailed infobox not available for this player on Wikipedia.</div>`:''}
-        <div style="padding:8px 12px;font-size:11px;color:var(--text3);border-top:1px solid var(--border);text-align:center;">Source: Wikipedia, the free encyclopedia</div>
+        ${!personalRows.length&&!yR&&!sR?`<div style="padding:16px;text-align:center;color:#9aa0a6;font-size:13px;">Detailed infobox not available for this player on Wikipedia.</div>`:''}
+        <div style="padding:8px 12px;font-size:11px;color:#9aa0a6;border-top:1px solid #f1f3f4;text-align:center;">Source: Wikipedia, the free encyclopedia</div>
       </div>
 
-      ${sectionsHtml?`<div style="padding:0 16px 16px;">${sectionsHtml}</div>`:''}
+      ${sectionsHtml?`<div class="gp-card">${sectionsHtml}</div>`:''}
 
-      ${wikiData?.pageTitle?`
-      <div style="margin:8px 16px 32px;text-align:center;">
-        <a href="https://en.wikipedia.org/wiki/${encodeURIComponent(wikiData.pageTitle)}" target="_blank"
-           style="display:inline-flex;align-items:center;gap:8px;padding:11px 24px;background:transparent;border:1.5px solid var(--border);color:var(--text2);border-radius:24px;font-size:13px;font-weight:600;text-decoration:none;">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-          View more on Wikipedia
-        </a>
-      </div>`:'<div style="height:32px;"></div>'}
-
+      <div style="height:24px;"></div>
     </div>`;
 }
 
@@ -9530,7 +9494,8 @@ function openFanFeedOverlay(startVideoId) {
     </div>`;
   } else {
     _ffCurrentPosts = posts;
-    slidesEl.innerHTML = posts.map(v => _ffRenderSlide(v)).join('');
+    const shuffled = _ffShuffle(posts);
+    slidesEl.innerHTML = shuffled.map(v => _ffRenderSlide(v)).join('');
     _ffWireNewSlides();
 
     // Start real Firestore listeners for every video shown, so likes/comments/
@@ -9854,12 +9819,39 @@ function _ffReleaseVideoMemory(videoEl) {
 // Appends another full pass of the same posts so swiping never runs out —
 // a real infinite loop rather than a list with a visible end.
 let _ffExtending = false;
+let _ffHasShownCaughtUp = false;
+
+// Simple Fisher-Yates shuffle — used so each lap through the loop isn't in
+// the exact same order as before, making the repeat less obvious/jarring.
+function _ffShuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 function _ffExtendFeedLoop() {
   if (_ffExtending || !_ffCurrentPosts.length) return;
   _ffExtending = true;
   const slidesEl = document.getElementById('fanfeed-slides');
   if (slidesEl) {
-    slidesEl.insertAdjacentHTML('beforeend', _ffCurrentPosts.map(v => _ffRenderSlide(v)).join(''));
+    let html = '';
+    // First time looping back to the start: show a brief "caught up" slide
+    // instead of silently repeating — same idea as TikTok/Instagram do once
+    // you've genuinely seen everything currently posted.
+    if (!_ffHasShownCaughtUp) {
+      _ffHasShownCaughtUp = true;
+      html += `
+        <div class="ff-slide" data-caught-up="1" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:#0a0a0a;color:#fff;text-align:center;padding:32px;">
+          <div style="font-size:48px;margin-bottom:16px;">🎉</div>
+          <div style="font-size:20px;font-weight:700;margin-bottom:8px;">You're all caught up!</div>
+          <div style="font-size:14px;color:rgba(255,255,255,0.6);">You've seen every fan post — replaying from the top</div>
+        </div>`;
+    }
+    html += _ffShuffle(_ffCurrentPosts).map(v => _ffRenderSlide(v)).join('');
+    slidesEl.insertAdjacentHTML('beforeend', html);
     _ffCurrentPosts.forEach(v => _ffSubscribeMetrics(v.id));
     _ffWireNewSlides();
     _ffSyncFollowBadges();
