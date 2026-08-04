@@ -46,10 +46,8 @@ export default async function handler(req, res) {
     // (a bad model name doesn't crash, it just quietly returns nothing).
     if (!response.ok) {
       console.error('[AI] Groq API error:', JSON.stringify(data));
-      return res.status(response.status).json({
-        error: 'AI error',
-        detail: data.error?.message || 'Groq API request failed',
-      });
+      const message = data.error?.message || 'Groq API request failed';
+      return res.status(response.status).json({ error: { message } });
     }
 
     const text = data.choices?.[0]?.message?.content || '';
