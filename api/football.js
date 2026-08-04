@@ -425,6 +425,73 @@ export default async function handler(req, res) {
     }
 
     // ════════════════════════════════════════════════════════════════════════════
+    // 🕐 RECENT MATCH — a player's most recent finished game + their box score
+    //    line from it (the "38 mins, 4 shots, 0 goals" Google-style summary)
+    // ════════════════════════════════════════════════════════════════════════════
+    if (endpoint === 'recent-match') {
+      const { teamId, playerId } = req.query;
+      if (!teamId) return res.status(400).json({ error: 'recent-match needs teamId', response: null });
+
+      console.log(`[Highlightly] Fetching recent match for team ${teamId}`);
+      try {
+        const r = await fetch(`${BASE_URL}/last-five-games?teamId=${teamId}`, {
+          headers: {
+            'x-rapidapi-key': HIGHLIGHTLY_API_KEY,
+            'x-rapidapi-host': 'soccer.highlightly.net',
+          },
+        });
+        if (!r.ok) return res.status(200).json({ response: null });
+        const raw = await r.json();
+        const games = raw.data || raw || [];
+        if (!Array.isArray(games) || !games.length) return res.status(200).json({ response: null });
+
+        // Most recent = first entry (API returns newest-first per docs)
+        const recent = games[0];
+        const matchId = recent.id || recent.matchId;
+
+        let playerLine = null;
+        if (playerId && matchId) {
+          try {
+            const bsRes = await fetch(`${BASE_URL}/players-statistics/${matchId}`, {
+              headers: {
+                'x-rapidapi-key': HIGHLIGHTLY_API_KEY,
+                'x-rapidapi-host': 'soccer.highlightly.net',
+              },
+            });
+            if (bsRes.ok) {
+              const bsRaw = await bsRes.json();
+              const teams = bsRaw.data || bsRaw || [];
+              // Search both team's boxscores for this player
+              for (const t of (Array.isArray(teams) ? teams : [])) {
+                const found = (t.boxScores || t.players || []).find(
+                  (p) => String(p.playerId || p.id) === String(playerId)
+                );
+                if (found) { playerLine = found; break; }
+              }
+            }
+          } catch (e) {
+            console.warn('[Highlightly] box score lookup for recent match failed:', e.message);
+          }
+        }
+
+        return res.status(200).json({
+          response: {
+            matchId,
+            date: recent.date || recent.kickoff || null,
+            home: { name: recent.homeTeam?.name || 'Home', logo: recent.homeTeam?.logo || '' },
+            away: { name: recent.awayTeam?.name || 'Away', logo: recent.awayTeam?.logo || '' },
+            score: recent.state?.score?.current || `${recent.homeGoals ?? '-'} - ${recent.awayGoals ?? '-'}`,
+            status: recent.state?.description || 'Full-time',
+            playerLine, // null if we don't have a playerId or couldn't find them in the box score
+          },
+        });
+      } catch (error) {
+        console.error('❌ Recent match error:', error.message);
+        return res.status(200).json({ response: null });
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
     // 📋 ENDPOINT: FIXTURES/MATCHES (Live scores list — only when no id given)
     // ════════════════════════════════════════════════════════════════════════════
     if (endpoint === 'fixtures') {
