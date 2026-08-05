@@ -1799,111 +1799,35 @@ async function handleTTLike(btn, videoId) {
     }
 
     const uid = currentUser.uid;
-    const db = window._psDb;
-    const fsApi = window._psFs;
-    
-    if (!db || !fsApi) {
-      showToast('Database not ready');
-      return;
-    }
-
     const v = VIDEOS.find(x => String(x.id) === String(videoId));
     if (!v) return;
 
-    const countEl = document.getElementById('like-count-' + videoId);
+    // Real state comes from appState.videoMetrics (populated by
+    // loadVideoMetrics' live listener), not the old likedVideos Set — that
+    // Set was purely in-memory and reset on every navigation, which is why
+    // likes appeared to "undo themselves" when leaving and coming back.
+    const metrics = appState.videoMetrics[String(videoId)];
+    const wasLiked = !!metrics?.likes?.includes(uid);
+
+    // Optimistic instant feedback — the real, authoritative update follows
+    // a moment later via the live listener (updateVideoMetricsUI), same
+    // pattern already proven correct in the fan feed.
     const svg = btn.querySelector('svg');
-    const likeRef = fsApi.doc(db, 'videoMetrics', String(videoId));
-
-    // Check if already liked
-    const isLiked = likedVideos.has(String(videoId));
-
-    if (isLiked) {
-      // ❌ UNLIKE
-      likedVideos.delete(String(videoId));
-      v.likes = Math.max(0, (v.likes || 0) - 1);
-      btn.classList.remove('active');
-      if (svg) { 
-        svg.setAttribute('fill', 'none'); 
-        svg.setAttribute('stroke', 'white'); 
-      }
-
-      // Save to Firebase
-      await fsApi.updateDoc(likeRef, {
-        likes: fsApi.arrayRemove(uid),
-        likeCount: fsApi.increment(-1),
-        updatedAt: new Date(),
-      }).catch(async (err) => {
-        // Create doc if it doesn't exist
-        if (err.code === 'not-found') {
-          await fsApi.setDoc(likeRef, {
-            videoId: String(videoId),
-            likes: [],
-            likeCount: 0,
-            comments: 0,
-            shares: 0,
-            reposts: 0,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          });
-        }
-      });
-
-      showToast('Unliked ♡');
-    } else {
-      // ❤️ LIKE
-      likedVideos.add(String(videoId));
-      v.likes = (v.likes || 0) + 1;
-      btn.classList.add('active');
-      if (svg) { 
-        svg.setAttribute('fill', '#ff3b5c'); 
-        svg.setAttribute('stroke', '#ff3b5c'); 
-      }
-
-      // Animate
+    btn.classList.toggle('active', !wasLiked);
+    if (svg) {
+      svg.setAttribute('fill', !wasLiked ? '#ff3b5c' : 'none');
+      svg.setAttribute('stroke', !wasLiked ? '#ff3b5c' : 'white');
+    }
+    if (!wasLiked) {
       btn.style.transform = 'scale(1.3)';
       setTimeout(() => btn.style.transform = 'scale(1)', 200);
-      showToast('Liked! ❤️');
-
-      // Save to Firebase
-      await fsApi.updateDoc(likeRef, {
-        likes: fsApi.arrayUnion(uid),
-        likeCount: fsApi.increment(1),
-        updatedAt: new Date(),
-      }).catch(async (err) => {
-        // Create doc if it doesn't exist
-        if (err.code === 'not-found') {
-          await fsApi.setDoc(likeRef, {
-            videoId: String(videoId),
-            likes: [uid],
-            likeCount: 1,
-            comments: 0,
-            shares: 0,
-            reposts: 0,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          });
-        }
-      });
-
-      // Add notification to video creator
-      const creator = v.userId || v.uid;
-      if (creator && creator !== uid) {
-        const notifRef = fsApi.collection(db, 'notifications');
-        await fsApi.addDoc(notifRef, {
-          type: 'like',
-          fromUserId: uid,
-          fromUserName: currentUser.displayName || 'User',
-          toUserId: creator,
-          videoId: String(videoId),
-          message: `${currentUser.displayName || 'Someone'} liked your video`,
-          timestamp: new Date(),
-          read: false,
-        }).catch(() => {});
-      }
     }
+    showToast(!wasLiked ? 'Liked! ❤️' : 'Unliked ♡');
 
-    // Update UI
-    if (countEl) countEl.textContent = formatCount ? formatCount(v.likes) : v.likes;
+    // Actually performs the toggle + Firestore write (setDoc merge — safe
+    // even if the videoMetrics doc doesn't exist yet) and creates the
+    // owner notification on a new like.
+    await likeVideo(String(videoId), uid);
   } catch (error) {
     console.error('Like error:', error);
     showToast('Failed to like video');
@@ -4667,11 +4591,19 @@ function openHlPlayer(id, title, videoUrl, embedHtml, thumbnail, ytSearch, video
   // Set current video ID for side action functions
   currentVideoId = id;
   const v = VIDEOS.find(x => String(x.id) === String(id));
-  const likeCount = v?.likes || 0;
+
+  // Real like count/state comes from videoMetrics (the actual collection
+  // handleTTLike writes to) — not v.likes, which is a stale field on the
+  // video's own document that the like button never actually updates.
+  // This was the root cause of counts always showing 0 / resetting on nav.
+  const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
+  const existingMetrics = appState.videoMetrics[id];
+  const likeCount = existingMetrics?.likes?.length ?? (v?.likes || 0);
+  loadVideoMetrics(id); // starts (or confirms) a live listener for this video
   const commentCount = v?.comments || 0;
   const creatorAvatar = v?.posterAvatar || v?.avatar || '';
   const creatorName = v?.channel || v?.username || '';
-  const isLiked = likedVideos?.has(String(id));
+  const isLiked = currentUser?.uid ? !!existingMetrics?.likes?.includes(currentUser.uid) : likedVideos?.has(String(id));
   const isSaved = (typeof savedHighlights !== 'undefined') ? savedHighlights.has(String(id)) : false;
 
   // Remove any existing side actions
@@ -8467,11 +8399,16 @@ async function markNotificationAsRead(notificationId) {
 // STEP 5: VIDEO METRICS - REAL-TIME ENGAGEMENT
 // ════════════════════════════════════════════════════════════════
 
+const _subscribedVideoMetrics = new Set();
+
 async function loadVideoMetrics(videoId) {
+  if (_subscribedVideoMetrics.has(videoId)) return; // already listening, don't stack another
+  _subscribedVideoMetrics.add(videoId);
+
   const fsApi = window._psFs;
   const db = window._psDb;
   
-  if (!fsApi || !db) return;
+  if (!fsApi || !db) { _subscribedVideoMetrics.delete(videoId); return; }
 
   const { collection, doc, onSnapshot } = fsApi;
 
@@ -8839,6 +8776,23 @@ function updateVideoMetricsUI(videoId) {
       heartSvg.setAttribute('fill', metrics.likes?.includes(myUid) ? '#f43f5e' : '#fff');
     }
   });
+
+  // The openHlPlayer video-watch overlay uses id-based elements
+  // (like-count-{id}, like-btn-{id}), not the [data-video-id] class
+  // convention above — updated separately here so it also stays correct.
+  const myUid2 = (window._psCurrentUser && window._psCurrentUser.uid) || null;
+  const overlayCountEl = document.getElementById('like-count-' + videoId);
+  if (overlayCountEl) overlayCountEl.textContent = formatCount ? formatCount(metrics.likes?.length || 0) : (metrics.likes?.length || 0);
+  const overlayBtn = document.getElementById('like-btn-' + videoId);
+  if (overlayBtn) {
+    const liked = myUid2 ? !!metrics.likes?.includes(myUid2) : false;
+    overlayBtn.classList.toggle('active', liked);
+    const svg = overlayBtn.querySelector('svg');
+    if (svg) {
+      svg.setAttribute('fill', liked ? '#ff3b5c' : 'none');
+      svg.setAttribute('stroke', liked ? '#ff3b5c' : 'white');
+    }
+  }
 }
 
 function updateCollectionsUI() {
