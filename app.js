@@ -1830,7 +1830,18 @@ async function handleTTLike(btn, videoId) {
     await likeVideo(String(videoId), uid);
   } catch (error) {
     console.error('Like error:', error);
-    showToast('Failed to like video');
+    // Revert the optimistic red heart since the write actually failed —
+    // leaving it red would show a like that was never really saved.
+    if (btn) {
+      const svg = btn.querySelector('svg');
+      btn.classList.remove('active');
+      if (svg) { svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'white'); }
+    }
+    const code = error?.code || '';
+    const friendly = code.includes('permission-denied')
+      ? '⚠️ Firebase blocked this save — check your Firestore security rules for the videoMetrics collection'
+      : `⚠️ Failed to like video: ${error?.message || 'unknown error'}`;
+    showToast(friendly);
   }
 }
 
@@ -8435,33 +8446,35 @@ async function likeVideo(videoId, userId) {
   const fsApi = window._psFs;
   const db = window._psDb;
   
-  if (!fsApi || !db) return;
+  if (!fsApi || !db) throw new Error('Firebase not ready yet — try again in a moment');
 
   const { doc, updateDoc, setDoc, arrayUnion, arrayRemove } = fsApi;
 
-  try {
-    const metricsRef = doc(db, 'videoMetrics', videoId);
-    const metricsData = appState.videoMetrics[videoId];
+  const metricsRef = doc(db, 'videoMetrics', videoId);
+  const metricsData = appState.videoMetrics[videoId];
 
-    const isLiked = metricsData?.likes?.includes(userId);
+  const isLiked = metricsData?.likes?.includes(userId);
 
-    // updateDoc() throws if the document doesn't exist yet — and no
-    // videoMetrics doc is ever created when a video is first posted.
-    // setDoc(..., {merge:true}) creates it on first write and merges on
-    // every write after, so likes actually persist instead of failing silently.
-    if (isLiked) {
-      await setDoc(metricsRef, { likes: arrayRemove(userId) }, { merge: true });
-    } else {
-      await setDoc(metricsRef, { likes: arrayUnion(userId) }, { merge: true });
+  // updateDoc() throws if the document doesn't exist yet — and no
+  // videoMetrics doc is ever created when a video is first posted.
+  // setDoc(..., {merge:true}) creates it on first write and merges on
+  // every write after, so likes actually persist instead of failing silently.
+  //
+  // No try/catch here on purpose — this used to swallow errors silently
+  // (console.error only, nothing shown to the user), which is exactly what
+  // was hiding a real Firestore failure behind a heart that still turned
+  // red optimistically. Letting it throw means handleTTLike's catch block
+  // can now show the real reason instead of nothing.
+  if (isLiked) {
+    await setDoc(metricsRef, { likes: arrayRemove(userId) }, { merge: true });
+  } else {
+    await setDoc(metricsRef, { likes: arrayUnion(userId) }, { merge: true });
 
-      // Create notification for video owner
-      const video = VIDEOS.find(v => v.id === videoId);
-      if (video?.userId) {
-        createNotification(video.userId, 'like', userId, videoId, `${appState.userProfile?.name || 'Someone'} liked your video`);
-      }
+    // Create notification for video owner
+    const video = VIDEOS.find(v => v.id === videoId);
+    if (video?.userId) {
+      createNotification(video.userId, 'like', userId, videoId, `${appState.userProfile?.name || 'Someone'} liked your video`);
     }
-  } catch (error) {
-    console.error('Error liking video:', error);
   }
 }
 
@@ -9855,10 +9868,24 @@ function _ffToggleMute() {
   document.querySelectorAll('.ff-mute-btn').forEach(b => b.textContent = _ffMuted ? '🔇' : '🔊');
 }
 
-function _ffLike(videoId, el) {
+async function _ffLike(videoId, el) {
   const uid = (window._psCurrentUser && window._psCurrentUser.uid) || 'anon';
-  try { if (typeof likeVideo === 'function') likeVideo(videoId, uid); } catch (e) {}
-  _ffMarkLiked(videoId, el);
+  _ffMarkLiked(videoId, el); // optimistic — reverted below if the save actually fails
+  try {
+    await likeVideo(videoId, uid);
+  } catch (e) {
+    console.error('[FanFeed] like failed:', e);
+    if (el) {
+      const svg = el.querySelector('svg');
+      if (svg) svg.setAttribute('fill', '#fff');
+    }
+    if (typeof showToast === 'function') {
+      const friendly = (e?.code || '').includes('permission-denied')
+        ? '⚠️ Firebase blocked this save — check your Firestore security rules'
+        : '⚠️ Could not save like — try again';
+      showToast(friendly);
+    }
+  }
 }
 
 // Shared by both the rail heart tap AND the double-tap-on-video gesture,
