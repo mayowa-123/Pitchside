@@ -1837,10 +1837,11 @@ async function handleTTLike(btn, videoId) {
       btn.classList.remove('active');
       if (svg) { svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'white'); }
     }
-    const code = error?.code || '';
+    const code = error?.code || 'no-code';
+    const msg = error?.message || 'no message';
     const friendly = code.includes('permission-denied')
       ? '⚠️ Firebase blocked this save — check your Firestore security rules for the videoMetrics collection'
-      : `⚠️ Failed to like video: ${error?.message || 'unknown error'}`;
+      : `⚠️ [${code}] ${msg}`.slice(0, 120);
     showToast(friendly);
   }
 }
@@ -9880,9 +9881,11 @@ async function _ffLike(videoId, el) {
       if (svg) svg.setAttribute('fill', '#fff');
     }
     if (typeof showToast === 'function') {
-      const friendly = (e?.code || '').includes('permission-denied')
+      const code = e?.code || 'no-code';
+      const msg = e?.message || 'no message';
+      const friendly = code.includes('permission-denied')
         ? '⚠️ Firebase blocked this save — check your Firestore security rules'
-        : '⚠️ Could not save like — try again';
+        : `⚠️ [${code}] ${msg}`.slice(0, 120);
       showToast(friendly);
     }
   }
