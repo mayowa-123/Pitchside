@@ -11,7 +11,8 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, collection, query, where, orderBy, limit,
          getDocs, startAfter, doc, getDoc, updateDoc, addDoc,
-         setDoc, serverTimestamp, onSnapshot
+         setDoc, serverTimestamp, onSnapshot,
+         arrayUnion, arrayRemove, increment
        } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ── Config (imports must come before any code) ──
@@ -32,10 +33,17 @@ const auth = getAuth(app);
 const db   = getFirestore(app);
 
 // ── Expose Firestore to app.js ──────────────────
+// arrayUnion, arrayRemove, and increment were missing from here entirely —
+// not just unused, never imported at all. Every feature that needed them
+// (likes, follow, favorites/watchlist, comment counts) was throwing
+// "arrayUnion is not a function" (or increment/arrayRemove equivalents)
+// the moment it tried to actually save anything, silently in most places
+// since the calling code caught and swallowed the error without showing it.
 window._psDb          = db;
 window._psFs          = { collection, query, where, orderBy, limit, getDocs,
                           startAfter, doc, getDoc, updateDoc, addDoc,
-                          setDoc, serverTimestamp, onSnapshot, db };
+                          setDoc, serverTimestamp, onSnapshot, db,
+                          arrayUnion, arrayRemove, increment };
 window._psCurrentUser = null;
 
 // ── Helpers ─────────────────────────────────────
