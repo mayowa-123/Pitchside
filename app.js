@@ -4612,6 +4612,25 @@ function openHlPlayer(id, title, videoUrl, embedHtml, thumbnail, ytSearch, video
   const existingMetrics = appState.videoMetrics[id];
   const likeCount = existingMetrics?.likes?.length ?? (v?.likes || 0);
   loadVideoMetrics(id); // starts (or confirms) a live listener for this video
+
+  // Belt-and-braces: also do a direct one-time read of the real Firestore
+  // state right now, rather than relying only on the live listener above.
+  // This was the actual cause of likes appearing to reset on reopen — the
+  // listener's first snapshot can arrive slightly after this function has
+  // already rendered with stale/default values, and there was nothing
+  // forcing a fresh read at open time specifically.
+  (async () => {
+    try {
+      const fsApi = window._psFs, dbRef = window._psDb;
+      if (!fsApi || !dbRef) return;
+      const snap = await fsApi.getDoc(fsApi.doc(dbRef, 'videoMetrics', String(id)));
+      if (snap.exists()) {
+        appState.videoMetrics[id] = { id, ...snap.data() };
+        updateVideoMetricsUI(id);
+      }
+    } catch (e) { console.warn('[HL] fresh metrics fetch failed:', e); }
+  })();
+
   const commentCount = v?.comments || 0;
   const creatorAvatar = v?.posterAvatar || v?.avatar || '';
   const creatorName = v?.channel || v?.username || '';
@@ -9995,8 +10014,15 @@ function _ffHandleVideoTap(el, videoId) {
   if (now - last < 300) {
     _ffSpawnHeartBurst(el.parentElement);
     const uid = (window._psCurrentUser && window._psCurrentUser.uid) || 'anon';
-    try { if (typeof likeVideo === 'function') likeVideo(videoId, uid); } catch (e) {}
-    _ffMarkLiked(videoId, null);
+    _ffMarkLiked(videoId, null); // optimistic — reverted below if the save actually fails
+    likeVideo(videoId, uid).catch((e) => {
+      console.error('[FanFeed] double-tap like failed:', e);
+      if (typeof showToast === 'function') {
+        const code = e?.code || 'no-code';
+        const msg = e?.message || 'no message';
+        showToast(`⚠️ [${code}] ${msg}`.slice(0, 120));
+      }
+    });
     el.dataset.lastTap = '0';
   } else {
     el.dataset.lastTap = String(now);
