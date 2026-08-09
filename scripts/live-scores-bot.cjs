@@ -23,7 +23,7 @@ const db = admin.firestore();
 
 const CONFIG = {
   BASE_URL: 'https://soccer.highlightly.net',
-  API_KEY: process.env.HIGHLIGHTLY_KEY,
+  API_KEY: process.env.HIGHLIGHTLY_API_KEY_DIRECT,
 };
 
 async function fetchTodaysMatches() {
