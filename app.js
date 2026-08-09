@@ -371,62 +371,1061 @@ function renderLiveScores(groups, filter) {
       const st = m.statusShort || m.status;
       const isFT = ['FT', 'AET', 'PEN'].includes(st);
       const isNS = st === 'NS';
-      const isLive = ['1H','2H','ET','HT','P','INT','LIVE'].includes(st);
-      const hasScore = m.scoreH !== null && m.scoreA !== null;
+/* ═══════════════════════════════════════════
+   LIVE SCORES ENGINE
+   Firestore → liveScores/current
+   GitHub Actions bot updates this every 5 minutes.
+═══════════════════════════════════════════ */
 
-      const homeWin = hasScore && m.scoreH > m.scoreA;
-      const awayWin = hasScore && m.scoreA > m.scoreH;
+let lsCurrentFilter = 'all';
+let lsData = [];
 
-      let timeCol = '';
-      if (isLive) {
-        // Display elapsed time or status for live matches
-        const displayStatus = m.minute ? `${m.minute}'` : (st === 'HT' ? 'HT' : 'LIVE');
-        timeCol = `<span class="ls-live-dot"></span><span class="ls-live-min">${displayStatus}</span>`;
-      } else if (isFT) {
-        timeCol = `<span class="ls-finished">FT</span>`;
-      } else if (st === 'PST') {
-        timeCol = `<span class="ls-postponed">PST</span>`;
-      } else {
-        timeCol = `<span class="ls-time">${m.time}</span>`;
+let _liveScoresUnsub = null;
+let _liveScoresSubscribers = [];
+
+let _liveScoresFirebaseRetry = null;
+let _liveScoresRetryCount = 0;
+
+const LIVE_SCORE_CACHE_KEY = 'pitchside_livescores_v5';
+const LIVE_SCORE_FIREBASE_RETRY_MS = 1000;
+const LIVE_SCORE_MAX_RETRIES = 30;
+
+// ─────────────────────────────────────────────
+// STATUS HELPERS
+// ─────────────────────────────────────────────
+
+function normalizeLiveScoreStatus(status) {
+  if (!status) return 'NS';
+
+  const value = String(status).trim().toLowerCase();
+
+  // Already-normalized statuses
+  const directMap = {
+    'ns': 'NS',
+    'not started': 'NS',
+    'scheduled': 'NS',
+    'upcoming': 'NS',
+
+    'ft': 'FT',
+    'finished': 'FT',
+    'ended': 'FT',
+    'full time': 'FT',
+
+    'ht': 'HT',
+    'half time': 'HT',
+    'halftime': 'HT',
+    'half-time': 'HT',
+
+    'live': 'LIVE',
+    'playing': 'LIVE',
+    'in progress': 'LIVE',
+    'progress': 'LIVE',
+
+    '1h': '1H',
+    '2h': '2H',
+    'et': 'ET',
+    'bt': 'BT',
+    'p': 'P',
+    'int': 'INT',
+
+    'pst': 'PST',
+    'postponed': 'PST',
+
+    'canc': 'CANC',
+    'cancelled': 'CANC',
+    'canceled': 'CANC',
+
+    'aet': 'AET',
+    'pen': 'PEN',
+  };
+
+  if (directMap[value]) {
+    return directMap[value];
+  }
+
+  if (
+    value.includes('finished') ||
+    value.includes('ended')
+  ) {
+    return 'FT';
+  }
+
+  if (
+    value.includes('halftime') ||
+    value.includes('half-time')
+  ) {
+    return 'HT';
+  }
+
+  if (
+    value.includes('live') ||
+    value.includes('playing') ||
+    value.includes('progress')
+  ) {
+    return 'LIVE';
+  }
+
+  if (value.includes('postponed')) {
+    return 'PST';
+  }
+
+  if (
+    value.includes('cancelled') ||
+    value.includes('canceled')
+  ) {
+    return 'CANC';
+  }
+
+  return 'NS';
+}
+
+// ─────────────────────────────────────────────
+// FIRESTORE SUBSCRIPTION
+// ─────────────────────────────────────────────
+
+function _subscribeLiveScoresFirestore() {
+  // Already connected
+  if (_liveScoresUnsub) {
+    return;
+  }
+
+  const fsApi = window._psFs;
+  const db = window._psDb;
+
+  // Firebase SDK isn't ready yet.
+  // IMPORTANT: retry instead of permanently giving up.
+  if (!fsApi || !db || !fsApi.onSnapshot) {
+    if (_liveScoresRetryCount < LIVE_SCORE_MAX_RETRIES) {
+      _liveScoresRetryCount++;
+
+      clearTimeout(_liveScoresFirebaseRetry);
+
+      _liveScoresFirebaseRetry = setTimeout(() => {
+        _subscribeLiveScoresFirestore();
+      }, LIVE_SCORE_FIREBASE_RETRY_MS);
+    }
+
+    return;
+  }
+
+  // Firebase is ready
+  _liveScoresRetryCount = 0;
+
+  clearTimeout(_liveScoresFirebaseRetry);
+  _liveScoresFirebaseRetry = null;
+
+  const { doc, onSnapshot } = fsApi;
+
+  console.log(
+    '[LiveScores] 🔥 Connecting to Firestore liveScores/current...'
+  );
+
+  _liveScoresUnsub = onSnapshot(
+    doc(db, 'liveScores', 'current'),
+
+    snapshot => {
+      if (!snapshot.exists()) {
+        console.warn(
+          '[LiveScores] liveScores/current does not exist yet.'
+        );
+        return;
       }
 
-      const scoreDisp = hasScore
-        ? `<div class="ls-score ${homeWin ? 'winner' : ''}">${m.scoreH}</div><div class="ls-score ${awayWin ? 'winner' : ''}">${m.scoreA}</div>`
-        : `<div class="ls-score" style="color:var(--text3)">-</div><div class="ls-score" style="color:var(--text3)">-</div>`;
+      const data = snapshot.data() || {};
 
-      const homeBadge = m.home.badge && m.home.badge.startsWith('http') 
-        ? `<img src="${m.home.badge}" style="width:16px;height:16px;object-fit:contain;">` 
-        : m.home.badge;
-      const awayBadge = m.away.badge && m.away.badge.startsWith('http') 
-        ? `<img src="${m.away.badge}" style="width:16px;height:16px;object-fit:contain;">` 
-        : m.away.badge;
+      const matches = Array.isArray(data.matches)
+        ? data.matches
+        : [];
 
-      html += `
-        <div class="ls-match" onclick="openMatchDetail('${m.id}','${m.home.name} vs ${m.away.name}')">
-          <div class="ls-time-col">${timeCol}</div>
-          <div class="ls-teams-col">
-            <div class="ls-team-row">
-              <div class="ls-team-badge">${homeBadge}</div>
-              <div class="ls-team-name ${homeWin ? 'winner' : ''}">${m.home.name}</div>
-            </div>
-            <div class="ls-team-row">
-              <div class="ls-team-badge">${awayBadge}</div>
-              <div class="ls-team-name ${awayWin ? 'winner' : ''}">${m.away.name}</div>
-            </div>
-          </div>
-          <div class="ls-scores-col">${scoreDisp}</div>
-        </div>`;
+      console.log(
+        `[LiveScores] 🔥 Firestore update: ${matches.length} matches`
+      );
+
+      // Send raw matches to every subscriber
+      _liveScoresSubscribers.forEach(callback => {
+        try {
+          callback(
+            matches,
+            Boolean(data.hasLive)
+          );
+        } catch (error) {
+          console.error(
+            '[LiveScores] Subscriber error:',
+            error
+          );
+        }
+      });
+    },
+
+    error => {
+      console.error(
+        '[LiveScores] Firestore listener error:',
+        error
+      );
+
+      // Allow reconnection
+      _liveScoresUnsub = null;
+
+      clearTimeout(_liveScoresFirebaseRetry);
+
+      _liveScoresFirebaseRetry = setTimeout(() => {
+        _subscribeLiveScoresFirestore();
+      }, LIVE_SCORE_FIREBASE_RETRY_MS);
+    }
+  );
+}
+
+// ─────────────────────────────────────────────
+// UNSUBSCRIBE
+// ─────────────────────────────────────────────
+
+function _unsubscribeLiveScoresFirestore() {
+  if (_liveScoresUnsub) {
+    try {
+      _liveScoresUnsub();
+    } catch (_) {}
+
+    _liveScoresUnsub = null;
+  }
+}
+
+// ─────────────────────────────────────────────
+// INITIALIZE LIVE SCORES
+// ─────────────────────────────────────────────
+
+function initLiveScores() {
+  if (currentPage === 'npfl') {
+    return;
+  }
+
+  const wrap = document.getElementById('ls-wrap');
+
+  if (wrap) {
+    wrap.innerHTML = `
+      <div class="ls-loading">
+        <div class="spinner"></div>
+        Loading today's matches…
+      </div>
+    `;
+  }
+
+  fetchLiveScores();
+}
+
+// ─────────────────────────────────────────────
+// FETCH LIVE SCORES
+// ─────────────────────────────────────────────
+
+let liveScoresRefreshInterval = null;
+let liveScoresLastUpdate = 0;
+
+const LIVESCORE_REFRESH_INTERVAL = 300000;
+
+function fetchLiveScores() {
+  if (currentPage === 'npfl') {
+    return;
+  }
+
+  // ───────────────────────────────────────────
+  // 1. Load cached data immediately
+  // ───────────────────────────────────────────
+
+  const today =
+    new Date().toISOString().split('T')[0];
+
+  try {
+    const cached = localStorage.getItem(
+      LIVE_SCORE_CACHE_KEY
+    );
+
+    if (cached) {
+      const parsed = JSON.parse(cached);
+
+      if (
+        parsed &&
+        parsed.dateKey === today &&
+        Array.isArray(parsed.data)
+      ) {
+        lsData = parsed.data;
+
+        renderLiveScores(
+          lsData,
+          lsCurrentFilter
+        );
+      }
+    }
+  } catch (error) {
+    console.warn(
+      '[LiveScores] Cache read failed:',
+      error
+    );
+  }
+
+  // ───────────────────────────────────────────
+  // 2. Receive Firestore data
+  // ───────────────────────────────────────────
+
+  const handler = (rawMatches, hasLive) => {
+    if (!Array.isArray(rawMatches)) {
+      rawMatches = [];
+    }
+
+    console.log(
+      `[LiveScores] Processing ${rawMatches.length} matches`
+    );
+
+    const grouped = {};
+
+    rawMatches.forEach(f => {
+      if (!f) return;
+
+      const fixture = f.fixture || {};
+      const teams = f.teams || {};
+      const goals = f.goals || {};
+      const league = f.league || {};
+
+      const fixtureId =
+        fixture.id ??
+        f.id;
+
+      if (!fixtureId) {
+        return;
+      }
+
+      const leagueId =
+        league.id ??
+        league.name ??
+        'unknown';
+
+      const leagueName =
+        league.name ||
+        'Football';
+
+      const country =
+        league.country ||
+        'World';
+
+      if (!grouped[leagueId]) {
+        grouped[leagueId] = {
+          league: leagueName,
+          country: country,
+          flag: countryFlag(country),
+          matches: []
+        };
+      }
+
+      // Normalize status
+      const statusShort =
+        normalizeLiveScoreStatus(
+          fixture.status?.short ||
+          fixture.status?.long ||
+          f.status
+        );
+
+      const elapsed =
+        fixture.status?.elapsed ??
+        null;
+
+      const fixtureDate =
+        fixture.date ||
+        f.date ||
+        null;
+
+      const isLive = [
+        '1H',
+        '2H',
+        'ET',
+        'BT',
+        'P',
+        'INT',
+        'LIVE'
+      ].includes(statusShort);
+
+      let displayStatus = statusShort;
+
+      if (isLive) {
+        displayStatus =
+          elapsed !== null &&
+          elapsed !== undefined
+            ? `${elapsed}'`
+            : 'LIVE';
+      } else if (
+        statusShort === 'FT' ||
+        statusShort === 'AET' ||
+        statusShort === 'PEN'
+      ) {
+        displayStatus = 'FT';
+      } else if (
+        statusShort === 'NS'
+      ) {
+        displayStatus =
+          fixtureDate
+            ? new Date(fixtureDate)
+                .toLocaleTimeString(
+                  [],
+                  {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  }
+                )
+            : 'NS';
+      }
+
+      grouped[leagueId].matches.push({
+        id: String(fixtureId),
+
+        time: fixtureDate
+          ? new Date(fixtureDate)
+              .toLocaleTimeString(
+                [],
+                {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                }
+              )
+          : '--:--',
+
+        status: displayStatus,
+
+        statusShort: statusShort,
+
+        home: {
+          name:
+            teams.home?.name ||
+            'Home',
+
+          badge:
+            teams.home?.logo ||
+            '⚽'
+        },
+
+        away: {
+          name:
+            teams.away?.name ||
+            'Away',
+
+          badge:
+            teams.away?.logo ||
+            '⚽'
+        },
+
+        scoreH:
+          goals.home ??
+          null,
+
+        scoreA:
+          goals.away ??
+          null,
+
+        minute: elapsed,
+
+        isLive: isLive,
+
+        fixtureDate: fixtureDate
+      });
     });
 
-    html += `</div>`;
+    // Convert object to array
+    lsData = Object.values(grouped);
+
+    liveScoresLastUpdate = Date.now();
+
+    // Save cache
+    try {
+      localStorage.setItem(
+        LIVE_SCORE_CACHE_KEY,
+        JSON.stringify({
+          timestamp: Date.now(),
+          dateKey: today,
+          data: lsData,
+          hasLive: Boolean(hasLive)
+        })
+      );
+    } catch (error) {
+      console.warn(
+        '[LiveScores] Cache write failed:',
+        error
+      );
+    }
+
+    console.log(
+      `[LiveScores] ✅ ${rawMatches.length} raw matches → ${lsData.length} leagues`
+    );
+
+    // Render immediately
+    if (currentPage !== 'npfl') {
+      renderLiveScores(
+        lsData,
+        lsCurrentFilter
+      );
+    }
+  };
+
+  // Avoid adding duplicate handlers
+  const alreadySubscribed =
+    _liveScoresSubscribers.includes(handler);
+
+  if (!alreadySubscribed) {
+    _liveScoresSubscribers.push(handler);
+  }
+
+  // Start/restart Firestore listener
+  _subscribeLiveScoresFirestore();
+}
+
+// ─────────────────────────────────────────────
+// BACKWARD-COMPATIBILITY REFRESH FUNCTIONS
+// ─────────────────────────────────────────────
+
+function startLiveScoresRefresh() {
+  _subscribeLiveScoresFirestore();
+}
+
+function stopLiveScoresRefresh() {
+  // Intentionally do not unsubscribe.
+  // The ticker also uses the same Firestore feed.
+  if (liveScoresRefreshInterval) {
+    clearInterval(liveScoresRefreshInterval);
+    liveScoresRefreshInterval = null;
+  }
+}
+
+// ─────────────────────────────────────────────
+// COUNTRY FLAGS
+// ─────────────────────────────────────────────
+
+function countryFlag(country) {
+  const map = {
+    'England': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+    'Spain': '🇪🇸',
+    'Germany': '🇩🇪',
+    'Italy': '🇮🇹',
+    'France': '🇫🇷',
+    'Brazil': '🇧🇷',
+    'Argentina': '🇦🇷',
+    'Nigeria': '🇳🇬',
+    'South Africa': '🇿🇦',
+    'USA': '🇺🇸',
+    'Portugal': '🇵🇹',
+    'Netherlands': '🇳🇱',
+    'Turkey': '🇹🇷',
+    'Mexico': '🇲🇽',
+    'Japan': '🇯🇵',
+    'World': '🌍',
+    'Africa': '🌍',
+    'South America': '🌎',
+    'Asia': '🌏',
+    'Europe': '🇪🇺'
+  };
+
+  return map[country] || '🏳️';
+}
+
+// ─────────────────────────────────────────────
+// FILTER
+// ─────────────────────────────────────────────
+
+function filterLive(filter, btn) {
+  lsCurrentFilter = filter;
+
+  document
+    .querySelectorAll('.ls-pill')
+    .forEach(p =>
+      p.classList.remove('on')
+    );
+
+  if (btn) {
+    btn.classList.add('on');
+  }
+
+  renderLiveScores(
+    lsData,
+    filter
+  );
+}
+
+// ─────────────────────────────────────────────
+// RENDER LIVE SCORES
+// ─────────────────────────────────────────────
+
+function renderLiveScores(groups, filter) {
+  const wrap =
+    document.getElementById('ls-wrap');
+
+  if (!wrap) {
+    return;
+  }
+
+  if (!Array.isArray(groups)) {
+    groups = [];
+  }
+
+  let html = '';
+  let totalShown = 0;
+
+  groups.forEach(group => {
+    if (!group || !Array.isArray(group.matches)) {
+      return;
+    }
+
+    const filtered =
+      group.matches.filter(match => {
+        const status =
+          normalizeLiveScoreStatus(
+            match.statusShort ||
+            match.status
+          );
+
+        if (filter === 'all') {
+          return true;
+        }
+
+        if (filter === 'live') {
+          return [
+            '1H',
+            '2H',
+            'ET',
+            'HT',
+            'P',
+            'INT',
+            'LIVE'
+          ].includes(status);
+        }
+
+        if (filter === 'finished') {
+          return [
+            'FT',
+            'AET',
+            'PEN'
+          ].includes(status);
+        }
+
+        if (filter === 'upcoming') {
+          return status === 'NS';
+        }
+
+        return true;
+      });
+
+    if (filtered.length === 0) {
+      return;
+    }
+
+    totalShown += filtered.length;
+
+    html += `
+      <div class="ls-league-group">
+
+        <div class="ls-league-hdr">
+          <div class="ls-league-flag">
+            ${group.flag || '🏳️'}
+          </div>
+
+          <div class="ls-league-info">
+            <div class="ls-league-name">
+              ${group.league || 'Football'}
+            </div>
+
+            <div class="ls-league-country">
+              ${group.country || 'World'}
+            </div>
+          </div>
+        </div>
+    `;
+
+    filtered.forEach(m => {
+      const st =
+        normalizeLiveScoreStatus(
+          m.statusShort ||
+          m.status
+        );
+
+      const isFT =
+        ['FT', 'AET', 'PEN']
+          .includes(st);
+
+      const isNS =
+        st === 'NS';
+
+      const isLive =
+        [
+          '1H',
+          '2H',
+          'ET',
+          'HT',
+          'P',
+          'INT',
+          'LIVE'
+        ].includes(st);
+
+      const hasScore =
+        m.scoreH !== null &&
+        m.scoreH !== undefined &&
+        m.scoreA !== null &&
+        m.scoreA !== undefined;
+
+      const homeWin =
+        hasScore &&
+        Number(m.scoreH) >
+        Number(m.scoreA);
+
+      const awayWin =
+        hasScore &&
+        Number(m.scoreA) >
+        Number(m.scoreH);
+
+      let timeCol = '';
+
+      if (isLive) {
+        const displayStatus =
+          m.minute !== null &&
+          m.minute !== undefined
+            ? `${m.minute}'`
+            : (
+                st === 'HT'
+                  ? 'HT'
+                  : 'LIVE'
+              );
+
+        timeCol = `
+          <span class="ls-live-dot"></span>
+          <span class="ls-live-min">
+            ${displayStatus}
+          </span>
+        `;
+      } else if (isFT) {
+        timeCol = `
+          <span class="ls-finished">
+            FT
+          </span>
+        `;
+      } else if (st === 'PST') {
+        timeCol = `
+          <span class="ls-postponed">
+            PST
+          </span>
+        `;
+      } else if (st === 'CANC') {
+        timeCol = `
+          <span class="ls-postponed">
+            CANC
+          </span>
+        `;
+      } else {
+        timeCol = `
+          <span class="ls-time">
+            ${m.time || '--:--'}
+          </span>
+        `;
+      }
+
+      const scoreDisp =
+        hasScore
+          ? `
+            <div class="ls-score ${homeWin ? 'winner' : ''}">
+              ${m.scoreH}
+            </div>
+
+            <div class="ls-score ${awayWin ? 'winner' : ''}">
+              ${m.scoreA}
+            </div>
+          `
+          : `
+            <div
+              class="ls-score"
+              style="color:var(--text3)"
+            >
+              -
+            </div>
+
+            <div
+              class="ls-score"
+              style="color:var(--text3)"
+            >
+              -
+            </div>
+          `;
+
+      const homeBadge =
+        m.home?.badge &&
+        String(m.home.badge).startsWith('http')
+          ? `
+            <img
+              src="${m.home.badge}"
+              style="
+                width:16px;
+                height:16px;
+                object-fit:contain;
+              "
+              onerror="this.style.display='none'"
+            >
+          `
+          : (
+              m.home?.badge ||
+              '⚽'
+            );
+
+      const awayBadge =
+        m.away?.badge &&
+        String(m.away.badge).startsWith('http')
+          ? `
+            <img
+              src="${m.away.badge}"
+              style="
+                width:16px;
+                height:16px;
+                object-fit:contain;
+              "
+              onerror="this.style.display='none'"
+            >
+          `
+          : (
+              m.away?.badge ||
+              '⚽'
+            );
+
+      const matchId =
+        String(m.id || '');
+
+      const homeName =
+        m.home?.name ||
+        'Home';
+
+      const awayName =
+        m.away?.name ||
+        'Away';
+
+      html += `
+        <div
+          class="ls-match"
+          onclick="openMatchDetail(
+            '${_esc(matchId)}',
+            '${_esc(homeName + ' vs ' + awayName)}'
+          )"
+        >
+
+          <div class="ls-time-col">
+            ${timeCol}
+          </div>
+
+          <div class="ls-teams-col">
+
+            <div class="ls-team-row">
+              <div class="ls-team-badge">
+                ${homeBadge}
+              </div>
+
+              <div
+                class="ls-team-name ${homeWin ? 'winner' : ''}"
+              >
+                ${homeName}
+              </div>
+            </div>
+
+            <div class="ls-team-row">
+              <div class="ls-team-badge">
+                ${awayBadge}
+              </div>
+
+              <div
+                class="ls-team-name ${awayWin ? 'winner' : ''}"
+              >
+                ${awayName}
+              </div>
+            </div>
+
+          </div>
+
+          <div class="ls-scores-col">
+            ${scoreDisp}
+          </div>
+
+        </div>
+      `;
+    });
+
+    html += `
+      </div>
+    `;
   });
 
   if (totalShown === 0) {
-    html = `<div class="ls-loading" style="color:var(--text3);">
-      <div style="font-size:32px;">⚽</div>No matches for this filter</div>`;
+    html = `
+      <div
+        class="ls-loading"
+        style="color:var(--text3);"
+      >
+        <div style="font-size:32px;">
+          ⚽
+        </div>
+
+        No matches for this filter
+      </div>
+    `;
   }
 
   wrap.innerHTML = html;
+}
+
+// ─────────────────────────────────────────────
+// TICKER
+// ─────────────────────────────────────────────
+
+let _tickerSubscribed = false;
+
+function initTicker() {
+  renderTicker([]);
+
+  const handler = (rawMatches) => {
+    if (!Array.isArray(rawMatches)) {
+      renderTicker([]);
+      return;
+    }
+
+    const matches =
+      rawMatches
+        .slice(0, 6)
+        .map(f => {
+          const fixture =
+            f.fixture || {};
+
+          const teams =
+            f.teams || {};
+
+          const goals =
+            f.goals || {};
+
+          const status =
+            normalizeLiveScoreStatus(
+              fixture.status?.short ||
+              fixture.status?.long
+            );
+
+          return {
+            home:
+              teams.home?.name ||
+              'Home',
+
+            away:
+              teams.away?.name ||
+              'Away',
+
+            score:
+              `${goals.home ?? '-'} - ${goals.away ?? '-'}`,
+
+            status: [
+              '1H',
+              '2H',
+              'ET',
+              'BT',
+              'P',
+              'INT',
+              'LIVE'
+            ].includes(status)
+              ? 'LIVE'
+              : status,
+
+            matchId:
+              String(fixture.id || ''),
+
+            minute:
+              fixture.status?.elapsed ??
+              null
+          };
+        });
+
+    renderTicker(matches);
+  };
+
+  if (!_tickerSubscribed) {
+    _liveScoresSubscribers.push(handler);
+    _tickerSubscribed = true;
+  }
+
+  _subscribeLiveScoresFirestore();
+}
+
+function startTickerRefresh() {
+  _subscribeLiveScoresFirestore();
+}
+
+function stopTickerRefresh() {
+  // Firestore listener remains active.
+}
+
+function renderTicker(matches) {
+  const container =
+    document.getElementById(
+      'ticker-row'
+    );
+
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML =
+    matches.map(m => {
+      const st =
+        m.status || 'NS';
+
+      const isLive =
+        [
+          '1H',
+          '2H',
+          'ET',
+          'HT',
+          'P',
+          'INT',
+          'LIVE'
+        ].includes(st);
+
+      const isHT =
+        st === 'HT';
+
+      const active =
+        isLive;
+
+      const displayStatus =
+        isLive && m.minute
+          ? `${m.minute}'`
+          : (
+              isHT
+                ? 'HT'
+                : st
+            );
+
+      return `
+        <div
+          class="t-card"
+          onclick="openMatchDetail(
+            '${_esc(String(m.matchId))}',
+            '${_esc(m.home + ' vs ' + m.away)}'
+          )"
+        >
+
+          <div class="t-teams">
+            <div>${m.home}</div>
+            <div>${m.away}</div>
+          </div>
+
+          <div class="t-score">
+            ${m.score}
+          </div>
+
+          <div
+            class="t-live"
+            style="
+              background:${active ? '#10b981' : '#333'};
+              color:${active ? '#fff' : '#999'};
+            "
+          >
+            ${displayStatus}
+          </div>
+
+        </div>
+      `;
+    })
+    .join('');
 }
 
 /* ═══════════════════════════════════════════
