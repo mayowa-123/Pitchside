@@ -29,7 +29,7 @@ jobs:
 
       - name: ⚽ Run Live Scores Bot
         env:
-          HIGHLIGHTLY_KEY: ${{ secrets.HIGHLIGHTLY_API_KEY_DIRECT }}
+          HIGHLIGHTLY_API_KEY_DIRECT: ${{ secrets.HIGHLIGHTLY_API_KEY_DIRECT }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           node scripts/live-scores-bot.cjs
