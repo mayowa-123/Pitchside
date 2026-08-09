@@ -9562,6 +9562,16 @@ function _ffWireNewSlides() {
     const bgVideo = slideEl.querySelector('video.ff-video-bg');
     if (fgVideo && fgVideo.dataset.videoUrl) _ffAttachVideoSource(fgVideo, fgVideo.dataset.videoUrl);
     if (bgVideo && bgVideo.dataset.videoUrl) _ffAttachVideoSource(bgVideo, bgVideo.dataset.videoUrl);
+
+    // Re-sync like/comment state onto this (possibly brand-new, from a loop
+    // restart) DOM node using whatever's already cached from the listener —
+    // the listener won't re-fire just because new elements appeared, so
+    // without this, a reshuffled repeat of an already-liked video would
+    // show the default/unliked template state instead of the real one.
+    const videoId = slideEl.dataset.videoId;
+    if (videoId && appState.videoMetrics[videoId]) {
+      updateVideoMetricsUI(videoId);
+    }
   });
   setupFanFeedObserver();
 }
