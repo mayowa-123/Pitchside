@@ -1,104 +1,351 @@
 /**
- * ⚽ LIVE SCORES BOT
- * Polls Highlightly for the day's matches on a fixed schedule and writes
- * ONE shared Firestore document that every user's app reads from in
- * real-time (onSnapshot) — instead of each user's phone calling Highlightly
- * directly, which is what the frontend was doing before this existed
- * (the live ticker alone was polling the API every 20 seconds per user,
- * unconditionally — this bot replaces that entirely).
+ * ⚽ PITCHSIDE LIVE SCORES BOT
  *
- * Runs every 5 minutes via .github/workflows/live-scores-bot.yml
- * (GitHub Actions' minimum schedulable interval — see workflow file for why).
+ * Fetches today's football matches from Highlightly every 5 minutes
+ * through GitHub Actions and stores ONE shared document in Firestore.
+ *
+ * Frontend:
+ *   Firestore → liveScores/current → app.js
+ *
+ * This prevents every user's device from calling Highlightly directly.
  */
 
 const admin = require('firebase-admin');
 const axios = require('axios');
 
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+// ─────────────────────────────────────────────────────────────
+// FIREBASE
+// ─────────────────────────────────────────────────────────────
+
+if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+  console.error('❌ FIREBASE_SERVICE_ACCOUNT not set — aborting');
+  process.exit(1);
+}
+
+let serviceAccount;
+
+try {
+  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+} catch (error) {
+  console.error('❌ FIREBASE_SERVICE_ACCOUNT is not valid JSON');
+  console.error(error.message);
+  process.exit(1);
+}
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
 const db = admin.firestore();
 
+// ─────────────────────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────────────────────
+
 const CONFIG = {
   BASE_URL: 'https://soccer.highlightly.net',
   API_KEY: process.env.HIGHLIGHTLY_API_KEY_DIRECT,
+  API_HOST: 'soccer.highlightly.net',
 };
 
+// ─────────────────────────────────────────────────────────────
+// STATUS NORMALIZATION
+// ─────────────────────────────────────────────────────────────
+
+function getStatusShort(statusDescription) {
+  if (!statusDescription) return 'NS';
+
+  const desc = String(statusDescription).toLowerCase();
+
+  // Finished
+  if (
+    desc.includes('finished') ||
+    desc.includes('ended') ||
+    desc === 'ft'
+  ) {
+    return 'FT';
+  }
+
+  // Half time
+  if (
+    desc.includes('halftime') ||
+    desc.includes('half-time') ||
+    desc === 'ht'
+  ) {
+    return 'HT';
+  }
+
+  // Live
+  if (
+    desc.includes('live') ||
+    desc.includes('playing') ||
+    desc.includes('progress') ||
+    desc.includes('in progress') ||
+    desc === '1h' ||
+    desc === '2h' ||
+    desc === 'et' ||
+    desc === 'bt' ||
+    desc === 'p' ||
+    desc === 'int'
+  ) {
+    return 'LIVE';
+  }
+
+  // Postponed
+  if (desc.includes('postponed')) {
+    return 'PST';
+  }
+
+  // Cancelled
+  if (
+    desc.includes('cancelled') ||
+    desc.includes('canceled')
+  ) {
+    return 'CANC';
+  }
+
+  // Otherwise treat it as upcoming
+  return 'NS';
+}
+
+// ─────────────────────────────────────────────────────────────
+// FETCH TODAY'S MATCHES
+// ─────────────────────────────────────────────────────────────
+
 async function fetchTodaysMatches() {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  const url = `${CONFIG.BASE_URL}/matches?date=${today}&timezone=Africa/Lagos`;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const url =
+    `${CONFIG.BASE_URL}/matches` +
+    `?date=${today}` +
+    `&timezone=Africa/Lagos`;
 
   console.log(`📡 Fetching matches for ${today}...`);
+  console.log(`🌍 Timezone: Africa/Lagos`);
 
   const response = await axios.get(url, {
     headers: {
       'x-rapidapi-key': CONFIG.API_KEY,
-      'x-rapidapi-host': 'soccer.highlightly.net',
+      'x-rapidapi-host': CONFIG.API_HOST,
+      'Content-Type': 'application/json',
     },
     timeout: 15000,
   });
 
-  const data = response.data;
-  const matches = Array.isArray(data) ? data : (data?.data || []);
+  const rawData = response.data;
+
+  const matches = Array.isArray(rawData)
+    ? rawData
+    : (rawData?.data || []);
+
   console.log(`✅ Got ${matches.length} matches`);
+
   return matches;
 }
 
-// Same field-mapping convention as api/football.js, kept consistent so the
-// frontend doesn't need two different shapes depending on the source.
+// ─────────────────────────────────────────────────────────────
+// TRANSFORM HIGHLIGHTLY → PITCHSIDE FORMAT
+// ─────────────────────────────────────────────────────────────
+
 function transformMatch(m) {
+  const statusDescription =
+    m.state?.description ||
+    m.status ||
+    '';
+
+  const statusShort = getStatusShort(statusDescription);
+
+  const homeGoals =
+    m.state?.score?.home ??
+    m.homeGoals ??
+    null;
+
+  const awayGoals =
+    m.state?.score?.away ??
+    m.awayGoals ??
+    null;
+
+  const country =
+    m.country?.name ||
+    m.country?.code ||
+    m.league?.country?.name ||
+    m.league?.country?.code ||
+    'World';
+
   return {
     fixture: {
-      id: m.id,
-      status: { short: m.state?.description || m.status || 'NS', elapsed: m.state?.clock ?? null },
-      date: m.date || m.kickoff || null,
+      id: String(m.id),
+
+      date:
+        m.date ||
+        m.kickoff ||
+        null,
+
+      timestamp:
+        m.date
+          ? Math.floor(new Date(m.date).getTime() / 1000)
+          : null,
+
+      status: {
+        long: statusDescription || 'Not started',
+        short: statusShort,
+        elapsed: m.state?.clock ?? null,
+      },
     },
+
     teams: {
-      home: { id: m.homeTeam?.id, name: m.homeTeam?.name || 'Home', logo: m.homeTeam?.logo || '' },
-      away: { id: m.awayTeam?.id, name: m.awayTeam?.name || 'Away', logo: m.awayTeam?.logo || '' },
+      home: {
+        id: m.homeTeam?.id ?? null,
+        name: m.homeTeam?.name || 'Home',
+        logo: m.homeTeam?.logo || '',
+      },
+
+      away: {
+        id: m.awayTeam?.id ?? null,
+        name: m.awayTeam?.name || 'Away',
+        logo: m.awayTeam?.logo || '',
+      },
     },
+
     goals: {
-      home: m.state?.score?.home ?? m.homeGoals ?? null,
-      away: m.state?.score?.away ?? m.awayGoals ?? null,
+      home: homeGoals,
+      away: awayGoals,
     },
-    league: { id: m.league?.id, name: m.league?.name || 'Football' },
+
+    league: {
+      id: m.league?.id ?? 0,
+      name: m.league?.name || 'Football',
+      country: country,
+      logo: m.league?.logo || '',
+      flag:
+        m.country?.logo ||
+        m.league?.flag ||
+        '',
+    },
   };
 }
 
+// ─────────────────────────────────────────────────────────────
+// MAIN
+// ─────────────────────────────────────────────────────────────
+
 async function run() {
-  console.log('\n' + '='.repeat(60));
-  console.log('⚽ LIVE SCORES BOT');
+  console.log('');
+  console.log('='.repeat(60));
+  console.log('⚽ PITCHSIDE LIVE SCORES BOT');
   console.log('='.repeat(60));
 
+  // Check API key
   if (!CONFIG.API_KEY) {
-    console.error('❌ HIGHLIGHTLY_KEY not set — aborting');
+    console.error(
+      '❌ HIGHLIGHTLY_API_KEY_DIRECT not set — aborting'
+    );
     process.exit(1);
   }
 
   try {
+    // 1. Fetch Highlightly
     const rawMatches = await fetchTodaysMatches();
-    const matches = rawMatches.map(transformMatch);
-    const hasLive = matches.some(m => ['1H', '2H', 'ET', 'BT', 'P', 'INT', 'LIVE'].includes(m.fixture.status.short));
 
-    // ONE document, overwritten in full every run — every connected client
-    // gets this update instantly via onSnapshot, no polling needed on their end.
-    await db.collection('liveScores').doc('current').set({
-      matches,
-      hasLive,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      matchCount: matches.length,
+    // 2. Transform
+    const matches = rawMatches
+      .map(transformMatch)
+      .filter(match => match.fixture.id);
+
+    // 3. Detect live matches
+    const liveStatuses = [
+      'LIVE',
+      '1H',
+      '2H',
+      'ET',
+      'BT',
+      'P',
+      'INT',
+    ];
+
+    const hasLive = matches.some(match =>
+      liveStatuses.includes(match.fixture.status.short)
+    );
+
+    // 4. Count status types for debugging
+    const statusCounts = {};
+
+    matches.forEach(match => {
+      const status = match.fixture.status.short;
+
+      statusCounts[status] =
+        (statusCounts[status] || 0) + 1;
     });
 
-    console.log(`✅ Saved ${matches.length} matches (${hasLive ? 'LIVE matches present' : 'no live matches right now'})`);
+    console.log('📊 Status breakdown:');
+    console.log(statusCounts);
+
+    // 5. Save ONE shared Firestore document
+    await db
+      .collection('liveScores')
+      .doc('current')
+      .set({
+        matches,
+        hasLive,
+
+        updatedAt:
+          admin.firestore.FieldValue.serverTimestamp(),
+
+        matchCount: matches.length,
+
+        source: 'highlightly',
+
+        timezone: 'Africa/Lagos',
+
+        updatedDate:
+          new Date().toISOString().slice(0, 10),
+      });
+
+    console.log(
+      `✅ Saved ${matches.length} matches`
+    );
+
+    console.log(
+      hasLive
+        ? '🔴 LIVE matches are currently present'
+        : '⚪ No live matches right now'
+    );
+
+    console.log(
+      `🔥 Firestore: liveScores/current`
+    );
+
     console.log('='.repeat(60));
   } catch (error) {
     console.error('❌ Bot error:', error.message);
-    // Don't overwrite Firestore with bad/empty data on a failed fetch —
-    // stale-but-good data is better than wiping the board on a hiccup.
+
+    if (error.response) {
+      console.error(
+        'HTTP status:',
+        error.response.status
+      );
+
+      if (error.response.data) {
+        console.error(
+          'API response:',
+          JSON.stringify(
+            error.response.data,
+            null,
+            2
+          )
+        );
+      }
+    }
+
+    // Never overwrite good Firestore data
+    // when the API request fails.
     process.exit(1);
   }
 }
 
-run().then(() => process.exit(0));
+run()
+  .then(() => process.exit(0))
+  .catch(error => {
+    console.error('❌ Fatal error:', error);
+    process.exit(1);
+  });
