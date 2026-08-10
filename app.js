@@ -1,4 +1,5 @@
 
+
   // ── YouTube Highlights ──────────────────────────────────────────
 let _sbAllVideos = [];
 let _sbCurrentFilter = 'all';
@@ -6557,70 +6558,136 @@ window.closePlayerProfile = closePlayerProfile;
     margin-bottom:-2px; transition:color .2s,border-color .2s; white-space:nowrap; }
   .fyt.on { color:#10b981; border-bottom-color:#10b981; }
 
-  /* ── War Room Chat ── */
+  /* ── War Room Chat (WhatsApp-inspired: bigger, flatter, no glass/shine) ── */
   #war-room-overlay {
     position:fixed; inset:0; z-index:1400;
-    background:#0a0f1e; display:none; flex-direction:column;
+    background:#0b0f17; display:none; flex-direction:column;
     font-family:'DM Sans',sans-serif;
   }
   #war-room-overlay.active { display:flex; }
   .wr-hdr {
-    background:linear-gradient(135deg,#0d1f16,#0a0f1e);
-    padding:16px; display:flex; align-items:center; gap:12px;
-    border-bottom:1px solid rgba(16,185,129,0.2); flex-shrink:0;
+    background:#0f1a13;
+    padding:14px 16px; display:flex; align-items:center; gap:14px;
+    border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0;
   }
-  .wr-title { font-family:'Bebas Neue',sans-serif; font-size:22px; color:#fff; letter-spacing:.04em; flex:1; }
-  .wr-close { background:rgba(255,255,255,0.08); border:none; color:#fff;
-    width:36px; height:36px; border-radius:50%;
-    display:flex; align-items:center; justify-content:center; cursor:pointer; }
-  .wr-live-tag { background:#f43f5e; color:#fff; font-size:10px; font-weight:800;
-    padding:2px 8px; border-radius:20px; letter-spacing:.05em; }
-  .wr-body { flex:1; overflow-y:auto; padding:12px 14px;
-    display:flex; flex-direction:column; gap:10px; -webkit-overflow-scrolling:touch; }
-  .wr-msg { display:flex; gap:10px; align-items:flex-start; }
+  .wr-title { font-family:'Bebas Neue',sans-serif; font-size:24px; color:#fff; letter-spacing:.04em; flex:1; }
+  .wr-close { background:rgba(255,255,255,0.1); border:none; color:#fff;
+    width:42px; height:42px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; }
+  .wr-live-tag { background:#e11d48; color:#fff; font-size:11px; font-weight:800;
+    padding:4px 10px; border-radius:20px; letter-spacing:.05em; }
+  .wr-online-bar {
+    padding:9px 16px; background:#10261a;
+    border-bottom:1px solid rgba(255,255,255,0.06);
+    font-size:12.5px; color:#34d399; display:flex; align-items:center; gap:8px; flex-shrink:0; font-weight:600;
+  }
+  .wr-body { flex:1; overflow-y:auto; padding:16px; background:#0b0f17;
+    display:flex; flex-direction:column; gap:14px; -webkit-overflow-scrolling:touch; }
+  .wr-msg { display:flex; gap:12px; align-items:flex-end; }
   .wr-msg.mine { flex-direction:row-reverse; }
   .wr-avatar {
-    width:32px; height:32px; border-radius:50%; flex-shrink:0;
-    background:linear-gradient(135deg,#10b981,#059669);
+    width:40px; height:40px; border-radius:50%; flex-shrink:0;
+    background:#059669;
     display:flex; align-items:center; justify-content:center;
-    font-size:12px; font-weight:700; color:#fff;
+    font-size:14px; font-weight:700; color:#fff;
   }
+  .wr-bubble-col { max-width:78%; }
   .wr-bubble {
-    max-width:72%; padding:8px 12px; border-radius:12px;
-    font-size:13px; line-height:1.45; color:#fff;
-    background:rgba(255,255,255,0.1);
+    padding:11px 14px; border-radius:16px;
+    font-size:15.5px; line-height:1.5; color:#fff;
+    background:#1c2430; word-break:break-word;
+    cursor:pointer;
   }
-  .wr-msg.mine .wr-bubble { background:rgba(16,185,129,0.25); border-radius:12px 12px 0 12px; }
-  .wr-bubble-name { font-size:10px; font-weight:700; color:#10b981; margin-bottom:3px; }
-  .wr-badge {
-    display:inline-block; font-size:9px; padding:1px 5px;
-    border-radius:6px; margin-left:4px; font-weight:700;
+  .wr-msg.mine .wr-bubble { background:#0d5c43; border-radius:16px 16px 4px 16px; }
+  .wr-msg:not(.mine) .wr-bubble { border-radius:16px 16px 16px 4px; }
+  .wr-bubble-name { font-size:12.5px; font-weight:700; color:#34d399; margin-bottom:4px; }
+  .wr-time { font-size:11.5px; color:rgba(255,255,255,0.35); margin-top:4px; padding:0 4px; }
+  .wr-msg.mine .wr-time { text-align:right; }
+
+  /* Reply quote shown inside a bubble */
+  .wr-reply-quote {
+    border-left:3px solid #34d399; background:rgba(255,255,255,0.06);
+    border-radius:8px; padding:6px 10px; margin-bottom:6px; font-size:13px;
   }
-  .badge-top    { background:rgba(251,191,36,0.2); color:#fbbf24; }
-  .badge-ticket { background:rgba(59,130,246,0.2); color:#60a5fa; }
-  .badge-new    { background:rgba(148,163,184,0.15); color:#94a3b8; }
-  .wr-time { font-size:10px; color:rgba(255,255,255,0.3); margin-top:2px; }
+  .wr-reply-quote-name { color:#34d399; font-weight:700; font-size:12px; }
+  .wr-reply-quote-text { color:rgba(255,255,255,0.6); margin-top:1px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* Reply preview bar above the input, before sending */
+  .wr-reply-bar {
+    display:none; align-items:center; gap:10px; padding:10px 16px;
+    background:#141b26; border-top:1px solid rgba(255,255,255,0.08); flex-shrink:0;
+  }
+  .wr-reply-bar.active { display:flex; }
+  .wr-reply-bar-line { flex:1; border-left:3px solid #34d399; padding-left:10px; min-width:0; }
+  .wr-reply-bar-name { color:#34d399; font-weight:700; font-size:12.5px; }
+  .wr-reply-bar-text { color:rgba(255,255,255,0.55); font-size:13px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .wr-reply-bar-cancel { background:none; border:none; color:rgba(255,255,255,0.5);
+    font-size:20px; cursor:pointer; padding:4px 8px; flex-shrink:0; }
+
+  /* Media inside bubbles */
+  .wr-media-img { max-width:100%; border-radius:12px; display:block; margin-bottom:6px; }
+  .wr-media-video { max-width:100%; border-radius:12px; display:block; margin-bottom:6px; background:#000; }
+  .wr-voice-row { display:flex; align-items:center; gap:10px; min-width:180px; }
+  .wr-voice-row audio { height:36px; max-width:200px; }
+  .wr-sticker-bubble { background:none !important; padding:0 !important; font-size:52px; line-height:1; }
+
+  /* Message action sheet (Reply / Forward) */
+  .wr-action-sheet-backdrop {
+    position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1500; display:none;
+  }
+  .wr-action-sheet-backdrop.active { display:block; }
+  .wr-action-sheet {
+    position:fixed; left:0; right:0; bottom:0; z-index:1501;
+    background:#141b26; border-radius:18px 18px 0 0; padding:8px 0 max(8px,env(safe-area-inset-bottom));
+  }
+  .wr-action-item {
+    display:flex; align-items:center; gap:14px; padding:16px 20px;
+    color:#fff; font-size:16px; font-weight:600; cursor:pointer;
+  }
+  .wr-action-item:active { background:rgba(255,255,255,0.06); }
+
+  /* Sticker picker */
+  .wr-sticker-picker {
+    display:none; background:#141b26; border-top:1px solid rgba(255,255,255,0.08);
+    padding:12px 12px 4px; flex-shrink:0;
+  }
+  .wr-sticker-picker.active { display:block; }
+  .wr-sticker-tabs { display:flex; gap:8px; margin-bottom:10px; }
+  .wr-sticker-tab { padding:6px 12px; border-radius:14px; font-size:12.5px; font-weight:700;
+    color:rgba(255,255,255,0.5); background:rgba(255,255,255,0.06); cursor:pointer; }
+  .wr-sticker-tab.on { color:#0b0f17; background:#34d399; }
+  .wr-sticker-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:4px;
+    max-height:180px; overflow-y:auto; padding-bottom:10px; }
+  .wr-sticker-grid span { font-size:28px; text-align:center; padding:6px 0; cursor:pointer; border-radius:10px; }
+  .wr-sticker-grid span:active { background:rgba(255,255,255,0.08); }
+
+  /* Input bar */
   .wr-input-bar {
-    display:flex; gap:10px; align-items:center; padding:10px 14px 20px;
+    display:flex; gap:8px; align-items:center; padding:12px 14px max(12px,env(safe-area-inset-bottom));
     border-top:1px solid rgba(255,255,255,0.08); flex-shrink:0;
-    background:#0a0f1e;
+    background:#0b0f17;
   }
+  .wr-icon-btn {
+    width:44px; height:44px; border-radius:50%; flex-shrink:0; border:none; cursor:pointer;
+    background:rgba(255,255,255,0.08); color:#fff;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .wr-icon-btn.recording { background:#e11d48; }
   .wr-input {
     flex:1; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12);
-    border-radius:22px; padding:10px 16px; font-size:14px; color:#fff;
+    border-radius:24px; padding:12px 18px; font-size:16px; color:#fff;
     font-family:'DM Sans',sans-serif; outline:none;
   }
-  .wr-input::placeholder { color:rgba(255,255,255,0.3); }
+  .wr-input::placeholder { color:rgba(255,255,255,0.35); }
   .wr-send-btn {
-    width:40px; height:40px; border-radius:50%; flex-shrink:0;
-    background:linear-gradient(135deg,#10b981,#059669); border:none; cursor:pointer;
+    width:44px; height:44px; border-radius:50%; flex-shrink:0;
+    background:#059669; border:none; cursor:pointer;
     display:flex; align-items:center; justify-content:center;
   }
-  .wr-online-bar {
-    padding:6px 14px; background:rgba(16,185,129,0.08);
-    border-bottom:1px solid rgba(16,185,129,0.15);
-    font-size:11px; color:#10b981; display:flex; align-items:center; gap:6px; flex-shrink:0;
-  }
+  .wr-upload-status { font-size:12.5px; color:#34d399; padding:0 16px 8px; flex-shrink:0; }
+  .wr-recording-timer { font-size:14px; color:#f43f5e; font-weight:700; padding:0 8px; flex-shrink:0; }
 
   /* ── Infinite scroll sentinel ── */
   .scroll-sentinel { height:1px; pointer-events:none; }
@@ -7039,7 +7106,12 @@ window.PITCHSIDE_FIRESTORE_SCHEMA = {
       fields: {
         uid: 'string',
         displayName: 'string',
-        text: 'string (max 200 chars)',
+        type: '"text" | "image" | "video" | "voice" | "sticker"',
+        text: 'string (max 500 chars) — message body for text, emoji for sticker, empty for media types',
+        mediaUrl: 'string, optional — image/video/voice file URL (R2 for images/voice, Cloudflare Stream HLS for video)',
+        thumbnailUrl: 'string, optional — video poster frame',
+        duration: 'number, optional — voice note length in seconds',
+        replyTo: '{ user: string, text: string }, optional — set when the message is a reply to another one',
         createdAt: 'server timestamp'
       },
       presence_fields: {
@@ -7104,7 +7176,7 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.text is string
-        && request.resource.data.text.size() <= 200;
+        && request.resource.data.text.size() <= 500;
       allow update: if false;
       allow delete: if request.auth != null
         && resource.data.uid == request.auth.uid;
@@ -7133,22 +7205,56 @@ service cloud.firestore {
   div.innerHTML = `
     <div class="wr-hdr">
       <button class="wr-close" onclick="closeWarRoom()">
-        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
       <div class="wr-title" id="wr-match-title">WAR ROOM</div>
       <div class="wr-live-tag">🔴 LIVE</div>
     </div>
     <div class="wr-online-bar">
-      <div style="width:6px;height:6px;border-radius:50%;background:#10b981;animation:blink 1s infinite;"></div>
+      <div style="width:7px;height:7px;border-radius:50%;background:#34d399;animation:blink 1s infinite;"></div>
       <span id="wr-online-count">0 watching</span>
       <span style="margin-left:auto;color:rgba(255,255,255,0.3);">Live Match Chat</span>
     </div>
     <div class="wr-body" id="wr-body"></div>
+
+    <div class="wr-sticker-picker" id="wr-sticker-picker">
+      <div class="wr-sticker-tabs" id="wr-sticker-tabs"></div>
+      <div class="wr-sticker-grid" id="wr-sticker-grid"></div>
+    </div>
+
+    <div class="wr-reply-bar" id="wr-reply-bar">
+      <div class="wr-reply-bar-line">
+        <div class="wr-reply-bar-name" id="wr-reply-bar-name"></div>
+        <div class="wr-reply-bar-text" id="wr-reply-bar-text"></div>
+      </div>
+      <button class="wr-reply-bar-cancel" onclick="clearWarRoomReply()">✕</button>
+    </div>
+
+    <div class="wr-upload-status" id="wr-upload-status" style="display:none;"></div>
+
     <div class="wr-input-bar">
-      <input type="text" class="wr-input" id="wr-input" placeholder="Say something about the match…" maxlength="200">
+      <input type="file" id="wr-file-input" accept="image/*,video/*" style="display:none;" onchange="wrHandleFileSelected(event)">
+      <button class="wr-icon-btn" onclick="document.getElementById('wr-file-input').click()" title="Attach photo or video">
+        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6H10v9.5a2.5 2.5 0 0 0 5 0V5a4 4 0 0 0-8 0v12.5a5.5 5.5 0 0 0 11 0V6h-1.5z"/></svg>
+      </button>
+      <button class="wr-icon-btn" onclick="wrToggleStickerPicker()" title="Stickers">
+        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM8.5 9.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm7 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM12 18.5c-2.33 0-4.31-1.46-5.11-3.5h10.22c-.8 2.04-2.78 3.5-5.11 3.5z"/></svg>
+      </button>
+      <input type="text" class="wr-input" id="wr-input" placeholder="Say something about the match…" maxlength="500">
+      <span class="wr-recording-timer" id="wr-recording-timer" style="display:none;"></span>
+      <button class="wr-icon-btn" id="wr-mic-btn" onclick="wrToggleRecording()" title="Record voice note">
+        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+      </button>
       <button class="wr-send-btn" onclick="sendWarRoomMsg()">
         <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
       </button>
+    </div>
+
+    <div class="wr-action-sheet-backdrop" id="wr-action-backdrop" onclick="wrCloseMsgActions()"></div>
+    <div class="wr-action-sheet" id="wr-action-sheet" style="display:none;">
+      <div class="wr-action-item" onclick="wrReplyToSelected()">↩️ Reply</div>
+      <div class="wr-action-item" onclick="wrForwardSelected()">➡️ Forward</div>
+      <div class="wr-action-item" onclick="wrCloseMsgActions()">Cancel</div>
     </div>`;
   document.body.appendChild(div);
 })();
@@ -7199,14 +7305,19 @@ window.openMatchDetail = function(matchId, title) {
    WAR ROOM — Live Match Chat (REAL, Firestore-backed)
    Path: match_chats/{matchId}/messages/{messageId}
    Presence heartbeats: match_chats/{matchId}/presence/{uid}
+   Supports: text, images, video, voice notes, stickers, reply, forward
 ═══════════════════════════════════════════ */
 let warRoomMatchId       = null;
 let warRoomMsgsUnsub     = null;
 let warRoomPresenceUnsub = null;
 let warRoomHeartbeatTimer= null;
+let warRoomReplyTo       = null;  // { id, user, text }
+let _wrMsgsById          = {};    // last-rendered messages, keyed by id (for action sheet / forward)
+let _wrActionTargetId    = null;
 
 const WR_PRESENCE_HEARTBEAT_MS = 20000; // send a heartbeat every 20s while open
 const WR_PRESENCE_STALE_MS     = 45000; // a user counts as "watching" if seen in last 45s
+const WR_STICKER_SETS = { football: STICKERS_FOOTBALL, reactions: STICKERS_REACTIONS, celebrations: STICKERS_CELEBRATIONS };
 
 function _wrTimeAgo(ms) {
   if (!ms) return 'now';
@@ -7231,6 +7342,8 @@ function _wrEnsureFirestore(onReady, attempt) {
 
 function openWarRoom(matchId, matchTitle) {
   warRoomMatchId = matchId || 'live-match';
+  warRoomReplyTo = null;
+  clearWarRoomReply();
   const overlay  = document.getElementById('war-room-overlay');
   if (!overlay) return;
   overlay.classList.add('active');
@@ -7250,7 +7363,7 @@ function openWarRoom(matchId, matchTitle) {
     // Bail if the user already switched matches or closed the room
     if (warRoomMatchId !== matchId && warRoomMatchId !== (matchId || 'live-match')) return;
 
-    const { collection, doc, query, orderBy, limit, onSnapshot, addDoc, setDoc, serverTimestamp } = fsApi;
+    const { collection, doc, query, orderBy, limit, onSnapshot, setDoc, serverTimestamp } = fsApi;
 
     // ── Live messages ──
     const msgsQ = query(
@@ -7267,6 +7380,11 @@ function openWarRoom(matchId, matchTitle) {
           uid: data.uid || '',
           user: data.displayName || 'Fan',
           text: data.text || '',
+          type: data.type || 'text',
+          mediaUrl: data.mediaUrl || null,
+          thumbnailUrl: data.thumbnailUrl || null,
+          duration: data.duration || null,
+          replyTo: data.replyTo || null,
           ts
         };
       }).reverse(); // oldest first for display
@@ -7301,7 +7419,7 @@ function openWarRoom(matchId, matchTitle) {
           const ts = data.lastSeen && data.lastSeen.toMillis ? data.lastSeen.toMillis() : 0;
           if (now - ts < WR_PRESENCE_STALE_MS) active++;
         });
-        if (countEl) countEl.textContent = `${Math.max(active, active ? active : 0).toLocaleString()} watching`;
+        if (countEl) countEl.textContent = `${active.toLocaleString()} watching`;
       },
       err => console.warn('[WarRoom] presence listener error:', err)
     );
@@ -7312,6 +7430,7 @@ function _warRoomTeardownListeners() {
   if (warRoomMsgsUnsub)     { warRoomMsgsUnsub(); warRoomMsgsUnsub = null; }
   if (warRoomPresenceUnsub) { warRoomPresenceUnsub(); warRoomPresenceUnsub = null; }
   if (warRoomHeartbeatTimer){ clearInterval(warRoomHeartbeatTimer); warRoomHeartbeatTimer = null; }
+  if (_wrMediaRecorder && _wrMediaRecorder.state !== 'inactive') { try { _wrMediaRecorder.stop(); } catch(e){} }
 }
 
 function closeWarRoom() {
@@ -7319,6 +7438,10 @@ function closeWarRoom() {
   if (overlay) overlay.classList.remove('active');
   _warRoomTeardownListeners();
   warRoomMatchId = null;
+  clearWarRoomReply();
+  wrCloseMsgActions();
+  const picker = document.getElementById('wr-sticker-picker');
+  if (picker) picker.classList.remove('active');
 }
 
 function renderWarRoomMessages(msgs) {
@@ -7326,6 +7449,9 @@ function renderWarRoomMessages(msgs) {
   if (!body) return;
   const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
   const myUid = currentUser?.uid || '';
+
+  _wrMsgsById = {};
+  msgs.forEach(m => { _wrMsgsById[m.id] = m; });
 
   if (!msgs.length) {
     body.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.35);padding:24px;font-size:13px;">No messages yet — be the first to say something 👋</div>';
@@ -7342,69 +7468,403 @@ function renderWarRoomMessages(msgs) {
     avatarDiv.className = 'wr-avatar';
     avatarDiv.textContent = (m.user || 'F').slice(0, 2).toUpperCase();
 
-    const innerDiv = document.createElement('div');
+    const colDiv = document.createElement('div');
+    colDiv.className = 'wr-bubble-col';
 
     if (!mine) {
       const nameDiv = document.createElement('div');
       nameDiv.className = 'wr-bubble-name';
       nameDiv.textContent = m.user;
-      innerDiv.appendChild(nameDiv);
+      colDiv.appendChild(nameDiv);
     }
 
     const bubbleDiv = document.createElement('div');
-    bubbleDiv.className = 'wr-bubble';
-    bubbleDiv.textContent = m.text;
+    bubbleDiv.className = 'wr-bubble' + (m.type === 'sticker' ? ' wr-sticker-bubble' : '');
+    bubbleDiv.onclick = () => wrShowMsgActions(m.id);
+
+    // Reply quote, if any
+    if (m.replyTo) {
+      const quote = document.createElement('div');
+      quote.className = 'wr-reply-quote';
+      const qName = document.createElement('div');
+      qName.className = 'wr-reply-quote-name';
+      qName.textContent = m.replyTo.user || 'Fan';
+      const qText = document.createElement('div');
+      qText.className = 'wr-reply-quote-text';
+      qText.textContent = m.replyTo.text || '';
+      quote.appendChild(qName);
+      quote.appendChild(qText);
+      bubbleDiv.appendChild(quote);
+    }
+
+    if (m.type === 'image' && m.mediaUrl) {
+      const img = document.createElement('img');
+      img.className = 'wr-media-img';
+      img.src = m.mediaUrl;
+      img.loading = 'lazy';
+      bubbleDiv.appendChild(img);
+      if (m.text) {
+        const txt = document.createElement('div');
+        txt.textContent = m.text;
+        bubbleDiv.appendChild(txt);
+      }
+    } else if (m.type === 'video' && m.mediaUrl) {
+      const vid = document.createElement('video');
+      vid.className = 'wr-media-video';
+      vid.src = m.mediaUrl;
+      vid.controls = true;
+      vid.playsInline = true;
+      if (m.thumbnailUrl) vid.poster = m.thumbnailUrl;
+      bubbleDiv.appendChild(vid);
+    } else if (m.type === 'voice' && m.mediaUrl) {
+      const row = document.createElement('div');
+      row.className = 'wr-voice-row';
+      const audio = document.createElement('audio');
+      audio.src = m.mediaUrl;
+      audio.controls = true;
+      row.appendChild(audio);
+      bubbleDiv.appendChild(row);
+    } else if (m.type === 'sticker') {
+      bubbleDiv.textContent = m.text;
+    } else {
+      bubbleDiv.appendChild(document.createTextNode(m.text));
+    }
 
     const timeDiv = document.createElement('div');
     timeDiv.className = 'wr-time';
     timeDiv.textContent = _wrTimeAgo(m.ts);
 
-    innerDiv.appendChild(bubbleDiv);
-    innerDiv.appendChild(timeDiv);
+    colDiv.appendChild(bubbleDiv);
+    colDiv.appendChild(timeDiv);
     msgDiv.appendChild(avatarDiv);
-    msgDiv.appendChild(innerDiv);
+    msgDiv.appendChild(colDiv);
     body.appendChild(msgDiv);
   });
   body.scrollTop = body.scrollHeight;
+}
+
+/* ── Sending (shared helper for text / media / sticker) ── */
+function _wrSendMessage(fields) {
+  if (!warRoomMatchId) return;
+  const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
+  if (!currentUser?.uid) { showToast('Sign in to join the chat'); return; }
+
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  if (!fsApi || !db || !fsApi.addDoc) { showToast('Chat is still connecting — try again in a moment'); return; }
+
+  const { collection, addDoc, serverTimestamp } = fsApi;
+  const payload = Object.assign({
+    uid: currentUser.uid,
+    displayName: currentUser.displayName || 'Fan',
+    createdAt: serverTimestamp()
+  }, fields);
+  if (warRoomReplyTo) payload.replyTo = warRoomReplyTo;
+
+  addDoc(collection(db, 'match_chats', warRoomMatchId, 'messages'), payload).catch(e => {
+    console.warn('[WarRoom] send failed:', e);
+    showToast('Message failed to send — try again');
+  });
+
+  clearWarRoomReply();
 }
 
 function sendWarRoomMsg() {
   const inp = document.getElementById('wr-input');
   if (!inp) return;
   const text = inp.value.trim();
-  if (!text || !warRoomMatchId) return;
-
-  const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
-  if (!currentUser?.uid) {
-    showToast('Sign in to join the chat');
-    return;
-  }
-
-  const fsApi = window._psFs;
-  const db = window._psDb;
-  if (!fsApi || !db || !fsApi.addDoc) {
-    showToast('Chat is still connecting — try again in a moment');
-    return;
-  }
-
+  if (!text) return;
   inp.value = ''; // optimistic clear; the real message arrives via onSnapshot
-
-  const { collection, addDoc, serverTimestamp } = fsApi;
-  addDoc(collection(db, 'match_chats', warRoomMatchId, 'messages'), {
-    uid: currentUser.uid,
-    displayName: currentUser.displayName || 'Fan',
-    text: text.slice(0, 200),
-    createdAt: serverTimestamp()
-  }).catch(e => {
-    console.warn('[WarRoom] send failed:', e);
-    showToast('Message failed to send — try again');
-  });
+  _wrSendMessage({ type: 'text', text: text.slice(0, 500) });
 }
 
 document.addEventListener('keydown', e => {
   const inp = document.getElementById('wr-input');
   if (inp && e.key === 'Enter' && document.activeElement === inp) sendWarRoomMsg();
 });
+
+/* ── Reply ── */
+function setWarRoomReply(msg) {
+  warRoomReplyTo = { user: msg.user, text: msg.type === 'text' ? msg.text : `[${msg.type}]` };
+  const bar = document.getElementById('wr-reply-bar');
+  const nameEl = document.getElementById('wr-reply-bar-name');
+  const textEl = document.getElementById('wr-reply-bar-text');
+  if (nameEl) nameEl.textContent = warRoomReplyTo.user;
+  if (textEl) textEl.textContent = warRoomReplyTo.text;
+  if (bar) bar.classList.add('active');
+  const inp = document.getElementById('wr-input');
+  if (inp) inp.focus();
+}
+function clearWarRoomReply() {
+  warRoomReplyTo = null;
+  const bar = document.getElementById('wr-reply-bar');
+  if (bar) bar.classList.remove('active');
+}
+
+/* ── Message action sheet (Reply / Forward) ── */
+function wrShowMsgActions(msgId) {
+  _wrActionTargetId = msgId;
+  const backdrop = document.getElementById('wr-action-backdrop');
+  const sheet = document.getElementById('wr-action-sheet');
+  if (backdrop) backdrop.classList.add('active');
+  if (sheet) sheet.style.display = 'block';
+}
+function wrCloseMsgActions() {
+  _wrActionTargetId = null;
+  const backdrop = document.getElementById('wr-action-backdrop');
+  const sheet = document.getElementById('wr-action-sheet');
+  if (backdrop) backdrop.classList.remove('active');
+  if (sheet) sheet.style.display = 'none';
+}
+function wrReplyToSelected() {
+  const msg = _wrMsgsById[_wrActionTargetId];
+  wrCloseMsgActions();
+  if (msg) setWarRoomReply(msg);
+}
+function wrForwardSelected() {
+  const msg = _wrMsgsById[_wrActionTargetId];
+  wrCloseMsgActions();
+  if (!msg) return;
+  const shareText = msg.type === 'text' ? msg.text : (msg.mediaUrl || msg.text || '');
+  const shareData = { title: 'PitchSide War Room', text: `${msg.user}: ${shareText}` };
+  if (msg.mediaUrl) shareData.url = msg.mediaUrl;
+  if (navigator.share) {
+    navigator.share(shareData).catch(() => {});
+  } else if (navigator.clipboard) {
+    navigator.clipboard.writeText(`${shareData.text}${msg.mediaUrl ? ' ' + msg.mediaUrl : ''}`);
+    showToast('Copied — paste it anywhere to forward');
+  } else {
+    showToast('Forwarding isn\'t supported on this browser');
+  }
+}
+
+/* ── Media attach (images & video) ── */
+function wrHandleFileSelected(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file || !warRoomMatchId) return;
+
+  const isVideo = file.type.startsWith('video/');
+  const isImage = file.type.startsWith('image/');
+  if (!isVideo && !isImage) { showToast('Only photos and videos are supported'); return; }
+
+  const MAX_MB = isVideo ? 100 : 15;
+  if (file.size > MAX_MB * 1024 * 1024) { showToast(`File too large (max ${MAX_MB}MB)`); return; }
+
+  const statusEl = document.getElementById('wr-upload-status');
+  if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'Uploading…'; }
+
+  const uploadPromise = isVideo ? _wrUploadVideo(file, statusEl) : _wrUploadImage(file);
+  uploadPromise.then(result => {
+    if (statusEl) statusEl.style.display = 'none';
+    if (isVideo) {
+      _wrSendMessage({ type: 'video', mediaUrl: result.url, thumbnailUrl: result.thumbnail || null, text: '' });
+    } else {
+      _wrSendMessage({ type: 'image', mediaUrl: result.url, text: '' });
+    }
+  }).catch(e => {
+    console.warn('[WarRoom] upload failed:', e);
+    if (statusEl) statusEl.style.display = 'none';
+    showToast('Upload failed — try again');
+  });
+}
+
+function _wrUploadImage(file) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const presignRes = await fetch('/api/r2-upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: file.name,
+          fileType: file.type,
+          uploaderId: (window._psCurrentUser && window._psCurrentUser.uid) || 'anon',
+        }),
+      });
+      const presignData = await presignRes.json();
+      if (!presignRes.ok || !presignData.uploadUrl) {
+        reject(new Error(presignData.error || 'Could not get upload URL'));
+        return;
+      }
+      const putRes = await fetch(presignData.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file
+      });
+      if (!putRes.ok) { reject(new Error('Upload failed: ' + putRes.status)); return; }
+      resolve({ url: presignData.publicUrl });
+    } catch (e) { reject(e); }
+  });
+}
+
+function _wrUploadVideo(file, statusEl) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const presignRes = await fetch('/api/stream-upload-url', { method: 'POST' });
+      const presignData = await presignRes.json();
+      if (!presignRes.ok || !presignData.uploadURL) {
+        reject(new Error(presignData.error || 'Could not get Stream upload URL'));
+        return;
+      }
+      const form = new FormData();
+      form.append('file', file);
+      const xhr = new XMLHttpRequest();
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && statusEl) {
+          statusEl.textContent = `Uploading… ${Math.round((e.loaded / e.total) * 100)}%`;
+        }
+      };
+      xhr.onload = async () => {
+        if (xhr.status < 200 || xhr.status >= 300) { reject(new Error('Upload failed: ' + xhr.status)); return; }
+        try {
+          if (statusEl) statusEl.textContent = 'Processing video…';
+          const ready = await _wrPollStreamReady(presignData.uid, statusEl);
+          resolve({ url: ready.hlsUrl, thumbnail: ready.thumbnail });
+        } catch (e) { reject(e); }
+      };
+      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.open('POST', presignData.uploadURL);
+      xhr.send(form);
+    } catch (e) { reject(e); }
+  });
+}
+
+function _wrPollStreamReady(uid, statusEl, attempt) {
+  attempt = attempt || 0;
+  return new Promise((resolve, reject) => {
+    const poll = async () => {
+      try {
+        const r = await fetch(`/api/stream-status?uid=${encodeURIComponent(uid)}`);
+        const data = await r.json();
+        if (!r.ok) { reject(new Error('Stream status error')); return; }
+        if (data.state === 'error') { reject(new Error('Stream processing error')); return; }
+        if (data.ready) { resolve(data); return; }
+        if (attempt > 120) { reject(new Error('Video processing timed out')); return; } // ~5 min max
+        if (statusEl) statusEl.textContent = 'Processing video… almost there';
+        setTimeout(() => { _wrPollStreamReady(uid, statusEl, attempt + 1).then(resolve, reject); }, 2500);
+      } catch (e) { reject(e); }
+    };
+    poll();
+  });
+}
+
+/* ── Stickers ── */
+let _wrStickerBuilt = false;
+function wrToggleStickerPicker() {
+  const picker = document.getElementById('wr-sticker-picker');
+  if (!picker) return;
+  if (!_wrStickerBuilt) _wrBuildStickerPicker();
+  picker.classList.toggle('active');
+}
+function _wrBuildStickerPicker() {
+  const tabsEl = document.getElementById('wr-sticker-tabs');
+  const gridEl = document.getElementById('wr-sticker-grid');
+  if (!tabsEl || !gridEl) return;
+  const setNames = { football: '⚽ Football', reactions: '🔥 Reactions', celebrations: '🎉 Celebrations' };
+  const keys = Object.keys(WR_STICKER_SETS);
+  tabsEl.innerHTML = keys.map((k, i) =>
+    `<div class="wr-sticker-tab${i === 0 ? ' on' : ''}" data-set="${k}" onclick="_wrSelectStickerTab('${k}')">${setNames[k]}</div>`
+  ).join('');
+  _wrSelectStickerTab(keys[0]);
+  _wrStickerBuilt = true;
+}
+function _wrSelectStickerTab(setKey) {
+  document.querySelectorAll('#wr-sticker-tabs .wr-sticker-tab').forEach(t => {
+    t.classList.toggle('on', t.dataset.set === setKey);
+  });
+  const gridEl = document.getElementById('wr-sticker-grid');
+  if (!gridEl) return;
+  gridEl.innerHTML = (WR_STICKER_SETS[setKey] || []).map(emoji =>
+    `<span onclick="wrSendSticker('${emoji}')">${emoji}</span>`
+  ).join('');
+}
+function wrSendSticker(emoji) {
+  _wrSendMessage({ type: 'sticker', text: emoji });
+  const picker = document.getElementById('wr-sticker-picker');
+  if (picker) picker.classList.remove('active');
+}
+
+/* ── Voice notes ── */
+let _wrMediaRecorder  = null;
+let _wrRecordedChunks = [];
+let _wrRecordStart    = null;
+let _wrRecordTimer    = null;
+
+function wrToggleRecording() {
+  if (_wrMediaRecorder && _wrMediaRecorder.state === 'recording') {
+    _wrStopRecordingAndSend();
+  } else {
+    _wrStartRecording();
+  }
+}
+
+async function _wrStartRecording() {
+  if (!warRoomMatchId) return;
+  const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
+  if (!currentUser?.uid) { showToast('Sign in to join the chat'); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showToast('Voice notes aren\'t supported on this browser');
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    _wrRecordedChunks = [];
+    _wrMediaRecorder = new MediaRecorder(stream);
+    _wrMediaRecorder.ondataavailable = e => { if (e.data.size > 0) _wrRecordedChunks.push(e.data); };
+    _wrMediaRecorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      _wrUploadAndSendVoice();
+    };
+    _wrMediaRecorder.start();
+    _wrRecordStart = Date.now();
+
+    const micBtn = document.getElementById('wr-mic-btn');
+    const timerEl = document.getElementById('wr-recording-timer');
+    if (micBtn) micBtn.classList.add('recording');
+    if (timerEl) timerEl.style.display = 'inline';
+    _wrRecordTimer = setInterval(() => {
+      const secs = Math.floor((Date.now() - _wrRecordStart) / 1000);
+      if (timerEl) timerEl.textContent = `${String(Math.floor(secs / 60)).padStart(1,'0')}:${String(secs % 60).padStart(2,'0')}`;
+      if (secs >= 120) _wrStopRecordingAndSend(); // 2 min cap
+    }, 250);
+  } catch (e) {
+    console.warn('[WarRoom] mic access failed:', e);
+    showToast('Microphone permission is needed for voice notes');
+  }
+}
+
+function _wrStopRecordingAndSend() {
+  if (_wrMediaRecorder && _wrMediaRecorder.state === 'recording') _wrMediaRecorder.stop();
+  clearInterval(_wrRecordTimer);
+  _wrRecordTimer = null;
+  const micBtn = document.getElementById('wr-mic-btn');
+  const timerEl = document.getElementById('wr-recording-timer');
+  if (micBtn) micBtn.classList.remove('recording');
+  if (timerEl) { timerEl.style.display = 'none'; timerEl.textContent = ''; }
+}
+
+function _wrUploadAndSendVoice() {
+  const durationSec = _wrRecordStart ? Math.round((Date.now() - _wrRecordStart) / 1000) : 0;
+  _wrRecordStart = null;
+  if (!_wrRecordedChunks.length || durationSec < 1) return; // too short / aborted
+
+  const blob = new Blob(_wrRecordedChunks, { type: 'audio/webm' });
+  const file = new File([blob], `voice-${Date.now()}.webm`, { type: 'audio/webm' });
+
+  const statusEl = document.getElementById('wr-upload-status');
+  if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'Sending voice note…'; }
+
+  _wrUploadImage(file) // generic R2 PUT flow works for any file type, not just images
+    .then(result => {
+      if (statusEl) statusEl.style.display = 'none';
+      _wrSendMessage({ type: 'voice', mediaUrl: result.url, duration: durationSec, text: '' });
+    })
+    .catch(e => {
+      console.warn('[WarRoom] voice upload failed:', e);
+      if (statusEl) statusEl.style.display = 'none';
+      showToast('Voice note failed to send — try again');
+    });
+}
 
 window.openWarRoom  = openWarRoom;
 window.closeWarRoom = closeWarRoom;
