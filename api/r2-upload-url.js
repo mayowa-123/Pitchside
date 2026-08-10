@@ -79,14 +79,15 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'fileName and fileType are required' });
     }
 
-    // Basic safety: only allow common video + image formats
+    // Basic safety: only allow common video + image + audio formats
     const allowedTypes = [
       'video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska',
-      'image/jpeg', 'image/png', 'image/webp'
+      'image/jpeg', 'image/png', 'image/webp',
+      'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/wav'
     ];
     if (!allowedTypes.includes(fileType)) {
       return res.status(400).json({
-        error: 'Unsupported file type. Allowed: mp4, mov, webm, mkv, jpeg, png, webp',
+        error: 'Unsupported file type. Allowed: mp4, mov, webm, mkv, jpeg, png, webp, and audio formats (webm, ogg, m4a, mp3, wav)',
       });
     }
 
@@ -94,7 +95,10 @@ export default async function handler(req, res) {
     const timestamp = Date.now();
     const randomId = Math.random().toString(36).slice(2, 10);
     const safeExt = fileName.split('.').pop().toLowerCase();
-    const objectKey = `fan-videos/${uploaderId || 'anon'}_${timestamp}_${randomId}.${safeExt}`;
+    const folder = fileType.startsWith('video/') ? 'fan-videos'
+                 : fileType.startsWith('audio/') ? 'voice-notes'
+                 : 'fan-images';
+    const objectKey = `${folder}/${uploaderId || 'anon'}_${timestamp}_${randomId}.${safeExt}`;
 
     const command = new PutObjectCommand({
       Bucket: R2_BUCKET_NAME,
