@@ -1,5 +1,4 @@
 
-
   // ── YouTube Highlights ──────────────────────────────────────────
 let _sbAllVideos = [];
 let _sbCurrentFilter = 'all';
@@ -7251,11 +7250,7 @@ service cloud.firestore {
     </div>
 
     <div class="wr-action-sheet-backdrop" id="wr-action-backdrop" onclick="wrCloseMsgActions()"></div>
-    <div class="wr-action-sheet" id="wr-action-sheet" style="display:none;">
-      <div class="wr-action-item" onclick="wrReplyToSelected()">↩️ Reply</div>
-      <div class="wr-action-item" onclick="wrForwardSelected()">➡️ Forward</div>
-      <div class="wr-action-item" onclick="wrCloseMsgActions()">Cancel</div>
-    </div>`;
+    <div class="wr-action-sheet" id="wr-action-sheet" style="display:none;"></div>`;
   document.body.appendChild(div);
 })();
 
@@ -7601,13 +7596,24 @@ function clearWarRoomReply() {
   if (bar) bar.classList.remove('active');
 }
 
-/* ── Message action sheet (Reply / Forward) ── */
+/* ── Message action sheet (Reply / Forward / Delete) ── */
 function wrShowMsgActions(msgId) {
   _wrActionTargetId = msgId;
-  const backdrop = document.getElementById('wr-action-backdrop');
+  const msg = _wrMsgsById[msgId];
+  const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
+  const isMine = !!msg && !!currentUser?.uid && msg.uid === currentUser.uid;
+
   const sheet = document.getElementById('wr-action-sheet');
+  const backdrop = document.getElementById('wr-action-backdrop');
+  if (sheet) {
+    sheet.innerHTML = `
+      <div class="wr-action-item" onclick="wrReplyToSelected()">↩️ Reply</div>
+      <div class="wr-action-item" onclick="wrForwardSelected()">➡️ Forward</div>
+      ${isMine ? '<div class="wr-action-item" style="color:#f43f5e;" onclick="wrDeleteSelected()">🗑️ Delete for everyone</div>' : ''}
+      <div class="wr-action-item" onclick="wrCloseMsgActions()">Cancel</div>`;
+    sheet.style.display = 'block';
+  }
   if (backdrop) backdrop.classList.add('active');
-  if (sheet) sheet.style.display = 'block';
 }
 function wrCloseMsgActions() {
   _wrActionTargetId = null;
@@ -7636,6 +7642,26 @@ function wrForwardSelected() {
   } else {
     showToast('Forwarding isn\'t supported on this browser');
   }
+}
+function wrDeleteSelected() {
+  const msg = _wrMsgsById[_wrActionTargetId];
+  wrCloseMsgActions();
+  if (!msg || !warRoomMatchId) return;
+
+  const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
+  if (!currentUser?.uid || msg.uid !== currentUser.uid) return; // safety check, mirrors Firestore rule
+
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  if (!fsApi || !db || !fsApi.deleteDoc || !fsApi.doc) {
+    showToast('Delete isn\'t available yet — deleteDoc isn\'t exposed on window._psFs');
+    return;
+  }
+  const { doc, deleteDoc } = fsApi;
+  deleteDoc(doc(db, 'match_chats', warRoomMatchId, 'messages', msg.id)).catch(e => {
+    console.warn('[WarRoom] delete failed:', e);
+    showToast('Could not delete message — try again');
+  });
 }
 
 /* ── Media attach (images & video) ── */
