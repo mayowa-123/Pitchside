@@ -7035,14 +7035,16 @@ window.PITCHSIDE_FIRESTORE_SCHEMA = {
       }
     },
     match_chats: {
-      description: 'Realtime Database path: /chats/{fixture_id}/messages',
+      description: 'Firestore path: match_chats/{matchId}/messages/{messageId} and match_chats/{matchId}/presence/{uid}',
       fields: {
         uid: 'string',
-        display_name: 'string',
-        badge: '"Top Contributor" | "Season Ticket Holder" | "New Fan"',
-        text: 'string',
-        created_at: 'number — Date.now()',
-        reactions: 'object<emoji, count>'
+        displayName: 'string',
+        text: 'string (max 200 chars)',
+        createdAt: 'server timestamp'
+      },
+      presence_fields: {
+        lastSeen: 'server timestamp — refreshed every 20s while a user has the War Room open',
+        displayName: 'string'
       }
     },
     debates: {
@@ -7093,6 +7095,26 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.auth != null && request.auth.uid == userId;
       allow update, delete: if false; // No changing your vote
+    }
+
+    // War Room live match chat: anyone signed in can read/post; only the
+    // author can delete their own message; text length capped server-side too
+    match /match_chats/{matchId}/messages/{messageId} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 200;
+      allow update: if false;
+      allow delete: if request.auth != null
+        && resource.data.uid == request.auth.uid;
+    }
+
+    // War Room presence heartbeats: readable by all (for the "watching"
+    // count), but a user can only write their own heartbeat doc
+    match /match_chats/{matchId}/presence/{uid} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == uid;
     }
 
     function onlyUpdatingLikes(newData, oldData) {
@@ -7174,87 +7196,158 @@ window.openMatchDetail = function(matchId, title) {
 };
 
 /* ═══════════════════════════════════════════
-   WAR ROOM — Live Match Chat
+   WAR ROOM — Live Match Chat (REAL, Firestore-backed)
+   Path: match_chats/{matchId}/messages/{messageId}
+   Presence heartbeats: match_chats/{matchId}/presence/{uid}
 ═══════════════════════════════════════════ */
-let warRoomMessages = [];
-let warRoomMatchId  = null;
-let warRoomTimer    = null;
-let warRoomOnline   = 0;
+let warRoomMatchId       = null;
+let warRoomMsgsUnsub     = null;
+let warRoomPresenceUnsub = null;
+let warRoomHeartbeatTimer= null;
 
-const WR_SEED = [
-  { user:'EaglesNation', initials:'EN', badge:'ticket', text:"LET'S GOOO! What a start 🔥🔥🔥",          time:'2m ago',  mine:false },
-  { user:'LagosFC_Fan',  initials:'LF', badge:'top',    text:'The formation today is absolute 🧠',       time:'1m ago',  mine:false },
-  { user:'AbujaBoy',     initials:'AB', badge:'new',    text:'That through ball from Osimhen was insane', time:'45s ago', mine:false },
-  { user:'NaijaGooner',  initials:'NG', badge:'top',    text:'4-3-3 pressing HIGH. Beautiful football 😭',time:'30s ago', mine:false },
-];
+const WR_PRESENCE_HEARTBEAT_MS = 20000; // send a heartbeat every 20s while open
+const WR_PRESENCE_STALE_MS     = 45000; // a user counts as "watching" if seen in last 45s
 
-const WR_AUTO = [
-  'GOAAAAAAL!!! 🔥🔥🔥','VAR checking it...','OFFSIDE??? 😤','What a save!!',
-  'RED CARD!!! 🟥','Penalty given! ⚽','Into the net!! 🥅','That tackle 😤',
-  'Substitution coming...','Corner kick 🏴','Free kick — dangerous position!',
-  'Yellow card 🟨','The crowd is ELECTRIC 🏟️','Great team move!',
-];
+function _wrTimeAgo(ms) {
+  if (!ms) return 'now';
+  const diff = Math.max(0, Date.now() - ms);
+  const s = Math.floor(diff / 1000);
+  if (s < 5) return 'now';
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return `${h}h ago`;
+}
+
+function _wrEnsureFirestore(onReady, attempt) {
+  attempt = attempt || 0;
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  if (fsApi && db && fsApi.onSnapshot) { onReady(fsApi, db); return; }
+  if (attempt >= 30) { console.warn('[WarRoom] Firestore never became ready'); return; }
+  setTimeout(() => _wrEnsureFirestore(onReady, attempt + 1), 1000);
+}
 
 function openWarRoom(matchId, matchTitle) {
-  warRoomMatchId  = matchId || 'live-match';
-  warRoomMessages = [...WR_SEED];
-  warRoomOnline   = Math.floor(Math.random() * 800) + 200;
-  const overlay   = document.getElementById('war-room-overlay');
+  warRoomMatchId = matchId || 'live-match';
+  const overlay  = document.getElementById('war-room-overlay');
   if (!overlay) return;
   overlay.classList.add('active');
+
   const titleEl = document.getElementById('wr-match-title');
   const countEl = document.getElementById('wr-online-count');
   if (titleEl) titleEl.textContent = (matchTitle || 'LIVE MATCH').toUpperCase();
-  if (countEl) countEl.textContent = `${warRoomOnline.toLocaleString()} watching`;
-  renderWarRoomMessages();
-  if (warRoomTimer) clearInterval(warRoomTimer);
-  warRoomTimer = setInterval(() => {
-    warRoomOnline += Math.floor(Math.random() * 5) - 2;
-    if (countEl) countEl.textContent = `${Math.max(100, warRoomOnline).toLocaleString()} watching`;
-    const names  = ['KanoKing','AbujaFan','EnuguBoy','IbadanFC','PortHarcourt99','BendelLad'];
-    const badges = ['new','new','new','top','ticket'];
-    const name   = names[Math.floor(Math.random() * names.length)];
-    warRoomMessages.push({
-      user: name, initials: name.slice(0,2).toUpperCase(),
-      badge: badges[Math.floor(Math.random() * badges.length)],
-      text: WR_AUTO[Math.floor(Math.random() * WR_AUTO.length)],
-      time: 'Just now', mine: false
+  if (countEl) countEl.textContent = 'connecting…';
+
+  const body = document.getElementById('wr-body');
+  if (body) body.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.4);padding:24px;font-size:13px;">Connecting to live chat…</div>';
+
+  // Tear down any previous match's listeners before attaching new ones
+  _warRoomTeardownListeners();
+
+  _wrEnsureFirestore((fsApi, db) => {
+    // Bail if the user already switched matches or closed the room
+    if (warRoomMatchId !== matchId && warRoomMatchId !== (matchId || 'live-match')) return;
+
+    const { collection, doc, query, orderBy, limit, onSnapshot, addDoc, setDoc, serverTimestamp } = fsApi;
+
+    // ── Live messages ──
+    const msgsQ = query(
+      collection(db, 'match_chats', warRoomMatchId, 'messages'),
+      orderBy('createdAt', 'desc'),
+      limit(60)
+    );
+    warRoomMsgsUnsub = onSnapshot(msgsQ, snap => {
+      const msgs = snap.docs.map(d => {
+        const data = d.data() || {};
+        const ts = data.createdAt && data.createdAt.toMillis ? data.createdAt.toMillis() : Date.now();
+        return {
+          id: d.id,
+          uid: data.uid || '',
+          user: data.displayName || 'Fan',
+          text: data.text || '',
+          ts
+        };
+      }).reverse(); // oldest first for display
+      renderWarRoomMessages(msgs);
+    }, err => {
+      console.warn('[WarRoom] messages listener error:', err);
+      if (body) body.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.4);padding:24px;font-size:13px;">Couldn\'t load chat. Check your connection.</div>';
     });
-    if (warRoomMessages.length > 60) warRoomMessages = warRoomMessages.slice(-60);
-    renderWarRoomMessages();
-  }, 3500);
+
+    // ── Presence heartbeat (this device) ──
+    const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
+    if (currentUser?.uid) {
+      const sendHeartbeat = () => {
+        setDoc(doc(db, 'match_chats', warRoomMatchId, 'presence', currentUser.uid), {
+          lastSeen: serverTimestamp(),
+          displayName: currentUser.displayName || 'Fan'
+        }).catch(e => console.warn('[WarRoom] heartbeat failed:', e));
+      };
+      sendHeartbeat();
+      clearInterval(warRoomHeartbeatTimer);
+      warRoomHeartbeatTimer = setInterval(sendHeartbeat, WR_PRESENCE_HEARTBEAT_MS);
+    }
+
+    // ── Presence listener (everyone) ──
+    warRoomPresenceUnsub = onSnapshot(
+      collection(db, 'match_chats', warRoomMatchId, 'presence'),
+      snap => {
+        const now = Date.now();
+        let active = 0;
+        snap.forEach(d => {
+          const data = d.data() || {};
+          const ts = data.lastSeen && data.lastSeen.toMillis ? data.lastSeen.toMillis() : 0;
+          if (now - ts < WR_PRESENCE_STALE_MS) active++;
+        });
+        if (countEl) countEl.textContent = `${Math.max(active, active ? active : 0).toLocaleString()} watching`;
+      },
+      err => console.warn('[WarRoom] presence listener error:', err)
+    );
+  });
+}
+
+function _warRoomTeardownListeners() {
+  if (warRoomMsgsUnsub)     { warRoomMsgsUnsub(); warRoomMsgsUnsub = null; }
+  if (warRoomPresenceUnsub) { warRoomPresenceUnsub(); warRoomPresenceUnsub = null; }
+  if (warRoomHeartbeatTimer){ clearInterval(warRoomHeartbeatTimer); warRoomHeartbeatTimer = null; }
 }
 
 function closeWarRoom() {
   const overlay = document.getElementById('war-room-overlay');
   if (overlay) overlay.classList.remove('active');
-  if (warRoomTimer) { clearInterval(warRoomTimer); warRoomTimer = null; }
+  _warRoomTeardownListeners();
+  warRoomMatchId = null;
 }
 
-function renderWarRoomMessages() {
+function renderWarRoomMessages(msgs) {
   const body = document.getElementById('wr-body');
   if (!body) return;
-  const badgeHTML = b => b === 'top'    ? '<span class="wr-badge badge-top">⭐ Top</span>'
-                       : b === 'ticket' ? '<span class="wr-badge badge-ticket">🎟️ Fan</span>'
-                       :                  '<span class="wr-badge badge-new">New</span>';
-  // XSS-SAFE: build DOM nodes for user-provided name/text/initials
+  const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
+  const myUid = currentUser?.uid || '';
+
+  if (!msgs.length) {
+    body.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.35);padding:24px;font-size:13px;">No messages yet — be the first to say something 👋</div>';
+    return;
+  }
+
   body.innerHTML = '';
-  warRoomMessages.forEach(m => {
+  msgs.forEach(m => {
+    const mine = !!myUid && m.uid === myUid;
     const msgDiv = document.createElement('div');
-    msgDiv.className = 'wr-msg' + (m.mine ? ' mine' : '');
+    msgDiv.className = 'wr-msg' + (mine ? ' mine' : '');
 
     const avatarDiv = document.createElement('div');
     avatarDiv.className = 'wr-avatar';
-    avatarDiv.textContent = m.initials;
+    avatarDiv.textContent = (m.user || 'F').slice(0, 2).toUpperCase();
 
     const innerDiv = document.createElement('div');
 
-    if (!m.mine) {
+    if (!mine) {
       const nameDiv = document.createElement('div');
       nameDiv.className = 'wr-bubble-name';
       nameDiv.textContent = m.user;
-      // Safe badge: only whitelisted static HTML
-      nameDiv.insertAdjacentHTML('beforeend', badgeHTML(m.badge));
       innerDiv.appendChild(nameDiv);
     }
 
@@ -7264,7 +7357,7 @@ function renderWarRoomMessages() {
 
     const timeDiv = document.createElement('div');
     timeDiv.className = 'wr-time';
-    timeDiv.textContent = m.time;
+    timeDiv.textContent = _wrTimeAgo(m.ts);
 
     innerDiv.appendChild(bubbleDiv);
     innerDiv.appendChild(timeDiv);
@@ -7279,14 +7372,33 @@ function sendWarRoomMsg() {
   const inp = document.getElementById('wr-input');
   if (!inp) return;
   const text = inp.value.trim();
-  if (!text) return;
-  inp.value = '';
-  warRoomMessages.push({
-    user: (typeof profileData !== 'undefined' && profileData) ? profileData.name || 'You' : 'You',
-    initials: (typeof profileData !== 'undefined' && profileData) ? profileData.initials || 'ME' : 'ME',
-    badge: 'new', text, time: 'Just now', mine: true
+  if (!text || !warRoomMatchId) return;
+
+  const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
+  if (!currentUser?.uid) {
+    showToast('Sign in to join the chat');
+    return;
+  }
+
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  if (!fsApi || !db || !fsApi.addDoc) {
+    showToast('Chat is still connecting — try again in a moment');
+    return;
+  }
+
+  inp.value = ''; // optimistic clear; the real message arrives via onSnapshot
+
+  const { collection, addDoc, serverTimestamp } = fsApi;
+  addDoc(collection(db, 'match_chats', warRoomMatchId, 'messages'), {
+    uid: currentUser.uid,
+    displayName: currentUser.displayName || 'Fan',
+    text: text.slice(0, 200),
+    createdAt: serverTimestamp()
+  }).catch(e => {
+    console.warn('[WarRoom] send failed:', e);
+    showToast('Message failed to send — try again');
   });
-  renderWarRoomMessages();
 }
 
 document.addEventListener('keydown', e => {
