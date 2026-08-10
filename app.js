@@ -2702,7 +2702,7 @@ async function repostVideo() {
       originalTitle: v.title,
       originalThumbnail: v.thumbnail,
       userId: currentUser.uid,
-      userName: currentUser.displayName || 'User',
+      userName: getUserDisplayName(currentUser),
       userAvatar: currentUser.photoURL || '',
       title: `Reposted: ${v.title}`,
       isRepost: true,
@@ -2751,10 +2751,10 @@ async function repostVideo() {
       await fsApi.addDoc(notifRef, {
         type: 'repost',
         fromUserId: currentUser.uid,
-        fromUserName: currentUser.displayName || 'User',
+        fromUserName: getUserDisplayName(currentUser),
         toUserId: v.userId || v.uid,
         videoId: String(currentVideoId),
-        message: `${currentUser.displayName || 'Someone'} reposted your video`,
+        message: `${getUserDisplayName(currentUser)} reposted your video`,
         timestamp: new Date(),
         read: false,
       }).catch(() => {});
@@ -3270,6 +3270,17 @@ let profileData = {
   avatarUrl: null,
   handle: null,
 };
+
+// Your real, chosen display name (set at sign-up / edited in Profile) — never
+// the raw Firebase Auth displayName, which can be empty or default to your
+// email depending on how you signed in (this is why names sometimes showed
+// as a Gmail address on comments/reposts/notifications). Use this everywhere
+// a user-facing name is written, instead of currentUser.displayName directly.
+function getUserDisplayName(currentUser) {
+  if (profileData && profileData.name && profileData.name !== 'John Doe') return profileData.name;
+  if (currentUser && currentUser.displayName && !currentUser.displayName.includes('@')) return currentUser.displayName;
+  return 'Fan';
+}
 
 function triggerAvatarUpload() {
   document.getElementById('avatar-file-input').click();
@@ -7314,6 +7325,19 @@ const WR_PRESENCE_HEARTBEAT_MS = 20000; // send a heartbeat every 20s while open
 const WR_PRESENCE_STALE_MS     = 45000; // a user counts as "watching" if seen in last 45s
 const WR_STICKER_SETS = { football: STICKERS_FOOTBALL, reactions: STICKERS_REACTIONS, celebrations: STICKERS_CELEBRATIONS };
 
+// Your real, chosen display name for War Room — delegates to the shared
+// getUserDisplayName() helper (defined near profileData) so this stays in
+// sync with the rest of the app instead of duplicating the fallback logic.
+function _wrDisplayName() {
+  const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
+  return getUserDisplayName(currentUser);
+}
+
+function _wrInitials(name) {
+  if (!name) return 'F';
+  return name.trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
 function _wrTimeAgo(ms) {
   if (!ms) return 'now';
   const diff = Math.max(0, Date.now() - ms);
@@ -7395,7 +7419,7 @@ function openWarRoom(matchId, matchTitle) {
       const sendHeartbeat = () => {
         setDoc(doc(db, 'match_chats', warRoomMatchId, 'presence', currentUser.uid), {
           lastSeen: serverTimestamp(),
-          displayName: currentUser.displayName || 'Fan'
+          displayName: _wrDisplayName()
         }).catch(e => console.warn('[WarRoom] heartbeat failed:', e));
       };
       sendHeartbeat();
@@ -7461,7 +7485,7 @@ function renderWarRoomMessages(msgs) {
 
     const avatarDiv = document.createElement('div');
     avatarDiv.className = 'wr-avatar';
-    avatarDiv.textContent = (m.user || 'F').slice(0, 2).toUpperCase();
+    avatarDiv.textContent = _wrInitials(m.user);
 
     const colDiv = document.createElement('div');
     colDiv.className = 'wr-bubble-col';
@@ -7551,7 +7575,7 @@ function _wrSendMessage(fields) {
   const { collection, addDoc, serverTimestamp } = fsApi;
   const payload = Object.assign({
     uid: currentUser.uid,
-    displayName: currentUser.displayName || 'Fan',
+    displayName: _wrDisplayName(),
     createdAt: serverTimestamp()
   }, fields);
   if (warRoomReplyTo) payload.replyTo = warRoomReplyTo;
@@ -10366,10 +10390,11 @@ async function submitComment() {
 
     // Add comment to Firebase
     const commentsRef = fsApi.collection(db, 'videoComments');
+    const myName = getUserDisplayName(currentUser);
     const commentDoc = await fsApi.addDoc(commentsRef, {
       videoId: String(currentVideoId),
       userId: currentUser.uid,
-      userName: currentUser.displayName || 'Anonymous',
+      userName: myName,
       userAvatar: currentUser.photoURL || '',
       text: text,
       timestamp: new Date(),
@@ -10402,11 +10427,11 @@ async function submitComment() {
     if (!userComments[currentVideoId]) userComments[currentVideoId] = [];
     userComments[currentVideoId].push({
       id: commentDoc.id,
-      user: currentUser.displayName || 'You',
+      user: myName,
       avatar: currentUser.photoURL || '',
       text: text,
       time: 'now',
-      initials: (currentUser.displayName || 'U')[0].toUpperCase(),
+      initials: _wrInitials(myName),
       likes: 0,
       timestamp: new Date(),
     });
@@ -10424,10 +10449,10 @@ async function submitComment() {
       await fsApi.addDoc(notifRef, {
         type: 'comment',
         fromUserId: currentUser.uid,
-        fromUserName: currentUser.displayName || 'User',
+        fromUserName: myName,
         toUserId: creator,
         videoId: String(currentVideoId),
-        message: `${currentUser.displayName || 'Someone'} commented: "${text.substring(0, 50)}"`,
+        message: `${myName} commented: "${text.substring(0, 50)}"`,
         timestamp: new Date(),
         read: false,
       }).catch(() => {});
