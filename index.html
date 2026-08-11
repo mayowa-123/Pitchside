@@ -700,6 +700,18 @@
           <label class="form-label">Favorite Team</label>
           <input type="text" class="form-inp" id="edit-team" placeholder="e.g. Real Madrid">
         </div>
+        <div class="form-group">
+          <label class="form-label">Bio</label>
+          <textarea class="form-inp" id="edit-bio" rows="3" maxlength="150" placeholder="Tell other fans about yourself" style="resize:vertical;font-family:inherit;"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Link 1</label>
+          <input type="url" class="form-inp" id="edit-link1" placeholder="https://instagram.com/you" autocapitalize="off" autocorrect="off">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Link 2</label>
+          <input type="url" class="form-inp" id="edit-link2" placeholder="https://twitter.com/you" autocapitalize="off" autocorrect="off">
+        </div>
         <button class="btn-save" onclick="saveProfile()">Save Changes</button>
         <button class="btn-cancel" onclick="closeEditProfile()">Cancel</button>
       </div>
@@ -1149,6 +1161,27 @@
   .ffp-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 2px; padding: 2px; }
   .ffp-grid-item { position: relative; aspect-ratio: 9/16; background: #111; overflow: hidden; cursor: pointer; }
   .ffp-grid-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ffp-handle { font-size: 13px; font-weight: 500; color: rgba(255,255,255,.5); }
+  .ffp-bio { padding: 2px 16px 12px; font-size: 13.5px; line-height: 1.4; color: rgba(255,255,255,.85); white-space: pre-wrap; }
+  .ffp-links { padding: 0 16px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .ffp-link { color: #34d399; font-size: 13px; text-decoration: none; font-weight: 600; }
+  .ffp-section-label { padding: 12px 16px 6px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: rgba(255,255,255,.4); }
+  .ffp-highlights { display: flex; gap: 12px; padding: 0 16px 10px; overflow-x: auto; }
+  .ffp-highlight { flex-shrink: 0; width: 62px; text-align: center; cursor: pointer; }
+  .ffp-highlight-thumb { width: 58px; height: 58px; border-radius: 50%; overflow: hidden; background: #111; border: 2px solid #10b981; }
+  .ffp-highlight-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .ffp-highlight-label { font-size: 10.5px; color: rgba(255,255,255,.65); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ffp-details { padding: 0 16px 8px; display: flex; flex-direction: column; gap: 6px; }
+  .ffp-detail-row { font-size: 13px; color: rgba(255,255,255,.75); }
+  .ffp-friends { display: flex; gap: 14px; padding: 0 16px 10px; overflow-x: auto; }
+  .ffp-friend { flex-shrink: 0; width: 54px; text-align: center; cursor: pointer; }
+  .ffp-friend-avatar { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg,#334155,#1e293b); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: #fff; margin: 0 auto; }
+  .ffp-friend-name { font-size: 10.5px; color: rgba(255,255,255,.65); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ffp-tabs { display: flex; border-top: 1px solid rgba(255,255,255,.08); border-bottom: 1px solid rgba(255,255,255,.08); margin-top: 8px; }
+  .ffp-tab { flex: 1; text-align: center; padding: 11px 0; font-size: 12.5px; font-weight: 700; color: rgba(255,255,255,.45); cursor: pointer; border-bottom: 2px solid transparent; }
+  .ffp-tab.active { color: #fff; border-bottom-color: #10b981; }
+  .ffp-pin-btn { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; font-size: 11px; cursor: pointer; }
+  .ffp-pin-btn.pinned { background: #10b981; }
 
   /* ── Reading mode: TikTok's expanded-caption view ── */
   /* Defensive override: style.css sets #comment-panel's z-index for the
