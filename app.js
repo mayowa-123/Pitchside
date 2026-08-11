@@ -3269,6 +3269,9 @@ let profileData = {
   initials: 'JD',
   avatarUrl: null,
   handle: null,
+  bio: '',
+  links: [],
+  pinnedPostIds: [],
 };
 
 // Your real, chosen display name (set at sign-up / edited in Profile) — never
@@ -3429,6 +3432,13 @@ function openEditProfile() {
   document.getElementById('edit-name').value  = profileData.name;
   document.getElementById('edit-email').value = profileData.email;
   document.getElementById('edit-team').value  = profileData.team;
+  const bioEl = document.getElementById('edit-bio');
+  if (bioEl) bioEl.value = profileData.bio || '';
+  const links = profileData.links || [];
+  const l1 = document.getElementById('edit-link1');
+  const l2 = document.getElementById('edit-link2');
+  if (l1) l1.value = (links[0] && links[0].url) || '';
+  if (l2) l2.value = (links[1] && links[1].url) || '';
   document.getElementById('edit-profile-form').classList.add('open');
   document.getElementById('profile-stats').style.display       = 'none';
   document.getElementById('profile-menu-items').style.display  = 'none';
@@ -3445,6 +3455,13 @@ async function saveProfile() {
   const name  = document.getElementById('edit-name').value.trim()  || profileData.name;
   const email = document.getElementById('edit-email').value.trim() || profileData.email;
   const team  = document.getElementById('edit-team').value.trim()  || profileData.team;
+  const bioEl = document.getElementById('edit-bio');
+  const bio   = bioEl ? bioEl.value.trim().slice(0, 150) : (profileData.bio || '');
+  const l1El  = document.getElementById('edit-link1');
+  const l2El  = document.getElementById('edit-link2');
+  const links = [l1El && l1El.value.trim(), l2El && l2El.value.trim()]
+    .filter(Boolean)
+    .map(url => ({ url, label: _deriveLinkLabel(url) }));
 
   const _cu = window._psCurrentUser;
   const { doc, getDoc, setDoc, db } = window._psFs || {};
@@ -3477,7 +3494,7 @@ async function saveProfile() {
     }
   }
 
-  profileData = { ...profileData, name, email, team, handle,
+  profileData = { ...profileData, name, email, team, handle, bio, links,
     initials: name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase() };
 
   document.getElementById('profile-name').textContent  = name;
@@ -3493,7 +3510,7 @@ async function saveProfile() {
   if (_cu && doc && setDoc && db) {
     try {
       await setDoc(doc(db, 'users', _cu.uid), {
-        name, email, favoriteTeam: team, handle,
+        name, email, favoriteTeam: team, handle, bio, links,
       }, { merge: true });
       if (handle) {
         await setDoc(doc(db, 'handles', handle), { uid: _cu.uid }, { merge: true });
@@ -3505,6 +3522,17 @@ async function saveProfile() {
     }
   } else {
     showToast('Profile updated ✓');
+  }
+}
+
+// Turns a pasted URL into a short label for display, e.g.
+// "https://instagram.com/mayowa" -> "instagram.com"
+function _deriveLinkLabel(url) {
+  try {
+    const withScheme = /^https?:\/\//i.test(url) ? url : 'https://' + url;
+    return new URL(withScheme).hostname.replace(/^www\./, '');
+  } catch (e) {
+    return url;
   }
 }
 
@@ -6773,7 +6801,11 @@ async function fetchUserStreak(uid) {
       _applyStoredProfileData(data);
     } else {
       const u = window._psCurrentUser;
-      await setDoc(userDocRef, { username: (u && u.displayName) || 'Anonymous', favoriteTeam: '', streakCount: 0, lastLogin: null });
+      await setDoc(userDocRef, {
+        username: getUserDisplayName(u),
+        favoriteTeam: '', streakCount: 0, lastLogin: null,
+        createdAt: new Date(),
+      });
     }
   } catch(e) { console.warn('[Streak] fetchUserStreak:', e); }
   checkFanStreak();
@@ -6792,6 +6824,10 @@ function _applyStoredProfileData(data) {
   if (data.email)     profileData.email = data.email;
   if (data.favoriteTeam) profileData.team = data.favoriteTeam;
   if (data.handle)    profileData.handle = data.handle;
+  if (typeof data.bio === 'string') profileData.bio = data.bio;
+  if (Array.isArray(data.links)) profileData.links = data.links;
+  if (Array.isArray(data.pinnedPostIds)) profileData.pinnedPostIds = data.pinnedPostIds;
+  if (data.createdAt) profileData.createdAt = data.createdAt;
   if (profileData.name) {
     profileData.initials = profileData.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
   }
@@ -7150,6 +7186,16 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Username reservations: anyone signed in can check availability;
+    // only the uid that owns the doc can claim/release it
+    match /handles/{handle} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && (!exists(/databases/$(database)/documents/handles/$(handle))
+            || resource.data.uid == request.auth.uid)
+        && request.resource.data.uid == request.auth.uid;
     }
 
     // Posts: anyone can read; only author can update/delete
@@ -11389,34 +11435,176 @@ function _ffShare(videoId) {
   if (typeof showToast === 'function') showToast('Share link copied!');
 }
 
-/* ── Profile preview overlay (tap avatar/poster, or swipe left on a slide) ── */
-function _ffOpenProfile(userId, posterName) {
+/* ── Profile preview overlay (tap avatar/poster, or swipe left on a slide) ──
+   Full profile: bio/links/highlights, personal details, mutual friends,
+   and Posts/Videos/Photos tabs — not just a bare grid. */
+async function _ffOpenProfile(userId, posterName) {
   const overlay = document.getElementById('ff-profile-overlay');
   const body = document.getElementById('ff-profile-body');
   if (!overlay || !body) return;
 
+  overlay.classList.add('open');
+  body.innerHTML = '<div style="padding:70px 20px;text-align:center;color:rgba(255,255,255,.5);">Loading profile…</div>';
+
   const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
-  const isMe = myUid && userId === myUid;
+  const isMe = !!(myUid && userId === myUid);
   const following = (typeof appState !== 'undefined' && appState.following) ? appState.following.includes(userId) : false;
-  const theirVideos = (typeof VIDEOS !== 'undefined' ? VIDEOS : []).filter(v => v.userId === userId);
+  const theirVideos = (typeof VIDEOS !== 'undefined' ? VIDEOS : []).filter(v => (v.userId === userId || v.uid === userId));
+
+  // ── Real profile fields: mine are already in memory; someone else's need
+  // a Firestore read of their users/{uid} doc. ──
+  let pd = null;
+  const { doc, getDoc, db } = window._psFs || {};
+  if (!isMe && doc && getDoc && db) {
+    try {
+      const snap = await getDoc(doc(db, 'users', userId));
+      if (snap.exists()) pd = snap.data();
+    } catch (e) { console.warn('[FanFeed] profile fetch failed:', e); }
+  }
+
+  const displayName = isMe ? profileData.name : (posterName || (pd && (pd.name || pd.username)) || 'PitchSide User');
+  const handle       = isMe ? profileData.handle : (pd && pd.handle) || '';
+  const bio          = isMe ? (profileData.bio || '') : (pd && pd.bio) || '';
+  const links        = isMe ? (profileData.links || []) : (pd && pd.links) || [];
+  const team         = isMe ? profileData.team : (pd && pd.favoriteTeam) || '';
+  const followersArr = (isMe ? appState.followers : (pd && pd.followers)) || [];
+  const followingArr = (isMe ? appState.following : (pd && pd.following)) || [];
+  const pinnedIds    = ((isMe ? profileData.pinnedPostIds : pd && pd.pinnedPostIds) || []).map(String);
+  const createdAt    = isMe ? profileData.createdAt : (pd && pd.createdAt);
+  const initials     = _wrInitials(displayName);
+
+  // ── Mutual followers ("friends") — cap fetches to keep this cheap ──
+  const mutualIds = followersArr.filter(id => followingArr.includes(id)).slice(0, 8);
+  let friends = [];
+  if (doc && getDoc && db && mutualIds.length) {
+    try {
+      friends = await Promise.all(mutualIds.map(async (fid) => {
+        try {
+          const s = await getDoc(doc(db, 'users', fid));
+          return s.exists() ? { id: fid, name: s.data().name || s.data().username || 'Fan', avatarUrl: s.data().avatarUrl || null } : { id: fid, name: 'Fan', avatarUrl: null };
+        } catch (e) { return { id: fid, name: 'Fan', avatarUrl: null }; }
+      }));
+    } catch (e) { console.warn('[FanFeed] friends fetch failed:', e); }
+  }
+
+  window._ffProfileVideos = theirVideos;
+  window._ffProfileUserId = userId;
+  window._ffProfileTab = 'posts';
+
+  const pinnedVideos = theirVideos.filter(v => pinnedIds.includes(String(v.id)));
 
   body.innerHTML = `
     <div class="ffp-hdr">
-      <div class="ffp-avatar">${_esc(_ffAvatarInitial(posterName))}</div>
+      <div class="ffp-avatar">${_esc(initials)}</div>
       <div>
-        <div class="ffp-name">${_esc(posterName || 'PitchSide User')}</div>
-        <div class="ffp-stats"><span>${theirVideos.length} posts</span></div>
+        <div class="ffp-name">${_esc(displayName)}${handle ? ` <span class="ffp-handle">@${_esc(handle)}</span>` : ''}</div>
+        <div class="ffp-stats">
+          <span><b>${theirVideos.length}</b> posts</span>
+          <span><b>${followersArr.length}</b> followers</span>
+          <span><b>${followingArr.length}</b> following</span>
+        </div>
       </div>
       ${isMe ? '' : `<button class="ffp-follow-btn ${following ? 'following' : ''}" id="ffp-follow-btn" onclick="_ffToggleFollowFromProfile('${_esc(userId)}')">${following ? 'Following' : '+ Follow'}</button>`}
     </div>
-    <div class="ffp-grid">
-      ${theirVideos.map(v => `
-        <div class="ffp-grid-item" onclick="_ffJumpToSlide('${_esc(String(v.id))}')">
-          <img src="${v.thumbnail || ''}" onerror="this.style.display='none'">
-        </div>`).join('') || '<div style="padding:30px;color:rgba(255,255,255,.5);grid-column:1/-1;text-align:center;">No posts yet</div>'}
-    </div>`;
 
-  overlay.classList.add('open');
+    ${bio ? `<div class="ffp-bio">${_esc(bio)}</div>` : ''}
+
+    ${links.length ? `<div class="ffp-links">
+      ${links.map(l => `<a href="${_esc(l.url)}" target="_blank" rel="noopener noreferrer" class="ffp-link">🔗 ${_esc(l.label || l.url)}</a>`).join('')}
+    </div>` : ''}
+
+    ${pinnedVideos.length ? `
+    <div class="ffp-section-label">Highlights</div>
+    <div class="ffp-highlights">
+      ${pinnedVideos.map(v => `
+        <div class="ffp-highlight" onclick="_ffJumpToSlide('${_esc(String(v.id))}')">
+          <div class="ffp-highlight-thumb"><img src="${v.thumbnail || ''}" onerror="this.style.display='none'"></div>
+          <div class="ffp-highlight-label">${_esc((v.title || 'Post').slice(0, 14))}</div>
+        </div>`).join('')}
+    </div>` : ''}
+
+    <div class="ffp-section-label">Details</div>
+    <div class="ffp-details">
+      ${team ? `<div class="ffp-detail-row">⚽ Supports <b>${_esc(team)}</b></div>` : ''}
+      ${createdAt ? `<div class="ffp-detail-row">📅 Joined ${_esc(_ffFormatJoinDate(createdAt))}</div>` : ''}
+      ${!team && !createdAt ? `<div class="ffp-detail-row" style="color:rgba(255,255,255,.4);">No details yet</div>` : ''}
+    </div>
+
+    ${friends.length ? `
+    <div class="ffp-section-label">Friends</div>
+    <div class="ffp-friends">
+      ${friends.map(f => `
+        <div class="ffp-friend" onclick="_ffOpenProfile('${_esc(f.id)}', '${_esc(f.name)}')">
+          <div class="ffp-friend-avatar">${_esc(_wrInitials(f.name))}</div>
+          <div class="ffp-friend-name">${_esc(f.name.split(' ')[0])}</div>
+        </div>`).join('')}
+    </div>` : ''}
+
+    <div class="ffp-tabs">
+      <div class="ffp-tab active" data-tab="posts" onclick="_ffSwitchProfileTab('posts')">Posts</div>
+      <div class="ffp-tab" data-tab="videos" onclick="_ffSwitchProfileTab('videos')">Videos</div>
+      <div class="ffp-tab" data-tab="photos" onclick="_ffSwitchProfileTab('photos')">Photos</div>
+    </div>
+    <div class="ffp-grid" id="ffp-tab-grid">${_ffRenderProfileGrid(theirVideos, isMe, pinnedIds)}</div>`;
+}
+
+function _ffFilterByTab(videos, tab) {
+  if (tab === 'videos') return videos.filter(v => v.mediaType !== 'image');
+  if (tab === 'photos') return videos.filter(v => v.mediaType === 'image');
+  return videos;
+}
+
+function _ffRenderProfileGrid(videos, isMe, pinnedIds) {
+  if (!videos.length) return '<div style="padding:30px;color:rgba(255,255,255,.5);grid-column:1/-1;text-align:center;">No posts yet</div>';
+  return videos.map(v => `
+    <div class="ffp-grid-item" onclick="_ffJumpToSlide('${_esc(String(v.id))}')">
+      <img src="${v.thumbnail || ''}" onerror="this.style.display='none'">
+      ${isMe ? `<div class="ffp-pin-btn ${pinnedIds.includes(String(v.id)) ? 'pinned' : ''}" onclick="event.stopPropagation(); _ffTogglePin('${_esc(String(v.id))}')">📌</div>` : ''}
+    </div>`).join('');
+}
+
+function _ffSwitchProfileTab(tab) {
+  window._ffProfileTab = tab;
+  document.querySelectorAll('.ffp-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  const grid = document.getElementById('ffp-tab-grid');
+  if (!grid) return;
+  const videos = window._ffProfileVideos || [];
+  const isMe = !!(window._psCurrentUser && window._ffProfileUserId === window._psCurrentUser.uid);
+  const pinnedIds = (profileData.pinnedPostIds || []).map(String);
+  grid.innerHTML = _ffRenderProfileGrid(_ffFilterByTab(videos, tab), isMe, pinnedIds);
+}
+
+// Pin/unpin one of your own posts as a "Highlight" — capped at 5, mirroring
+// Instagram-style highlight reels since this app doesn't have Stories yet.
+async function _ffTogglePin(videoId) {
+  const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
+  if (!myUid) { showToast('Sign in to pin highlights'); return; }
+  const { doc, setDoc, db, arrayUnion, arrayRemove } = window._psFs || {};
+  const id = String(videoId);
+  const pinned = (profileData.pinnedPostIds || []).includes(id);
+  if (!pinned && (profileData.pinnedPostIds || []).length >= 5) {
+    showToast('You can pin up to 5 highlights');
+    return;
+  }
+  profileData.pinnedPostIds = pinned
+    ? (profileData.pinnedPostIds || []).filter(x => x !== id)
+    : [...(profileData.pinnedPostIds || []), id];
+  if (doc && setDoc && db) {
+    try {
+      await setDoc(doc(db, 'users', myUid), {
+        pinnedPostIds: pinned ? arrayRemove(id) : arrayUnion(id)
+      }, { merge: true });
+    } catch (e) { console.warn('[Profile] pin toggle failed:', e); }
+  }
+  showToast(pinned ? 'Removed from Highlights' : 'Added to Highlights ✓');
+  _ffOpenProfile(myUid, profileData.name);
+}
+
+function _ffFormatJoinDate(ts) {
+  try {
+    const d = ts && ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  } catch (e) { return ''; }
 }
 
 function _ffCloseProfile() {
