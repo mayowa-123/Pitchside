@@ -2597,7 +2597,7 @@ function _loadVideoMeta(v) {
   if (dateEl)   dateEl.textContent   = `${v.competition || v.cat} · ${v.date}`;
   if (handleEl) handleEl.textContent = v.poster || '@pitchside_official';
   if (likeEl)   likeEl.textContent   = formatCount(v.likes || 0);
-  if (cmtEl)    cmtEl.textContent    = formatCount((MOCK_COMMENTS[v.id]||[]).length + (userComments[v.id]||[]).length);
+  if (cmtEl)    cmtEl.textContent    = formatCount((MOCK_COMMENTS[v.id]||[]).length || v.comments || 0);
   if (saveEl)   saveEl.textContent   = savedHighlights.has(v.id) ? 'Saved ✓' : 'Save';
   if (musicEl)  musicEl.textContent  = v.music ? `🎵 ${v.music}` : `🎵 ${v.competition || 'PitchSide Football'}`;
   if (avatarEl) avatarEl.src         = `https://api.dicebear.com/7.x/avataaars/svg?seed=${v.avatarSeed || v.id}`;
@@ -4017,9 +4017,6 @@ const MOCK_COMMENTS = {
     { user: 'StreetBaller', initials: 'SB', text: 'The key is in the ankle snap. Once you get that it clicks instantly.', time: '4h ago' },
   ],
 };
-
-// Per-video user-added comments (in memory)
-const userComments = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
 
 function openComments() {
   if (!currentVideoId) return;
@@ -7325,6 +7322,23 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
 
+    // Video comments: anyone signed in can read/post; a comment can be
+    // deleted by whoever wrote it OR by the owner of the video it's on
+    // (moderating their own post) — nobody else. videoOwnerId is stamped
+    // onto the comment at write time so this doesn't need a cross-collection
+    // lookup.
+    match /videoComments/{commentId} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 500;
+      allow update: if false;
+      allow delete: if request.auth != null
+        && (resource.data.userId == request.auth.uid
+            || resource.data.videoOwnerId == request.auth.uid);
+    }
+
     function onlyUpdatingLikes(newData, oldData) {
       return newData.diff(oldData).affectedKeys().hasOnly(['likes','views']);
     }
@@ -10538,8 +10552,10 @@ async function submitComment() {
     // Add comment to Firebase
     const commentsRef = fsApi.collection(db, 'videoComments');
     const myName = getUserDisplayName(currentUser);
+    const v = VIDEOS.find(x => String(x.id) === String(currentVideoId));
     const commentDoc = await fsApi.addDoc(commentsRef, {
       videoId: String(currentVideoId),
+      videoOwnerId: (v && (v.userId || v.uid)) || '',
       userId: currentUser.uid,
       userName: myName,
       userAvatar: (typeof profileData !== 'undefined' && profileData.avatarUrl) || '',
@@ -10570,26 +10586,14 @@ async function submitComment() {
       }
     });
 
-    // Add to local array
-    if (!userComments[currentVideoId]) userComments[currentVideoId] = [];
-    userComments[currentVideoId].push({
-      id: commentDoc.id,
-      user: myName,
-      avatar: (typeof profileData !== 'undefined' && profileData.avatarUrl) || '',
-      text: text,
-      time: 'now',
-      initials: _wrInitials(myName),
-      likes: 0,
-      timestamp: new Date(),
-    });
-
-    // Update UI
+    // Update UI — re-fetch from Firestore (the source of truth) rather than
+    // also keeping a local copy, which was causing every comment you posted
+    // to show up twice: once from this local array, once from Firestore.
     input.value = '';
     renderComments(currentVideoId);
     showToast('Comment posted ✓');
 
     // Notify video creator
-    const v = VIDEOS.find(x => String(x.id) === String(currentVideoId));
     const creator = v?.userId || v?.uid;
     if (creator && creator !== currentUser.uid) {
       const notifRef = fsApi.collection(db, 'notifications');
@@ -10630,6 +10634,7 @@ async function loadCommentsFromFirebase(videoId) {
       const data = doc.data();
       comments.push({
         id: doc.id,
+        userId: data.userId || '',
         user: data.userName || 'User',
         avatar: data.userAvatar || '',
         text: data.text,
@@ -10650,11 +10655,18 @@ async function loadCommentsFromFirebase(videoId) {
 // Helper: Get time ago string
 function getTimeAgo(timestamp) {
   if (!timestamp) return 'now';
-  
+
+  // Firestore returns a Timestamp object (with a .toDate() method), not a
+  // plain JS Date — passing that straight into `new Date(...)` silently
+  // produces an Invalid Date, which is why this was showing "NaNd ago".
+  const date = (timestamp && typeof timestamp.toDate === 'function')
+    ? timestamp.toDate()
+    : new Date(timestamp);
+  if (isNaN(date.getTime())) return 'now';
+
   const now = new Date();
-  const date = new Date(timestamp);
   const seconds = Math.floor((now - date) / 1000);
-  
+
   if (seconds < 60) return 'now';
   if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
   if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
@@ -10664,13 +10676,12 @@ function getTimeAgo(timestamp) {
 // Update renderComments to use Firebase data
 async function renderComments(videoId) {
   const list = document.getElementById('comment-list');
-  
-  // Get comments from Firebase
-  const firebaseComments = await loadCommentsFromFirebase(videoId);
-  const localComments = userComments[videoId] || [];
-  const allComments = [...firebaseComments, ...localComments].sort((a, b) => 
-    new Date(b.timestamp) - new Date(a.timestamp)
-  );
+
+  // Firestore is the single source of truth now — no more merging in a
+  // local array, which was the actual cause of every comment appearing
+  // twice (once from here, once from Firestore, forever, on every reopen).
+  const allComments = await loadCommentsFromFirebase(videoId);
+  allComments.sort((a, b) => _tsToMs(b.timestamp) - _tsToMs(a.timestamp));
 
   const commentCount = document.getElementById('comment-count');
   if (commentCount) commentCount.textContent = `(${allComments.length})`;
@@ -10681,6 +10692,10 @@ async function renderComments(videoId) {
     list.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text3);font-size:13px;">No comments yet. Be the first!</div>`;
     return;
   }
+
+  const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
+  const v = VIDEOS.find(x => String(x.id) === String(videoId));
+  const videoOwnerId = v && (v.userId || v.uid);
 
   list.innerHTML = '';
   allComments.forEach(c => {
@@ -10715,10 +10730,47 @@ async function renderComments(videoId) {
     bubble.appendChild(time);
     item.appendChild(avatar);
     item.appendChild(bubble);
+
+    // Delete: available to the comment's own author, or to the video owner
+    // moderating comments on their own post — nobody else.
+    const canDelete = myUid && (c.userId === myUid || videoOwnerId === myUid);
+    if (canDelete) {
+      const del = document.createElement('div');
+      del.className = 'comment-delete';
+      del.textContent = '🗑️';
+      del.title = 'Delete comment';
+      del.onclick = () => _deleteComment(c.id, videoId);
+      item.appendChild(del);
+    }
+
     list.appendChild(item);
   });
 
   list.scrollTop = list.scrollHeight;
+}
+
+// Firestore Timestamp -> epoch ms, tolerant of already-plain dates/numbers.
+function _tsToMs(ts) {
+  if (!ts) return 0;
+  const d = (ts && typeof ts.toDate === 'function') ? ts.toDate() : new Date(ts);
+  const ms = d.getTime();
+  return isNaN(ms) ? 0 : ms;
+}
+
+async function _deleteComment(commentId, videoId) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  if (!fsApi || !db || !fsApi.deleteDoc) { showToast('Delete is not available right now'); return; }
+  try {
+    await fsApi.deleteDoc(fsApi.doc(db, 'videoComments', commentId));
+    const metricsRef = fsApi.doc(db, 'videoMetrics', String(videoId));
+    fsApi.updateDoc(metricsRef, { comments: fsApi.increment(-1) }).catch(() => {});
+    showToast('Comment deleted');
+    renderComments(videoId);
+  } catch (e) {
+    console.warn('[Comments] delete failed:', e);
+    showToast('Could not delete — check your connection');
+  }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -11185,6 +11237,59 @@ function _ffSetChromeHidden(hidden) {
   const postBtn = document.getElementById('global-post-btn');
   if (nav) nav.style.display = hidden ? 'none' : '';
   if (postBtn) postBtn.style.display = hidden ? 'none' : '';
+  document.querySelectorAll('.ff-topbar').forEach(bar => { bar.style.display = hidden ? 'none' : ''; });
+}
+
+// Simple in-feed search: filters posts by caption/poster and jumps straight
+// to whichever one you tap, matching the "search at the top of every video"
+// reference you shared.
+function _ffOpenSearch() {
+  let overlay = document.getElementById('ff-search-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'ff-search-overlay';
+    overlay.className = 'ff-search-overlay';
+    overlay.innerHTML = `
+      <div class="ff-search-bar">
+        <button class="ff-search-back" onclick="_ffCloseSearch()">←</button>
+        <input type="text" id="ff-search-input" placeholder="Find related content" autocomplete="off">
+      </div>
+      <div id="ff-search-results" class="ff-search-results"></div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('ff-search-input').addEventListener('input', (e) => _ffRunSearch(e.target.value));
+  }
+  overlay.classList.add('open');
+  setTimeout(() => document.getElementById('ff-search-input').focus(), 50);
+}
+
+function _ffCloseSearch() {
+  const overlay = document.getElementById('ff-search-overlay');
+  if (overlay) overlay.classList.remove('open');
+}
+
+function _ffRunSearch(term) {
+  const results = document.getElementById('ff-search-results');
+  if (!results) return;
+  const q = (term || '').trim().toLowerCase();
+  if (!q) { results.innerHTML = ''; return; }
+  const pool = (typeof VIDEOS !== 'undefined' ? VIDEOS : []);
+  const matches = pool.filter(v =>
+    (v.title || '').toLowerCase().includes(q) ||
+    (v.poster || '').toLowerCase().includes(q)
+  ).slice(0, 30);
+
+  if (!matches.length) {
+    results.innerHTML = '<div style="padding:24px;text-align:center;color:rgba(255,255,255,.5);font-size:13px;">No matches</div>';
+    return;
+  }
+  results.innerHTML = matches.map(v => `
+    <div class="ff-search-result" onclick="_ffCloseSearch(); _ffJumpToSlide('${_esc(String(v.id))}');">
+      <img src="${v.thumbnail || ''}" onerror="this.style.display='none'">
+      <div>
+        <div class="ff-search-result-title">${_esc((v.title || '').slice(0, 70))}</div>
+        <div class="ff-search-result-poster">${_esc(v.poster || '')}</div>
+      </div>
+    </div>`).join('');
 }
 
 // Wires swipe-to-profile gestures on any slides that don't have them yet
@@ -11292,6 +11397,13 @@ function _ffFormatCaption(text) {
   return escaped.replace(/(#[\w]+)/g, '<span class="ff-hashtag">$1</span>');
 }
 
+// Only worth showing "...more" when the caption is actually long enough to
+// get clipped by the 2-line CSS clamp — previously this showed on every
+// single post, even a two-word caption with nothing left to reveal.
+function _ffCaptionNeedsMore(text) {
+  return (text || '').length > 80;
+}
+
 function _ffRenderSlide(v) {
   const likeCount = (typeof formatCount === 'function') ? formatCount(v.likes || 0) : (v.likes || 0);
   const commentCount = (typeof formatCount === 'function') ? formatCount(v.comments || 0) : (v.comments || 0);
@@ -11308,12 +11420,17 @@ function _ffRenderSlide(v) {
       <video class="ff-video" data-video-url="${_ffGetVideoSrc(v)}" loop playsinline preload="metadata"
         onclick="_ffHandleVideoTap(this, '${safeId}')"></video>
 
+      <div class="ff-topbar" onclick="_ffOpenSearch(); event.stopPropagation();">
+        <span class="ff-topbar-icon">🔍</span>
+        <span class="ff-topbar-text">Find related content</span>
+      </div>
+
       <div class="ff-gradient-bottom"></div>
 
       <div class="ff-info">
         <div class="ff-poster" onclick="_ffOpenProfile('${_esc(posterUserId)}', '${_esc(posterName)}')" style="cursor:pointer;">${_esc(posterName)}</div>
         <div class="ff-caption" id="ff-cap-${safeId}">${_ffFormatCaption(v.title || '')}</div>
-        <div class="ff-caption-more" onclick="_ffOpenReadingMode('${safeId}')">...more</div>
+        ${_ffCaptionNeedsMore(v.title || '') ? `<div class="ff-caption-more" onclick="_ffOpenReadingMode('${safeId}')">...more</div>` : ''}
         ${v.music ? `<div class="ff-music">🎵 ${_esc(v.music)}</div>` : ''}
       </div>
 
@@ -11669,6 +11786,7 @@ async function _ffOpenProfile(userId, posterName) {
   const followingArr = (isMe ? appState.following : (pd && pd.following)) || [];
   const pinnedIds    = ((isMe ? profileData.pinnedPostIds : pd && pd.pinnedPostIds) || []).map(String);
   const createdAt    = isMe ? profileData.createdAt : (pd && pd.createdAt);
+  const avatarUrl    = isMe ? profileData.avatarUrl : (pd && pd.avatarUrl) || null;
   const initials     = _wrInitials(displayName);
 
   // ── Mutual followers ("friends") — cap fetches to keep this cheap ──
@@ -11693,7 +11811,7 @@ async function _ffOpenProfile(userId, posterName) {
 
   body.innerHTML = `
     <div class="ffp-hdr">
-      <div class="ffp-avatar">${_esc(initials)}</div>
+      <div class="ffp-avatar">${avatarUrl ? `<img src="${_esc(avatarUrl)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : _esc(initials)}</div>
       <div>
         <div class="ffp-name">${_esc(displayName)}${handle ? ` <span class="ffp-handle">@${_esc(handle)}</span>` : ''}</div>
         <div class="ffp-stats">
@@ -11858,9 +11976,39 @@ function _ffHandleVideoTap(el, videoId) {
   } else {
     el.dataset.lastTap = String(now);
     setTimeout(() => {
-      if (el.dataset.lastTap === String(now)) _ffToggleMute();
+      if (el.dataset.lastTap === String(now)) _ffTogglePlayPause(el);
     }, 300);
   }
+}
+
+// TikTok-style: single tap pauses/resumes and shows a big center icon that
+// fades out on its own after a moment, then reappears on the next tap.
+function _ffTogglePlayPause(videoEl) {
+  const slide = videoEl.closest('.ff-slide');
+  if (!slide) return;
+  if (videoEl.paused) {
+    videoEl.play().catch(() => {});
+    _ffShowPlayPauseIcon(slide, '▶️');
+  } else {
+    videoEl.pause();
+    _ffShowPlayPauseIcon(slide, '⏸️');
+  }
+}
+
+let _ffPlayPauseIconTimer = null;
+function _ffShowPlayPauseIcon(slideEl, symbol) {
+  let icon = slideEl.querySelector('.ff-playpause-icon');
+  if (!icon) {
+    icon = document.createElement('div');
+    icon.className = 'ff-playpause-icon';
+    slideEl.appendChild(icon);
+  }
+  icon.textContent = symbol;
+  icon.classList.remove('show'); // restart the fade animation even on rapid re-taps
+  void icon.offsetWidth; // force reflow so the removed class actually takes effect first
+  icon.classList.add('show');
+  clearTimeout(_ffPlayPauseIconTimer);
+  _ffPlayPauseIconTimer = setTimeout(() => icon.classList.remove('show'), 700);
 }
 
 function _ffSpawnHeartBurst(slideEl) {
