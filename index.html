@@ -12,6 +12,12 @@
 </head>
 <body>
 
+<!-- Connectivity banner — WhatsApp/Facebook-style honest signal instead of
+     silent hangs when the network drops or is very weak -->
+<div id="net-banner" style="position:fixed;top:0;left:0;right:0;z-index:99999;padding:8px 16px;text-align:center;font-size:12.5px;font-weight:700;color:#fff;transform:translateY(-100%);transition:transform .25s ease;">
+  <span id="net-banner-text"></span>
+</div>
+
 <!-- Auth Loading Screen -->
 <div id="auth-loading">
   <div class="auth-spinner"></div>
@@ -696,9 +702,8 @@
           <label class="form-label">Email</label>
           <input type="email" class="form-inp" id="edit-email" placeholder="your@email.com">
         </div>
-        <div class="form-group">
-          <label class="form-label">Favorite Team</label>
-          <input type="text" class="form-inp" id="edit-team" placeholder="e.g. Real Madrid">
+        <div class="form-group" style="font-size:12.5px;color:rgba(0,0,0,.5);padding:4px 2px;">
+          Manage your teams &amp; leagues by tapping Teams or Leagues on your profile — your profile shows all of them automatically.
         </div>
         <div class="form-group">
           <label class="form-label">Bio</label>
@@ -719,8 +724,8 @@
       <!-- Live stats from real selections -->
       <div class="profile-stats" id="profile-stats">
         <div class="pstat" onclick="openMyVideos()" style="cursor:pointer;"><div class="pstat-num" id="stat-videos">0</div><div class="pstat-label" style="color:var(--blue);">Videos ›</div></div>
-        <div class="pstat"><div class="pstat-num" id="stat-teams">0</div><div class="pstat-label">Teams</div></div>
-        <div class="pstat"><div class="pstat-num" id="stat-leagues">0</div><div class="pstat-label">Leagues</div></div>
+        <div class="pstat" onclick="switchPage('dash', document.getElementById('nav-more'))" style="cursor:pointer;"><div class="pstat-num" id="stat-teams">0</div><div class="pstat-label" style="color:var(--blue);">Teams ›</div></div>
+        <div class="pstat" onclick="switchPage('dash', document.getElementById('nav-more'))" style="cursor:pointer;"><div class="pstat-num" id="stat-leagues">0</div><div class="pstat-label" style="color:var(--blue);">Leagues ›</div></div>
       </div>
 
       <div class="profile-menu" id="profile-menu-items">
