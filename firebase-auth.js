@@ -40,11 +40,19 @@ const db   = getFirestore(app);
 // the moment it tried to actually save anything, silently in most places
 // since the calling code caught and swallowed the error without showing it.
 window._psDb          = db;
+window._psAuth        = auth;
 window._psFs          = { collection, query, where, orderBy, limit, getDocs,
                           startAfter, doc, getDoc, updateDoc, addDoc,
                           setDoc, serverTimestamp, onSnapshot, db,
-                          arrayUnion, arrayRemove, increment };
-window._psCurrentUser = null;
+                          arrayUnion, arrayRemove, increment,
+                          authUpdateProfile: updateProfile };
+// NOTE: window._psCurrentUser is intentionally left undefined here (not
+// null) until onAuthStateChanged actually reports in below. app.js polls
+// `window._psCurrentUser !== undefined` to know when it's safe to load the
+// real saved profile from Firestore — if this were preset to null, that
+// check would pass instantly on app load (before Firebase confirms who's
+// signed in), so app.js would treat the user as signed out and skip
+// loading their saved name/bio/team/avatar entirely, every single time.
 
 // ── Helpers ─────────────────────────────────────
 function showAuthError(id, msg) {
@@ -58,9 +66,17 @@ function clearAuthErrors() {
   });
 }
 function applyUserToApp(user) {
+  // Fallback only — shown for an instant before the real saved profile
+  // (name, bio, team, avatar, everything) loads from Firestore a moment
+  // later via app.js's fetchUserStreak() -> _applyStoredProfileData().
+  // This must NEVER be the last word on what your name/photo show, since
+  // user.displayName is frozen at whatever you typed at signup and never
+  // reflects later edits made in Edit Profile.
   const displayName = user.displayName || (user.email ? user.email.split('@')[0] : 'Fan');
   const initials = displayName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
-  profileData = { ...profileData, name: displayName, email: user.email || 'dev@pitchside.app', initials };
+  if (typeof profileData !== 'undefined') {
+    profileData = { ...profileData, name: displayName, email: user.email || 'dev@pitchside.app', initials };
+  }
   document.getElementById('profile-name').textContent     = displayName;
   document.getElementById('profile-email').textContent    = user.email || 'dev@pitchside.app';
   document.getElementById('profile-initials').textContent = initials;
