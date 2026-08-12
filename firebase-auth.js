@@ -11,7 +11,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, collection, query, where, orderBy, limit,
          getDocs, startAfter, doc, getDoc, updateDoc, addDoc,
-         setDoc, serverTimestamp, onSnapshot,
+         setDoc, deleteDoc, serverTimestamp, onSnapshot,
          arrayUnion, arrayRemove, increment
        } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
@@ -43,7 +43,7 @@ window._psDb          = db;
 window._psAuth        = auth;
 window._psFs          = { collection, query, where, orderBy, limit, getDocs,
                           startAfter, doc, getDoc, updateDoc, addDoc,
-                          setDoc, serverTimestamp, onSnapshot, db,
+                          setDoc, deleteDoc, serverTimestamp, onSnapshot, db,
                           arrayUnion, arrayRemove, increment,
                           authUpdateProfile: updateProfile };
 // NOTE: window._psCurrentUser is intentionally left undefined here (not
