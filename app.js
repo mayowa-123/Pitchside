@@ -2726,7 +2726,7 @@ async function repostVideo() {
       originalThumbnail: v.thumbnail,
       userId: currentUser.uid,
       userName: getUserDisplayName(currentUser),
-      userAvatar: currentUser.photoURL || '',
+      userAvatar: (typeof profileData !== 'undefined' && profileData.avatarUrl) || '',
       title: `Reposted: ${v.title}`,
       isRepost: true,
       videoId: v.videoId || v.youtubeId,
@@ -3288,7 +3288,6 @@ function toggleNotif(el) {
 let profileData = {
   name: 'John Doe',
   email: 'john.doe@pitchside.com',
-  team: 'Real Madrid',
   initials: 'JD',
   avatarUrl: null,
   handle: null,
@@ -3454,7 +3453,6 @@ function openEditProfile() {
   document.getElementById('edit-username').value = profileData.handle || '';
   document.getElementById('edit-name').value  = profileData.name;
   document.getElementById('edit-email').value = profileData.email;
-  document.getElementById('edit-team').value  = profileData.team;
   const bioEl = document.getElementById('edit-bio');
   if (bioEl) bioEl.value = profileData.bio || '';
   const links = profileData.links || [];
@@ -3477,7 +3475,6 @@ async function saveProfile() {
   const usernameRaw = document.getElementById('edit-username').value.trim();
   const name  = document.getElementById('edit-name').value.trim()  || profileData.name;
   const email = document.getElementById('edit-email').value.trim() || profileData.email;
-  const team  = document.getElementById('edit-team').value.trim()  || profileData.team;
   const bioEl = document.getElementById('edit-bio');
   const bio   = bioEl ? bioEl.value.trim().slice(0, 150) : (profileData.bio || '');
   const l1El  = document.getElementById('edit-link1');
@@ -3517,7 +3514,7 @@ async function saveProfile() {
     }
   }
 
-  profileData = { ...profileData, name, email, team, handle, bio, links,
+  profileData = { ...profileData, name, email, handle, bio, links,
     initials: name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase() };
 
   document.getElementById('profile-name').textContent  = name;
@@ -3533,7 +3530,7 @@ async function saveProfile() {
   if (_cu && doc && setDoc && db) {
     try {
       await setDoc(doc(db, 'users', _cu.uid), {
-        name, email, favoriteTeam: team, handle, bio, links,
+        name, email, handle, bio, links,
       }, { merge: true });
       if (handle) {
         await setDoc(doc(db, 'handles', handle), { uid: _cu.uid }, { merge: true });
@@ -3903,7 +3900,36 @@ function showToast(msg) {
 /* ═══════════════════════════════════════════
    MASTER INIT — single DOMContentLoaded
 ═══════════════════════════════════════════ */
+// Honest network-status banner — matches WhatsApp/Facebook's approach of
+// telling you when you're offline instead of leaving features to silently
+// hang with no explanation of why nothing is working.
+function initConnectivityBanner() {
+  const banner = document.getElementById('net-banner');
+  const text = document.getElementById('net-banner-text');
+  if (!banner || !text) return;
+
+  function show(msg, color) {
+    text.textContent = msg;
+    banner.style.background = color;
+    banner.style.transform = 'translateY(0)';
+  }
+  function hide() {
+    banner.style.transform = 'translateY(-100%)';
+  }
+
+  window.addEventListener('offline', () => show("You're offline — some things won't work until you're back", '#ef4444'));
+  window.addEventListener('online', () => {
+    show('Back online ✓', '#10b981');
+    setTimeout(hide, 2000);
+  });
+
+  if (!navigator.onLine) show("You're offline — some things won't work until you're back", '#ef4444');
+}
+
 document.addEventListener('DOMContentLoaded', function () {
+
+  // ── Connectivity banner ──
+  try { initConnectivityBanner(); } catch(e){}
 
   // ── Dashboard lists ──
   try { renderSelectionList('team-list',   ALL_TEAMS,   selectedTeams); } catch(e){}
@@ -5518,6 +5544,14 @@ function openHlPlayer(id, title, videoUrl, embedHtml, thumbnail, ytSearch, video
   const isLiked = currentUser?.uid ? !!existingMetrics?.likes?.includes(currentUser.uid) : likedVideos?.has(String(id));
   const isSaved = (typeof savedHighlights !== 'undefined') ? savedHighlights.has(String(id)) : false;
 
+  // Self-heal older posts saved before posterAvatar existed: look their
+  // current avatar up once, cache it, patch this card, and backfill the
+  // post doc so it's instant next time — instead of leaving them stuck
+  // with initials forever.
+  if (!creatorAvatar && v?.userId) {
+    _resolveCreatorAvatar(v.userId, id);
+  }
+
   // Remove any existing side actions
   document.querySelectorAll('.tt-side-actions').forEach(el => el.remove());
 
@@ -6834,7 +6868,7 @@ async function fetchUserStreak(uid) {
       const u = window._psCurrentUser;
       await setDoc(userDocRef, {
         username: getUserDisplayName(u),
-        favoriteTeam: '', streakCount: 0, lastLogin: null,
+        streakCount: 0, lastLogin: null,
         createdAt: new Date(),
       });
     }
@@ -6853,7 +6887,6 @@ function _applyStoredProfileData(data) {
   if (data.name)      profileData.name = data.name;
   else if (data.username) profileData.name = data.username;
   if (data.email)     profileData.email = data.email;
-  if (data.favoriteTeam) profileData.team = data.favoriteTeam;
   if (data.handle)    profileData.handle = data.handle;
   if (typeof data.bio === 'string') profileData.bio = data.bio;
   if (Array.isArray(data.links)) profileData.links = data.links;
@@ -7491,6 +7524,7 @@ function openWarRoom(matchId, matchTitle) {
           id: d.id,
           uid: data.uid || '',
           user: data.displayName || 'Fan',
+          avatarUrl: data.avatarUrl || null,
           text: data.text || '',
           type: data.type || 'text',
           mediaUrl: data.mediaUrl || null,
@@ -7578,7 +7612,11 @@ function renderWarRoomMessages(msgs) {
 
     const avatarDiv = document.createElement('div');
     avatarDiv.className = 'wr-avatar';
-    avatarDiv.textContent = _wrInitials(m.user);
+    if (m.avatarUrl) {
+      avatarDiv.innerHTML = `<img src="${m.avatarUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+    } else {
+      avatarDiv.textContent = _wrInitials(m.user);
+    }
 
     const colDiv = document.createElement('div');
     colDiv.className = 'wr-bubble-col';
@@ -7669,6 +7707,7 @@ function _wrSendMessage(fields) {
   const payload = Object.assign({
     uid: currentUser.uid,
     displayName: _wrDisplayName(),
+    avatarUrl: (typeof profileData !== 'undefined' && profileData.avatarUrl) || null,
     createdAt: serverTimestamp()
   }, fields);
   if (warRoomReplyTo) payload.replyTo = warRoomReplyTo;
@@ -8495,6 +8534,11 @@ async function pcPublish() {
 
   // ── Helper: single upload attempt with progress — uploads DIRECTLY to Cloudflare R2 ──
   function _doUpload(file, resourceType) {
+    // Fail fast and honestly if there's genuinely no connection, instead of
+    // making the person wait out a multi-minute timeout to learn that.
+    if (!navigator.onLine) {
+      return Promise.reject(new Error('OFFLINE: You appear to be offline — check your connection and try again'));
+    }
     // Videos go through Cloudflare Stream (adaptive quality + transcoding).
     // Images keep using the existing direct-to-R2 flow — no change there.
     if (resourceType === 'video') {
@@ -8585,6 +8629,15 @@ async function pcPublish() {
     } catch(err) {
       lastErr = err.message;
       console.warn(`[PC] Upload attempt ${attempt} failed:`, lastErr);
+
+      if (lastErr.startsWith('OFFLINE:')) {
+        // No point burning 3 retries with backoff delays if we're not even
+        // connected — fail immediately with a clear, honest message.
+        upDiv.classList.remove('show');
+        btn.disabled = false;
+        showToast('📡 ' + lastErr.replace('OFFLINE: ', ''));
+        return;
+      }
 
       if (lastErr.startsWith('CLOUDINARY:')) {
         // Cloudinary rejected the file — no point retrying (wrong preset, file type, etc.)
@@ -8688,6 +8741,7 @@ if (!info) return; // safety guard
           poster: _getPosterHandle(),
           userId: (_cu && _cu.uid) || 'anonymous',
           userName: (profileData && profileData.name) || 'PitchSide User',
+          posterAvatar: (profileData && profileData.avatarUrl) || '',
           cat: 'Trending', likes: 0, comments: 0, userPost: true, playerPost: window._hlIsPlayerPost || false,
           filter: _pcFilter, speed: _pcSpeed, sticker: _pcSticker, music: _pcMusic,
           taggedMatch: _pcTaggedMatch || null,
@@ -10488,7 +10542,7 @@ async function submitComment() {
       videoId: String(currentVideoId),
       userId: currentUser.uid,
       userName: myName,
-      userAvatar: currentUser.photoURL || '',
+      userAvatar: (typeof profileData !== 'undefined' && profileData.avatarUrl) || '',
       text: text,
       timestamp: new Date(),
       likes: 0,
@@ -10521,7 +10575,7 @@ async function submitComment() {
     userComments[currentVideoId].push({
       id: commentDoc.id,
       user: myName,
-      avatar: currentUser.photoURL || '',
+      avatar: (typeof profileData !== 'undefined' && profileData.avatarUrl) || '',
       text: text,
       time: 'now',
       initials: _wrInitials(myName),
@@ -10635,7 +10689,11 @@ async function renderComments(videoId) {
 
     const avatar = document.createElement('div');
     avatar.className = 'comment-avatar';
-    avatar.textContent = c.initials;
+    if (c.avatar) {
+      avatar.innerHTML = `<img src="${c.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+    } else {
+      avatar.textContent = c.initials;
+    }
 
     const bubble = document.createElement('div');
     bubble.className = 'comment-bubble';
@@ -11020,9 +11078,65 @@ async function _ffAttachVideoSource(videoEl, url) {
     hls.loadSource(url);
     hls.attachMedia(videoEl);
     videoEl._hlsInstance = hls; // kept so we can pause/resume loading or destroy it later
+    videoEl._hlsRetries = 0;
+
+    // hls.js does NOT auto-recover from a dropped connection or a stalled
+    // fragment on its own — without this handler, one network hiccup kills
+    // playback permanently and it just sits frozen (this was the actual
+    // cause of videos only resuming after backgrounding the app: nothing
+    // in here was ever asking it to retry).
+    hls.on(window.Hls.Events.ERROR, (event, data) => {
+      if (!data.fatal) return; // non-fatal errors are hls.js recovering on its own already
+      videoEl._hlsRetries = (videoEl._hlsRetries || 0) + 1;
+      const tooManyRetries = videoEl._hlsRetries > 4;
+      if (tooManyRetries) {
+        console.warn('[FanFeed] HLS giving up after repeated errors:', data.type);
+        _ffShowVideoRetry(videoEl, url);
+        return;
+      }
+      switch (data.type) {
+        case window.Hls.ErrorTypes.NETWORK_ERROR:
+          console.warn('[FanFeed] HLS network error, retrying load…', data.details);
+          hls.startLoad();
+          break;
+        case window.Hls.ErrorTypes.MEDIA_ERROR:
+          console.warn('[FanFeed] HLS media error, attempting recovery…', data.details);
+          hls.recoverMediaError();
+          break;
+        default:
+          console.warn('[FanFeed] HLS unrecoverable error:', data.type, data.details);
+          _ffShowVideoRetry(videoEl, url);
+          break;
+      }
+    });
   } catch (e) {
     console.warn('[FanFeed] hls.js failed to load, video will not play:', e);
+    _ffShowVideoRetry(videoEl, url);
   }
+}
+
+// Shown when a video genuinely can't recover on its own — an honest "tap to
+// retry" instead of a spinner that quietly spins forever with no way out.
+function _ffShowVideoRetry(videoEl, url) {
+  const slide = videoEl.closest('.ff-slide');
+  if (!slide || slide.querySelector('.ff-retry-overlay')) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'ff-retry-overlay';
+  overlay.innerHTML = `
+    <div style="text-align:center;color:#fff;">
+      <div style="font-size:32px;">📡</div>
+      <div style="font-size:13px;font-weight:600;margin:6px 0 10px;">Connection trouble — video paused</div>
+      <div style="display:inline-block;padding:8px 18px;background:#10b981;border-radius:20px;font-size:13px;font-weight:700;">Tap to retry</div>
+    </div>`;
+  overlay.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);z-index:5;cursor:pointer;';
+  overlay.onclick = () => {
+    overlay.remove();
+    videoEl.dataset.srcWired = '';
+    videoEl._hlsRetries = 0;
+    if (videoEl._hlsInstance) { try { videoEl._hlsInstance.destroy(); } catch (e) {} videoEl._hlsInstance = null; }
+    _ffAttachVideoSource(videoEl, url).then(() => videoEl.play().catch(() => {}));
+  };
+  slide.appendChild(overlay);
 }
 
 function openFanFeedOverlay(startVideoId) {
@@ -11137,6 +11251,38 @@ function closeFanFeedOverlay() {
 
 function _ffAvatarInitial(name) {
   return (name || '?').replace('@', '').charAt(0).toUpperCase();
+}
+
+// One-time-per-user lookup of a poster's CURRENT avatar for posts saved
+// before posterAvatar existed, or posted before they'd set a picture.
+// Cached in memory so a feed with 20 posts from the same person only
+// fetches once, and backfills the post doc so this never has to run again.
+const _avatarLookupCache = {};
+async function _resolveCreatorAvatar(userId, videoId) {
+  if (Object.prototype.hasOwnProperty.call(_avatarLookupCache, userId)) {
+    const cached = _avatarLookupCache[userId];
+    if (cached) _patchCreatorAvatarDOM(videoId, cached);
+    return;
+  }
+  const { doc, getDoc, db, updateDoc } = window._psFs || {};
+  if (!doc || !getDoc || !db) return;
+  try {
+    const snap = await getDoc(doc(db, 'users', userId));
+    const url = snap.exists() ? (snap.data().avatarUrl || null) : null;
+    _avatarLookupCache[userId] = url;
+    if (url) {
+      _patchCreatorAvatarDOM(videoId, url);
+      // Backfill so future renders of this same post skip the lookup entirely
+      if (updateDoc) {
+        try { await updateDoc(doc(db, 'posts', String(videoId)), { posterAvatar: url }); }
+        catch (e) { /* fine if this post isn't in 'posts' (e.g. seed data) */ }
+      }
+    }
+  } catch (e) { console.warn('[Avatar] lookup failed:', e); }
+}
+function _patchCreatorAvatarDOM(videoId, url) {
+  const wrap = document.querySelector('#tt-side-actions-' + videoId + ' .tt-creator-avatar');
+  if (wrap) wrap.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
 }
 
 // Turns "Great goal! #NPFL #PitchSide" into styled HTML with hashtags
@@ -11372,6 +11518,10 @@ function _ffReleaseVideoMemory(videoEl) {
   videoEl.removeAttribute('src');
   videoEl.load(); // tells the browser to actually drop the buffered data
   delete videoEl.dataset.srcWired; // lets _ffAttachVideoSource reattach cleanly later
+  videoEl._hlsRetries = 0;
+  const slide = videoEl.closest('.ff-slide');
+  const overlay = slide && slide.querySelector('.ff-retry-overlay');
+  if (overlay) overlay.remove();
 }
 
 // Appends another full pass of the same posts so swiping never runs out —
@@ -11513,7 +11663,8 @@ async function _ffOpenProfile(userId, posterName) {
   const handle       = isMe ? profileData.handle : (pd && pd.handle) || '';
   const bio          = isMe ? (profileData.bio || '') : (pd && pd.bio) || '';
   const links        = isMe ? (profileData.links || []) : (pd && pd.links) || [];
-  const team         = isMe ? profileData.team : (pd && pd.favoriteTeam) || '';
+  const myTeamsArr    = isMe ? Array.from(selectedTeams) : ((pd && pd.myTeams) || []);
+  const myLeaguesArr  = isMe ? Array.from(selectedLeagues) : ((pd && pd.myLeagues) || []);
   const followersArr = (isMe ? appState.followers : (pd && pd.followers)) || [];
   const followingArr = (isMe ? appState.following : (pd && pd.following)) || [];
   const pinnedIds    = ((isMe ? profileData.pinnedPostIds : pd && pd.pinnedPostIds) || []).map(String);
@@ -11572,9 +11723,10 @@ async function _ffOpenProfile(userId, posterName) {
 
     <div class="ffp-section-label">Details</div>
     <div class="ffp-details">
-      ${team ? `<div class="ffp-detail-row">⚽ Supports <b>${_esc(team)}</b></div>` : ''}
+      ${myTeamsArr.length ? `<div class="ffp-detail-row">⚽ Supports <b>${myTeamsArr.map(_esc).join(', ')}</b></div>` : ''}
+      ${myLeaguesArr.length ? `<div class="ffp-detail-row">🏆 Follows <b>${myLeaguesArr.map(_esc).join(', ')}</b></div>` : ''}
       ${createdAt ? `<div class="ffp-detail-row">📅 Joined ${_esc(_ffFormatJoinDate(createdAt))}</div>` : ''}
-      ${!team && !createdAt ? `<div class="ffp-detail-row" style="color:rgba(255,255,255,.4);">No details yet</div>` : ''}
+      ${!myTeamsArr.length && !myLeaguesArr.length && !createdAt ? `<div class="ffp-detail-row" style="color:rgba(255,255,255,.4);">No details yet</div>` : ''}
     </div>
 
     ${friends.length ? `
