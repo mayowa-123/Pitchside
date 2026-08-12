@@ -1776,6 +1776,29 @@ function toggleSelData(el, name, setRef) {
   if (on) setRef.add(name); else setRef.delete(name);
   showToast(on ? `Following ${name} ✓` : `Unfollowed ${name}`);
   updateProfileStats();
+  _saveSelections();
+}
+
+// Persists your Team/League picks to Firestore so they survive a reload —
+// previously these only lived in an in-memory Set and reset to the
+// hardcoded defaults every time the app reopened.
+let _saveSelectionsTimer = null;
+function _saveSelections() {
+  clearTimeout(_saveSelectionsTimer);
+  _saveSelectionsTimer = setTimeout(async () => {
+    const _cu = window._psCurrentUser;
+    const { doc, setDoc, db } = window._psFs || {};
+    if (!_cu || !doc || !setDoc || !db) return;
+    try {
+      await setDoc(doc(db, 'users', _cu.uid), {
+        myTeams: Array.from(selectedTeams),
+        myLeagues: Array.from(selectedLeagues),
+      }, { merge: true });
+    } catch (e) {
+      console.warn('[Dashboard] saving team/league picks failed:', e);
+      showToast('⚠️ Could not save your picks — check your connection');
+    }
+  }, 600); // debounce so rapid taps don't fire a write per tap
 }
 
 /* ═══════════════════════════════════════════
@@ -3464,7 +3487,7 @@ async function saveProfile() {
     .map(url => ({ url, label: _deriveLinkLabel(url) }));
 
   const _cu = window._psCurrentUser;
-  const { doc, getDoc, setDoc, db } = window._psFs || {};
+  const { doc, getDoc, setDoc, db, authUpdateProfile } = window._psFs || {};
 
   // ── Validate + reserve the username, if it was changed ──
   let handle = profileData.handle || '';
@@ -3514,6 +3537,14 @@ async function saveProfile() {
       }, { merge: true });
       if (handle) {
         await setDoc(doc(db, 'handles', handle), { uid: _cu.uid }, { merge: true });
+      }
+      // Keep Firebase Auth's own displayName in sync too — several places
+      // (including the initial post-login flash before Firestore data
+      // loads) read user.displayName directly, and it never updates on
+      // its own after signup.
+      if (authUpdateProfile) {
+        try { await authUpdateProfile(_cu, { displayName: name }); }
+        catch (e) { console.warn('[Profile] Auth displayName sync failed:', e); }
       }
       showToast('Profile updated ✓');
     } catch (e) {
@@ -6828,6 +6859,22 @@ function _applyStoredProfileData(data) {
   if (Array.isArray(data.links)) profileData.links = data.links;
   if (Array.isArray(data.pinnedPostIds)) profileData.pinnedPostIds = data.pinnedPostIds;
   if (data.createdAt) profileData.createdAt = data.createdAt;
+
+  // Restore Team/League picks and re-render the pickers + stats so the
+  // Dashboard reflects what was actually saved, not the hardcoded defaults.
+  if (Array.isArray(data.myTeams) || Array.isArray(data.myLeagues)) {
+    if (Array.isArray(data.myTeams)) {
+      selectedTeams.clear();
+      data.myTeams.forEach(t => selectedTeams.add(t));
+    }
+    if (Array.isArray(data.myLeagues)) {
+      selectedLeagues.clear();
+      data.myLeagues.forEach(l => selectedLeagues.add(l));
+    }
+    try { renderSelectionList('team-list', ALL_TEAMS, selectedTeams); } catch (e) {}
+    try { renderSelectionList('league-list', ALL_LEAGUES, selectedLeagues); } catch (e) {}
+    try { updateProfileStats(); } catch (e) {}
+  }
   if (profileData.name) {
     profileData.initials = profileData.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
   }
