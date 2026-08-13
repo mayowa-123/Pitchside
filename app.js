@@ -11237,7 +11237,6 @@ function _ffSetChromeHidden(hidden) {
   const postBtn = document.getElementById('global-post-btn');
   if (nav) nav.style.display = hidden ? 'none' : '';
   if (postBtn) postBtn.style.display = hidden ? 'none' : '';
-  document.querySelectorAll('.ff-topbar').forEach(bar => { bar.style.display = hidden ? 'none' : ''; });
 }
 
 // Simple in-feed search: filters posts by caption/poster and jumps straight
@@ -11318,6 +11317,13 @@ function _ffWireNewSlides() {
     if (videoId && appState.videoMetrics[videoId]) {
       updateVideoMetricsUI(videoId);
     }
+
+    // Self-heal the poster avatar for posts saved before posterAvatar
+    // existed — same lookup-and-cache approach used on the main video grid.
+    const avatarEl = slideEl.querySelector('.ff-avatar');
+    if (avatarEl && !avatarEl.querySelector('img') && uid) {
+      _resolveFeedAvatar(uid, videoId, avatarEl);
+    }
   });
   setupFanFeedObserver();
 }
@@ -11390,6 +11396,30 @@ function _patchCreatorAvatarDOM(videoId, url) {
   if (wrap) wrap.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
 }
 
+// Same lookup, but for the FanFeed slide's side-rail avatar specifically —
+// takes the element directly since it's already in hand from _ffWireNewSlides.
+async function _resolveFeedAvatar(userId, videoId, avatarEl) {
+  if (Object.prototype.hasOwnProperty.call(_avatarLookupCache, userId)) {
+    const cached = _avatarLookupCache[userId];
+    if (cached) avatarEl.innerHTML = `<img src="${cached}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+    return;
+  }
+  const { doc, getDoc, db, updateDoc } = window._psFs || {};
+  if (!doc || !getDoc || !db) return;
+  try {
+    const snap = await getDoc(doc(db, 'users', userId));
+    const url = snap.exists() ? (snap.data().avatarUrl || null) : null;
+    _avatarLookupCache[userId] = url;
+    if (url) {
+      avatarEl.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+      if (updateDoc) {
+        try { await updateDoc(doc(db, 'posts', String(videoId)), { posterAvatar: url }); }
+        catch (e) { /* fine if this post isn't in 'posts' (e.g. seed data) */ }
+      }
+    }
+  } catch (e) { console.warn('[Avatar] feed lookup failed:', e); }
+}
+
 // Turns "Great goal! #NPFL #PitchSide" into styled HTML with hashtags
 // highlighted, matching how TikTok visually distinguishes them.
 function _ffFormatCaption(text) {
@@ -11416,8 +11446,11 @@ function _ffRenderSlide(v) {
 
   return `
     <div class="ff-slide" data-id="${safeId}" data-video-id="${safeId}" data-uid="${_esc(posterUserId)}">
-      <video class="ff-video-bg" data-video-url="${_ffGetVideoSrc(v)}" loop playsinline muted preload="metadata" aria-hidden="true" tabindex="-1"></video>
+      <video class="ff-video-bg" data-video-url="${_ffGetVideoSrc(v)}" loop playsinline muted preload="metadata"
+        disablePictureInPicture disableRemotePlayback controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
+        aria-hidden="true" tabindex="-1"></video>
       <video class="ff-video" data-video-url="${_ffGetVideoSrc(v)}" loop playsinline preload="metadata"
+        disablePictureInPicture disableRemotePlayback controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
         onclick="_ffHandleVideoTap(this, '${safeId}')"></video>
 
       <div class="ff-topbar" onclick="_ffOpenSearch(); event.stopPropagation();">
@@ -11436,23 +11469,23 @@ function _ffRenderSlide(v) {
 
       <div class="ff-rail">
         <div class="ff-avatar-wrap" onclick="_ffOpenProfile('${_esc(posterUserId)}', '${_esc(posterName)}')">
-          <div class="ff-avatar">${_esc(_ffAvatarInitial(posterName))}</div>
+          <div class="ff-avatar" id="ff-avatar-${safeId}">${v.posterAvatar ? `<img src="${_esc(v.posterAvatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : _esc(_ffAvatarInitial(posterName))}</div>
           ${(!isMe) ? `<div class="ff-follow-badge" data-follow-uid="${_esc(posterUserId)}" onclick="event.stopPropagation(); _ffQuickFollow('${_esc(posterUserId)}', this)">${alreadyFollowing ? '✓' : '+'}</div>` : ''}
         </div>
         <div class="ff-rail-btn" onclick="_ffLike('${safeId}', this)">
-          <svg width="28" height="28" fill="#fff" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+          <svg width="34" height="34" fill="#fff" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
           <span class="ff-rail-count like-count">${likeCount}</span>
         </div>
         <div class="ff-rail-btn" onclick="_ffComment('${safeId}')">
-          <svg width="26" height="26" fill="#fff" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"/></svg>
+          <svg width="32" height="32" fill="#fff" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"/></svg>
           <span class="ff-rail-count comment-count">${commentCount}</span>
         </div>
         <div class="ff-rail-btn" onclick="_ffSave('${safeId}', this)">
-          <svg width="24" height="24" fill="${(typeof savedHighlights !== 'undefined' && savedHighlights.has(v.id)) ? '#facc15' : '#fff'}" viewBox="0 0 24 24"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z"/></svg>
+          <svg width="30" height="30" fill="${(typeof savedHighlights !== 'undefined' && savedHighlights.has(v.id)) ? '#facc15' : '#fff'}" viewBox="0 0 24 24"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z"/></svg>
           <span class="ff-rail-count">Save</span>
         </div>
         <div class="ff-rail-btn" onclick="_ffShare('${safeId}')">
-          <svg width="26" height="26" fill="#fff" viewBox="0 0 24 24"><path d="M18 8a3 3 0 1 0-2.83-4H15a3 3 0 0 0 .05.61L8.09 8.55a3 3 0 1 0 0 6.9l6.96 3.94A3 3 0 1 0 18 16a2.99 2.99 0 0 0-2.83 2H15l-6.96-3.94a3 3 0 0 0 0-1.12L15 9.6a2.99 2.99 0 0 0 3-1.6z"/></svg>
+          <svg width="32" height="32" fill="#fff" viewBox="0 0 24 24"><path d="M18 8a3 3 0 1 0-2.83-4H15a3 3 0 0 0 .05.61L8.09 8.55a3 3 0 1 0 0 6.9l6.96 3.94A3 3 0 1 0 18 16a2.99 2.99 0 0 0-2.83 2H15l-6.96-3.94a3 3 0 0 0 0-1.12L15 9.6a2.99 2.99 0 0 0 3-1.6z"/></svg>
           <span class="ff-rail-count">Share</span>
         </div>
         <div class="ff-mute-btn" onclick="_ffToggleMute()">${_ffMuted ? '🔇' : '🔊'}</div>
