@@ -198,6 +198,27 @@ let _liveScoresSubscribers = [];
 
 let _liveScoresFirebaseRetry = null;
 let _liveScoresRetryCount = 0;
+// Last snapshot received from Firestore, so a subscriber registered AFTER
+// the connection is already live (e.g. the Live page, opened well after
+// the ticker already connected) can be caught up immediately instead of
+// waiting for a document change that may never come again that day.
+let _lastLiveScoresMatches = null;
+let _lastLiveScoresHasLive = false;
+let _mainListSubscribed = false;
+
+// Registers a live-scores handler and — critically — immediately replays
+// the most recent data to it if we already have some, instead of leaving
+// it silently empty until the next Firestore write (which may not happen
+// again once the day's fixtures are done).
+function _registerLiveScoresSubscriber(handler) {
+  if (!_liveScoresSubscribers.includes(handler)) {
+    _liveScoresSubscribers.push(handler);
+  }
+  if (_lastLiveScoresMatches !== null) {
+    try { handler(_lastLiveScoresMatches, _lastLiveScoresHasLive); }
+    catch (error) { console.error('[LiveScores] Subscriber replay error:', error); }
+  }
+}
 
 const LIVE_SCORE_CACHE_KEY = 'pitchside_livescores_v5';
 const LIVE_SCORE_FIREBASE_RETRY_MS = 1000;
@@ -353,6 +374,11 @@ function _subscribeLiveScoresFirestore() {
       console.log(
         `[LiveScores] 🔥 Firestore update: ${matches.length} matches`
       );
+
+      // Remember this so any subscriber added later gets caught up
+      // immediately instead of waiting for the next document change.
+      _lastLiveScoresMatches = matches;
+      _lastLiveScoresHasLive = Boolean(data.hasLive);
 
       // Send raw matches to every subscriber
       _liveScoresSubscribers.forEach(callback => {
@@ -674,12 +700,17 @@ function fetchLiveScores() {
     }
   };
 
-  // Avoid adding duplicate handlers
-  const alreadySubscribed =
-    _liveScoresSubscribers.includes(handler);
-
-  if (!alreadySubscribed) {
-    _liveScoresSubscribers.push(handler);
+  // Avoid adding duplicate handlers on repeat visits to the Live page —
+  // and immediately catch up on whatever data we already have instead of
+  // waiting for the next Firestore write.
+  if (!_mainListSubscribed) {
+    _registerLiveScoresSubscriber(handler);
+    _mainListSubscribed = true;
+  } else {
+    // Already subscribed from an earlier visit — the listener is still
+    // registered, just replay the latest data so the page isn't stuck
+    // showing stale/empty state from before this visit.
+    if (_lastLiveScoresMatches !== null) handler(_lastLiveScoresMatches, _lastLiveScoresHasLive);
   }
 
   // Start/restart Firestore listener
@@ -1085,78 +1116,6 @@ function renderLiveScores(groups, filter) {
 // ─────────────────────────────────────────────
 
 let _tickerSubscribed = false;
-
-function initTicker() {
-  renderTicker([]);
-
-  const handler = (rawMatches) => {
-    if (!Array.isArray(rawMatches)) {
-      renderTicker([]);
-      return;
-    }
-
-    const matches =
-      rawMatches
-        .slice(0, 6)
-        .map(f => {
-          const fixture =
-            f.fixture || {};
-
-          const teams =
-            f.teams || {};
-
-          const goals =
-            f.goals || {};
-
-          const status =
-            normalizeLiveScoreStatus(
-              fixture.status?.short ||
-              fixture.status?.long
-            );
-
-          return {
-            home:
-              teams.home?.name ||
-              'Home',
-
-            away:
-              teams.away?.name ||
-              'Away',
-
-            score:
-              `${goals.home ?? '-'} - ${goals.away ?? '-'}`,
-
-            status: [
-              '1H',
-              '2H',
-              'ET',
-              'BT',
-              'P',
-              'INT',
-              'LIVE'
-            ].includes(status)
-              ? 'LIVE'
-              : status,
-
-            matchId:
-              String(fixture.id || ''),
-
-            minute:
-              fixture.status?.elapsed ??
-              null
-          };
-        });
-
-    renderTicker(matches);
-  };
-
-  if (!_tickerSubscribed) {
-    _liveScoresSubscribers.push(handler);
-    _tickerSubscribed = true;
-  }
-
-  _subscribeLiveScoresFirestore();
-}
 
 function startTickerRefresh() {
   _subscribeLiveScoresFirestore();
@@ -1903,19 +1862,26 @@ function initTicker() {
   renderTicker([]);
 
   const handler = (rawMatches) => {
-    const matches = rawMatches.slice(0, 6).map(f => ({
-      home: f.teams.home.name,
-      away: f.teams.away.name,
-      score: `${f.goals.home ?? 0} - ${f.goals.away ?? 0}`,
-      status: ['1H','2H','ET','BT','P','INT','LIVE'].includes(f.fixture.status.short) ? 'LIVE' : f.fixture.status.short,
-      matchId: String(f.fixture.id),
-      minute: f.fixture.status.elapsed,
-    }));
+    if (!Array.isArray(rawMatches)) { renderTicker([]); return; }
+    const matches = rawMatches.slice(0, 6).map(f => {
+      const fixture = f.fixture || {};
+      const teams = f.teams || {};
+      const goals = f.goals || {};
+      const status = normalizeLiveScoreStatus(fixture.status?.short || fixture.status?.long);
+      return {
+        home: teams.home?.name || 'Home',
+        away: teams.away?.name || 'Away',
+        score: `${goals.home ?? '-'} - ${goals.away ?? '-'}`,
+        status: ['1H','2H','ET','BT','P','INT','LIVE'].includes(status) ? 'LIVE' : status,
+        matchId: String(fixture.id || ''),
+        minute: fixture.status?.elapsed ?? null,
+      };
+    });
     renderTicker(matches);
   };
 
   if (!_tickerSubscribed) {
-    _liveScoresSubscribers.push(handler);
+    _registerLiveScoresSubscriber(handler);
     _tickerSubscribed = true;
   }
   _subscribeLiveScoresFirestore();
@@ -12021,7 +11987,7 @@ function _ffTogglePlayPause(videoEl) {
   if (!slide) return;
   if (videoEl.paused) {
     videoEl.play().catch(() => {});
-    _ffShowPlayPauseIcon(slide, '▶️');
+    _ffShowPlayPauseIcon(slide, '◻️');
   } else {
     videoEl.pause();
     _ffShowPlayPauseIcon(slide, '⏸️');
