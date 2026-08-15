@@ -140,6 +140,17 @@ async function fetchTodaysMatches() {
 
   console.log(`✅ Got ${matches.length} matches`);
 
+  // TEMP DIAGNOSTIC — goals are coming back null for every match, which
+  // means transformMatch()'s guess at where Highlightly puts the score
+  // (m.state.score.home/away) is wrong. Log one full raw match so the
+  // actual field name can be found from the Actions run log, instead of
+  // guessing again and burning another day with blank scores. Remove this
+  // block once the real field is confirmed and transformMatch() is fixed.
+  if (matches.length > 0) {
+    console.log('🔍 DIAGNOSTIC — raw shape of one match:');
+    console.log(JSON.stringify(matches[0], null, 2));
+  }
+
   return matches;
 }
 
