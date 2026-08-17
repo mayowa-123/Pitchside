@@ -1484,12 +1484,6 @@ function refreshAllVideoGrids() {
     try { renderVideos('explore-grid', VIDEOS); } catch(e2){}
   }
   try { renderVideos('dash-grid', VIDEOS.slice(0, 4)); } catch(e){}
-  // Refresh highlights panel whenever Firebase fires
-  try {
-    if (typeof _renderHighlightsFromVideos === 'function') {
-      _renderHighlightsFromVideos();
-    }
-  } catch(e){}
 }
 
 /* ─────────────────────────────────────────
@@ -5126,105 +5120,14 @@ function _renderNewsEmpty(msg) {
 }
 
 /* ══════════════════════════════════════════════════════
-   HIGHLIGHTS SYSTEM — Three layers:
-   1. Official  → Highlightly API (no YouTube player shown)
-   2. Fans      → User uploaded via Cloudinary / Firebase
-   3. Players   → Verified player uploads via Cloudinary / Firebase
+   HIGHLIGHTS SYSTEM
+   Official highlights only — powered by loadSBHighlights()
+   (bot-fed match data, rendered into #sb-video-grid). Fan/Player
+   community upload sections were removed deliberately: the app
+   only wants fans posting their own personal football content
+   through the FanFeed (TikTok-style) flow, not re-uploading
+   match highlight clips, which raised authorization concerns.
 ══════════════════════════════════════════════════════ */
-
-const HIGHLIGHTLY_KEY = ''; // Secured in Netlify
-const HIGHLIGHTLY_BASE = '/api/highlights';
-
-let _hlInitDone    = false;
-let _hlCurrentTab  = 'official';
-let _hlOfficialData = [];
-let _hlFanData      = [];
-let _hlPlayerData   = [];
-
-/* ── Init (called once when nav tab clicked) ── */
-function initHighlights() {
-  // Always re-render so fresh Firebase data shows immediately
-  _renderHighlightsFromVideos();
-  _loadCommunityHighlights();
-}
-
-/* ── Render official highlights directly from the VIDEOS array (Firebase bot data) ── */
-function _renderHighlightsFromVideos() {
-  const container = document.getElementById('hl-official-content');
-  if (!container) return;
-
-  // Filter to official/bot videos only (not user posts), newest first
-  const official = VIDEOS
-    .filter(v => !v.userPost && !v.playerPost)
-    .sort((a, b) => {
-      const ta = (a.createdAt && a.createdAt.seconds) ? a.createdAt.seconds : (a.createdAt || 0);
-      const tb = (b.createdAt && b.createdAt.seconds) ? b.createdAt.seconds : (b.createdAt || 0);
-      return tb - ta;
-    });
-
-  if (official.length === 0) {
-    // Show loading if VIDEOS is still empty (Firebase not loaded yet), else empty state
-    if (VIDEOS.length === 0) {
-      container.innerHTML = `
-        <div class="hl-loading">
-          <div class="hl-dots"><span></span><span></span><span></span></div>
-          <div class="hl-loading-text">Loading highlights from Firebase…</div>
-        </div>`;
-      // Retry in 1.5s — Firebase may still be loading
-      setTimeout(_renderHighlightsFromVideos, 1500);
-    } else {
-      container.innerHTML = `
-        <div class="hl-empty">
-          <div class="hl-empty-icon">📡</div>
-          <div class="hl-empty-text">Your bot hasn't uploaded any highlights yet.<br>Check back after matches — they'll appear here automatically.</div>
-          <button onclick="_renderHighlightsFromVideos()" style="margin-top:16px;padding:10px 24px;background:var(--green);color:#fff;border:none;border-radius:20px;font-weight:700;font-size:13px;cursor:pointer;">🔄 Refresh</button>
-        </div>`;
-    }
-    return;
-  }
-
-  // Add to map WITHOUT wiping it - preserves user posts and explore videos
-  if (!window._hlVideoMap) window._hlVideoMap = {};
-  official.forEach(v => { window._hlVideoMap[String(v.id)] = v; });
-  VIDEOS.forEach(v => { if (v && v.id) window._hlVideoMap[String(v.id)] = v; });
-
-  container.innerHTML = official.map(v => {
-    const thumb   = v.thumbnail || '';
-    const title   = v.title     || 'Football Highlight';
-    const league  = v.competition || v.cat || 'Football';
-    const date    = v.date        || 'Today';
-    const safeId  = _esc(String(v.id));
-    return `
-    <div class="hlcard" onclick="openHlPlayerById('${safeId}')">
-      <div class="hlcard-thumb">
-        ${thumb
-          ? `<img src="${thumb}" alt="${_esc(title)}" loading="lazy" onerror="this.style.display='none'">`
-          : `<div style="width:100%;height:100%;background:linear-gradient(135deg,#0f172a,#1e293b);display:flex;align-items:center;justify-content:center;font-size:48px;">⚽</div>`
-        }
-        ${v.nigeriaRestricted ? `
-        <div style="position:absolute;inset:0;background:rgba(0,0,0,0.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;padding:8px;">
-          <span style="font-size:20px;">🌍</span>
-          <span style="font-size:11px;color:#fff;font-weight:600;line-height:1.3;">Not available in your region<br><span style="font-weight:400;color:rgba(255,255,255,0.7);">Licensing restriction</span></span>
-        </div>` : `
-        <div class="hlcard-play"><div class="hlcard-play-btn"><svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>`}
-        <div class="hlcard-league">${_esc(league).toUpperCase().slice(0,20)}</div>
-        <div class="hlcard-badge">
-          <span class="verified-badge">
-            <svg width="9" height="9" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
-            OFFICIAL
-          </span>
-        </div>
-      </div>
-      <div class="hlcard-info">
-        <div class="hlcard-title">${_esc(title)}</div>
-        <div class="hlcard-meta">
-          <span class="hlcard-date">📅 ${date}</span>
-          <span style="margin-left:auto;font-size:11px;color:var(--green);font-weight:700;">▶ Watch</span>
-        </div>
-      </div>
-    </div>`;
-  }).join('') + '<div style="height:80px;"></div>';
-}
 
 /* ── Open highlights player by looking up video from map (avoids onclick attr corruption) ── */
 function openHlPlayerById(id) {
@@ -5242,134 +5145,6 @@ function openHlPlayerById(id) {
   // Extract a clean videoId for Highlights section compatibility
   const videoId = v.videoId || v.youtubeId || (String(v.id).startsWith('yt_') ? v.id.replace('yt_', '') : v.id);
   openHlPlayer(String(v.id), v.title || '', v.src || v.embedUrl || '', v.embed || '', v.thumbnail || '', '', videoId);
-}
-
-/* ── Tab switcher ── */
-function switchHlTab(tab, btn) {
-  _hlCurrentTab = tab;
-  document.querySelectorAll('.hl-tab').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  document.querySelectorAll('.hl-panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('hl-panel-' + tab).classList.add('active');
-}
-
-function _renderCurrentHlTab() {
-  // just re-render whichever tab is active
-  if (_hlCurrentTab === 'official') _renderOfficialHighlights();
-  else if (_hlCurrentTab === 'fans') _renderCommunityCards('fans');
-  else _renderCommunityCards('players');
-}
-
-/* ══════════════════════════════════════════════════════
-   LAYER 1 — OFFICIAL HIGHLIGHTS via Highlightly API
-══════════════════════════════════════════════════════ */
-async function _fetchOfficialHighlights() {
-  const container = document.getElementById('hl-official-content');
-  container.innerHTML = `
-    <div class="hl-loading">
-      <div class="hl-dots"><span></span><span></span><span></span></div>
-      <div class="hl-loading-text">Fetching latest highlights…</div>
-    </div>`;
-
-  try {
-    // Get today's date and yesterday for fresh results
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
-    const fmt = d => d.toISOString().split('T')[0];
-
-    const res = await fetch(`${HIGHLIGHTLY_BASE}?endpoint=highlights&limit=20`);
-
-    if (!res.ok) throw new Error('API error ' + res.status);
-    const json = await res.json();
-
-    // Highlightly returns { data: [...] } or array directly
-    const items = json.data || json.highlights || json || [];
-    if (!Array.isArray(items) || items.length === 0) {
-      _hlOfficialData = [];
-      _renderOfficialHighlights();
-      return;
-    }
-
-    _hlOfficialData = items.map(h => ({
-      id:        h.id || h._id || Math.random().toString(36).slice(2),
-      title:     h.title || (h.homeTeam + ' vs ' + h.awayTeam) || 'Football Highlight',
-      league:    h.competition?.name || h.league || h.competition || 'Football',
-      thumbnail: h.thumbnail || h.thumbnailUrl || h.image || '',
-      videoUrl:  h.url || h.videoUrl || h.video || '',
-      embedHtml: h.embed || h.embedCode || '',
-      date:      h.date ? new Date(h.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'}) : 'Today',
-      homeTeam:  h.homeTeam || '',
-      awayTeam:  h.awayTeam || '',
-      score:     (h.homeScore != null && h.awayScore != null) ? `${h.homeScore} - ${h.awayScore}` : '',
-    }));
-
-    _renderOfficialHighlights();
-
-  } catch(err) {
-    console.error('[Highlights] API error:', err);
-    // Show empty state — only bot-fetched videos should appear here
-    _hlOfficialData = [];
-    _renderOfficialHighlights();
-  }
-}
-
-function _renderOfficialHighlights() {
-  const container = document.getElementById('hl-official-content');
-  if (!container) return;
-
-  if (!_hlOfficialData.length) {
-    container.innerHTML = `
-      <div class="hl-empty">
-        <div class="hl-empty-icon">📡</div>
-        <div class="hl-empty-text">Your bot hasn't uploaded any highlights yet.<br>Check back after matches — they'll appear here automatically.</div>
-        <button onclick="_fetchOfficialHighlights()" style="margin-top:16px;padding:10px 24px;background:var(--green);color:#fff;border:none;border-radius:20px;font-weight:700;font-size:13px;cursor:pointer;">🔄 Refresh</button>
-      </div>`;
-    return;
-  }
-
-  container.innerHTML = _hlOfficialData.map(h => {
-    const isFallback = !!h.ytSearch;
-    const tapAction  = isFallback
-      ? `onclick="openHlPlayer('${_esc(h.id)}','${_esc(h.title)}','','','','${_esc(h.ytSearch)}','${_esc(h.id)}')"`
-      : `onclick="openHlPlayer('${_esc(h.id)}','${_esc(h.title)}','${_esc(h.videoUrl)}','${_esc(h.embedHtml)}','${_esc(h.thumbnail)}','','${_esc(h.id)}')"`; 
-    const gradA = h.gradA || '#0f172a';
-    const gradB = h.gradB || '#1e293b';
-    const thumbHtml = isFallback
-      ? `<div style="width:100%;height:100%;background:linear-gradient(135deg,${gradA},${gradB});display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
-           <div style="font-size:52px;filter:drop-shadow(0 2px 8px rgba(0,0,0,0.5));">${h.emoji || '⚽'}</div>
-           <div style="background:rgba(16,185,129,0.9);border-radius:50%;width:52px;height:52px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(16,185,129,0.5);">
-             <svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-           </div>
-           ${h.score ? `<div style="background:rgba(0,0,0,0.5);color:#10b981;font-size:13px;font-weight:800;padding:4px 12px;border-radius:20px;">${h.homeTeam || ''} ${h.score} ${h.awayTeam || ''}</div>` : ''}
-         </div>`
-      : h.thumbnail
-        ? `<img src="${h.thumbnail}" alt="${_esc(h.title)}" loading="lazy" onerror="this.style.display='none'">`
-        : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:40px;">⚽</div>`;
-
-    return `
-    <div class="hlcard" ${tapAction}>
-      <div class="hlcard-thumb">
-        ${thumbHtml}
-        ${!isFallback ? `<div class="hlcard-play"><div class="hlcard-play-btn"><svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>` : ''}
-        <div class="hlcard-league">${_esc(h.league).toUpperCase().slice(0,20)}</div>
-        <div class="hlcard-badge">
-          <span class="verified-badge">
-            <svg width="9" height="9" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
-            OFFICIAL
-          </span>
-        </div>
-        ${isFallback ? `<div style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.7);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;letter-spacing:.04em;">▶ WATCH NOW</div>` : ''}
-      </div>
-      <div class="hlcard-info">
-        <div class="hlcard-title">${_esc(h.title)}${h.score ? ' <span style="color:var(--green);font-size:12px;">'+h.score+'</span>' : ''}</div>
-        <div class="hlcard-meta">
-          <span class="hlcard-date">📅 ${h.date}</span>
-          <span style="margin-left:auto;font-size:11px;color:var(--green);font-weight:700;">▶ Watch</span>
-        </div>
-      </div>
-    </div>`;
-  }).join('') + '<div style="height:80px;"></div>';
 }
 
 /* ══════════════════════════════════════════════════════
@@ -5603,98 +5378,6 @@ function closeHlPlayer() {
 }
 
 
-/* ══════════════════════════════════════════════════════
-   LAYER 2 & 3 — COMMUNITY UPLOADS (Fans + Players)
-   Reads from Firebase 'posts' collection filtered by type
-══════════════════════════════════════════════════════ */
-function _loadCommunityHighlights() {
-  const fsApi = window._psFs;
-  const db    = window._psDb;
-  if (!fsApi || !db) {
-    setTimeout(_loadCommunityHighlights, 1200);
-    return;
-  }
-
-  const { collection, query, orderBy, limit, onSnapshot, where } = fsApi;
-
-  // Fan posts listener
-  const fanQ = query(
-    collection(db, 'posts'),
-    orderBy('createdAt','desc'),
-    limit(30)
-  );
-
-  onSnapshot(fanQ, snap => {
-    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    _hlFanData    = all.filter(p => !p.playerPost);
-    _hlPlayerData = all.filter(p => p.playerPost === true);
-    _renderCommunityCards('fans');
-    _renderCommunityCards('players');
-  }, err => console.warn('[Highlights] Community load error:', err));
-}
-
-function _renderCommunityCards(type) {
-  const data      = type === 'fans' ? _hlFanData : _hlPlayerData;
-  const container = document.getElementById('hl-' + type + '-content');
-  if (!container) return;
-
-  if (!data.length) {
-    const icon  = type === 'fans' ? '📱' : '⭐';
-    const label = type === 'fans'
-      ? 'No fan clips yet.\nBe the first to upload a moment!'
-      : 'No player content yet.\nPlayers — show us your world!';
-    container.innerHTML = `
-      <div class="hl-empty">
-        <div class="hl-empty-icon">${icon}</div>
-        <div class="hl-empty-text">${label}</div>
-        <button onclick="openQuickPost()" style="margin-top:16px;padding:10px 24px;background:var(--green);color:#fff;border:none;border-radius:20px;font-weight:700;font-size:13px;cursor:pointer;">
-          + Upload Now
-        </button>
-      </div>`;
-    return;
-  }
-
-  const badge = type === 'fans'
-    ? `<span class="user-post-badge">👥 FAN</span>`
-    : `<span class="player-badge">⭐ PLAYER</span>`;
-
-  // Store in lookup map so player can retrieve safely
-  if (!window._hlVideoMap) window._hlVideoMap = {};
-  data.forEach(p => { window._hlVideoMap[String(p.id)] = p; });
-
-  container.innerHTML = data.map(p => {
-    const thumb    = p.thumbnail || p.mediaUrl || '';
-    const mediaUrl = p.mediaUrl  || '';
-    const title    = p.title     || 'Football Moment';
-    const poster   = p.userName  || p.poster || 'PitchSide User';
-    const date     = p.createdAt ? new Date(p.createdAt.toDate ? p.createdAt.toDate() : p.createdAt)
-                       .toLocaleDateString('en-GB',{day:'numeric',month:'short'}) : 'Today';
-    const safeId   = _esc(String(p.id));
-    return `
-    <div class="hlcard" onclick="openHlPlayerById('${safeId}')">
-      <div class="hlcard-thumb">
-        ${thumb
-          ? `<img src="${thumb}" alt="${_esc(title)}" loading="lazy" onerror="this.style.display='none'">`
-          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:40px;">⚽</div>`
-        }
-        <div class="hlcard-play">
-          <div class="hlcard-play-btn">
-            <svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-          </div>
-        </div>
-        <div class="hlcard-badge">${badge}</div>
-      </div>
-      <div class="hlcard-info">
-        <div class="hlcard-title">${_esc(title)}</div>
-        <div class="hlcard-meta">
-          <span class="hlcard-poster">@${_esc(poster)}</span>
-          <span class="hlcard-date" style="margin-left:auto;">📅 ${date}</span>
-        </div>
-      </div>
-    </div>`;
-  }).join('') + '<div style="height:80px;"></div>';
-}
-
 /* ── Escape helper for inline onclick attrs ── */
 function _esc(str) {
   return (str || '').toString()
@@ -5733,8 +5416,6 @@ function setPostType(type) {
 window.setPostType = setPostType;
 
 /* Public API */
-window.initHighlights   = initHighlights;
-window.switchHlTab      = switchHlTab;
 window.openHlPlayer     = openHlPlayer;
 window.closeHlPlayer    = closeHlPlayer;
 
@@ -6714,6 +6395,24 @@ window.closePlayerProfile = closePlayerProfile;
   }
   .wr-action-item:active { background:rgba(255,255,255,0.06); }
 
+  /* Report/Block sheet (reusable — profile, comment, or video) */
+  .mod-sheet-backdrop {
+    position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1600; display:none;
+  }
+  .mod-sheet-backdrop.open { display:block; }
+  .mod-sheet {
+    position:fixed; left:0; right:0; bottom:-100%; z-index:1601;
+    background:#141b26; border-radius:18px 18px 0 0; padding:8px 0 max(8px,env(safe-area-inset-bottom));
+    transition: bottom .25s ease;
+  }
+  .mod-sheet.open { bottom:0; }
+  .mod-sheet-row {
+    display:flex; align-items:center; padding:16px 20px;
+    color:#fff; font-size:15.5px; font-weight:600; cursor:pointer;
+  }
+  .mod-sheet-row:active { background:rgba(255,255,255,0.06); }
+  .mod-sheet-row.danger { color:#f87171; }
+
   /* Sticker picker */
   .wr-sticker-picker {
     display:none; background:#141b26; border-top:1px solid rgba(255,255,255,0.08);
@@ -7144,173 +6843,6 @@ function setupInfiniteScroll() {
 }
 
 window.openWarRoom = openWarRoom;
-
-/* ═══════════════════════════════════════════
-   FIRESTORE SCHEMA & SECURITY RULES
-   (Reference document — shown when tapped)
-═══════════════════════════════════════════ */
-window.PITCHSIDE_FIRESTORE_SCHEMA = {
-  collections: {
-    users: {
-      fields: {
-        uid: 'string',
-        displayName: 'string',
-        email: 'string',
-        favTeam: 'string',
-        favLeague: 'string',
-        streak_count: 'number',
-        last_checkin: 'timestamp',
-        badges: 'array<string>',
-        posts_count: 'number',
-        followers: 'number',
-        following: 'number',
-        created_at: 'timestamp',
-      },
-      subcollections: { notifications: {} }
-    },
-    posts: {
-      fields: {
-        uid: 'string — author user id',
-        type: '"video" | "photo" | "news"',
-        title: 'string',
-        caption: 'string',
-        media_url: 'string — Firebase Storage URL',
-        thumbnail_url: 'string',
-        category: 'string',
-        tags: 'array<string>',
-        likes: 'number',
-        comments_count: 'number',
-        views: 'number',
-        created_at: 'timestamp',
-        trending_score: 'number — recomputed hourly',
-        team_tags: 'array<string>',
-      },
-      subcollections: {
-        likes:    '{ uid: string, created_at: timestamp }',
-        comments: '{ uid, text, created_at, likes }'
-      }
-    },
-    match_chats: {
-      description: 'Firestore path: match_chats/{matchId}/messages/{messageId} and match_chats/{matchId}/presence/{uid}',
-      fields: {
-        uid: 'string',
-        displayName: 'string',
-        type: '"text" | "image" | "video" | "voice" | "sticker"',
-        text: 'string (max 500 chars) — message body for text, emoji for sticker, empty for media types',
-        mediaUrl: 'string, optional — image/video/voice file URL (R2 for images/voice, Cloudflare Stream HLS for video)',
-        thumbnailUrl: 'string, optional — video poster frame',
-        duration: 'number, optional — voice note length in seconds',
-        replyTo: '{ user: string, text: string }, optional — set when the message is a reply to another one',
-        createdAt: 'server timestamp'
-      },
-      presence_fields: {
-        lastSeen: 'server timestamp — refreshed every 20s while a user has the War Room open',
-        displayName: 'string'
-      }
-    },
-    debates: {
-      fields: {
-        topic: 'string',
-        option_a: 'string',
-        option_b: 'string',
-        votes_a: 'number',
-        votes_b: 'number',
-        expires_at: 'timestamp',
-        created_at: 'timestamp'
-      }
-    }
-  },
-  security_rules: `
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // Users can only edit their own profile
-    match /users/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // Username reservations: anyone signed in can check availability;
-    // only the uid that owns the doc can claim/release it
-    match /handles/{handle} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null
-        && (!exists(/databases/$(database)/documents/handles/$(handle))
-            || resource.data.uid == request.auth.uid)
-        && request.resource.data.uid == request.auth.uid;
-    }
-
-    // Posts: anyone can read; only author can update/delete
-    match /posts/{postId} {
-      allow read: if true;
-      allow create: if request.auth != null
-        && request.resource.data.uid == request.auth.uid;
-      allow update: if request.auth != null
-        && (resource.data.uid == request.auth.uid
-            || onlyUpdatingLikes(request.resource.data, resource.data));
-      allow delete: if request.auth != null
-        && resource.data.uid == request.auth.uid;
-    }
-
-    // Comments: anyone authenticated can read/create; only author can delete
-    match /posts/{postId}/comments/{commentId} {
-      allow read: if true;
-      allow create: if request.auth != null;
-      allow delete: if request.auth != null
-        && resource.data.uid == request.auth.uid;
-    }
-
-    // Debate votes: one vote per user
-    match /debates/{debateId}/votes/{userId} {
-      allow read: if true;
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update, delete: if false; // No changing your vote
-    }
-
-    // War Room live match chat: anyone signed in can read/post; only the
-    // author can delete their own message; text length capped server-side too
-    match /match_chats/{matchId}/messages/{messageId} {
-      allow read: if true;
-      allow create: if request.auth != null
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.text is string
-        && request.resource.data.text.size() <= 500;
-      allow update: if false;
-      allow delete: if request.auth != null
-        && resource.data.uid == request.auth.uid;
-    }
-
-    // War Room presence heartbeats: readable by all (for the "watching"
-    // count), but a user can only write their own heartbeat doc
-    match /match_chats/{matchId}/presence/{uid} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == uid;
-    }
-
-    // Video comments: anyone signed in can read/post; a comment can be
-    // deleted by whoever wrote it OR by the owner of the video it's on
-    // (moderating their own post) — nobody else. videoOwnerId is stamped
-    // onto the comment at write time so this doesn't need a cross-collection
-    // lookup.
-    match /videoComments/{commentId} {
-      allow read: if true;
-      allow create: if request.auth != null
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.text is string
-        && request.resource.data.text.size() <= 500;
-      allow update: if false;
-      allow delete: if request.auth != null
-        && (resource.data.userId == request.auth.uid
-            || resource.data.videoOwnerId == request.auth.uid);
-    }
-
-    function onlyUpdatingLikes(newData, oldData) {
-      return newData.diff(oldData).affectedKeys().hasOnly(['likes','views']);
-    }
-  }
-}`
-};
 
 /* ═══════════════════════════════════════════
    INJECT WAR ROOM HTML OVERLAY
@@ -8341,6 +7873,7 @@ function pcClearMatchTag() {
 
 async function pcPublish() {
   if (!_pcFile) { showToast('Please choose a file first'); return; }
+  if (!_checkRateLimit('post', 20000, 'Give it a bit before posting again')) return;
   const caption = (document.getElementById('pc-caption-inp').value || '').trim();
   const btn = document.getElementById('pc-pub-btn');
   btn.disabled = true;
@@ -9728,6 +9261,7 @@ window.appState = {
   userCollections: null,
   following: [],
   followers: [],
+  blockedUsers: [],
   videoMetrics: {},
   unsubscribers: []
 };
@@ -9764,6 +9298,8 @@ function initializeUnifiedFirebase() {
       loadUserCollections(user.uid);
       // Load user's following/followers
       loadUserSocialGraph(user.uid);
+      // Load who this user has blocked
+      loadUserBlocks(user.uid);
     }
   });
 }
@@ -10228,11 +9764,113 @@ async function loadUserSocialGraph(userId) {
   appState.unsubscribers.push(followingUnsub);
 }
 
+// ════════════════════════════════════════════════════════════════
+// STEP 7.5: BLOCK SYSTEM — mirrors the follow system's live-listener
+// pattern above. userBlocks/{userId} already has a Firestore rule
+// deployed (read/write restricted to the doc owner); this was the
+// listener that was missing to actually make use of it anywhere.
+// ════════════════════════════════════════════════════════════════
+
+async function loadUserBlocks(userId) {
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  if (!fsApi || !db) return;
+
+  const { doc, onSnapshot } = fsApi;
+
+  const blocksUnsub = onSnapshot(
+    doc(db, 'userBlocks', userId),
+    snapshot => {
+      appState.blockedUsers = snapshot.exists() ? (snapshot.data().blocked || []) : [];
+    },
+    err => console.warn('[Blocks] listener error:', err)
+  );
+
+  appState.unsubscribers.push(blocksUnsub);
+}
+
+async function _blockUser(targetUserId, targetUserName) {
+  const myUid = window._psCurrentUser && window._psCurrentUser.uid;
+  if (!myUid) { showToast('Sign in to block users'); return; }
+  if (myUid === targetUserId) return;
+
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  if (!fsApi || !db) return;
+
+  try {
+    await fsApi.setDoc(
+      fsApi.doc(db, 'userBlocks', myUid),
+      { blocked: fsApi.arrayUnion(targetUserId) },
+      { merge: true }
+    );
+    showToast(`Blocked ${targetUserName || 'user'} — you won't see their posts or comments anymore`);
+  } catch (e) {
+    console.warn('[Blocks] block failed:', e);
+    showToast('⚠️ Could not block — check your connection and try again');
+  }
+}
+
+async function _unblockUser(targetUserId, targetUserName) {
+  const myUid = window._psCurrentUser && window._psCurrentUser.uid;
+  if (!myUid) return;
+
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  if (!fsApi || !db) return;
+
+  try {
+    await fsApi.setDoc(
+      fsApi.doc(db, 'userBlocks', myUid),
+      { blocked: fsApi.arrayRemove(targetUserId) },
+      { merge: true }
+    );
+    showToast(`Unblocked ${targetUserName || 'user'}`);
+  } catch (e) {
+    console.warn('[Blocks] unblock failed:', e);
+    showToast('⚠️ Could not unblock — check your connection and try again');
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// STEP 7.6: REPORT SYSTEM — writes to a reports collection for manual
+// review. No auto-hide logic (that's easy to abuse via brigading) —
+// this just gets the report in front of a human, which is the honest
+// MVP version of this feature.
+// ════════════════════════════════════════════════════════════════
+
+async function _reportContent(contentType, contentId, targetUserId, reason) {
+  const myUid = window._psCurrentUser && window._psCurrentUser.uid;
+  if (!myUid) { showToast('Sign in to report'); return; }
+  if (!_checkRateLimit('report', 3000, 'Give it a moment before reporting again')) return;
+
+  const fsApi = window._psFs;
+  const db = window._psDb;
+  if (!fsApi || !db) { showToast('⚠️ Reporting is not available right now'); return; }
+
+  try {
+    await fsApi.addDoc(fsApi.collection(db, 'reports'), {
+      contentType,          // 'video' | 'comment' | 'user'
+      contentId: String(contentId),
+      targetUserId: targetUserId || null,
+      reporterId: myUid,
+      reason,
+      status: 'pending',
+      createdAt: fsApi.serverTimestamp(),
+    });
+    showToast('Report submitted — thanks for flagging this');
+  } catch (e) {
+    console.warn('[Report] submit failed:', e);
+    showToast('⚠️ Could not submit report — check your connection and try again');
+  }
+}
+
 async function toggleFollowUser(currentUserId, targetUserId) {
   const fsApi = window._psFs;
   const db = window._psDb;
   
   if (!fsApi || !db) return;
+  if (!_checkRateLimit('follow-' + targetUserId, 1500)) return;
 
   // setDoc(...,{merge:true}) instead of updateDoc everywhere below — same
   // fix as likeVideo/addVideoComment. This one mattered most: updateDoc
@@ -10507,6 +10145,10 @@ async function submitComment() {
       return;
     }
 
+    if (!_checkRateLimit('comment', 3000, 'Slow down a little before commenting again')) {
+      return;
+    }
+
     const db = window._psDb;
     const fsApi = window._psFs;
 
@@ -10581,21 +10223,32 @@ async function submitComment() {
 }
 
 // Load comments from Firebase
-async function loadCommentsFromFirebase(videoId) {
+// Pagination state, keyed per video so switching between two videos'
+// comment sections doesn't cross-contaminate cursors.
+const _commentPagination = {};
+
+async function loadCommentsFromFirebase(videoId, cursorDoc) {
+  const PAGE_SIZE = 20;
   try {
     const db = window._psDb;
     const fsApi = window._psFs;
 
-    if (!db || !fsApi) return [];
+    if (!db || !fsApi) return { comments: [], lastDoc: null, hasMore: false };
 
     const commentsRef = fsApi.collection(db, 'videoComments');
-    const q = fsApi.query(
+    const queryParts = [
       commentsRef,
-      fsApi.where('videoId', '==', String(videoId))
-    );
+      fsApi.where('videoId', '==', String(videoId)),
+      fsApi.orderBy('timestamp', 'desc'),
+      fsApi.limit(PAGE_SIZE),
+    ];
+    if (cursorDoc) queryParts.push(fsApi.startAfter(cursorDoc));
+
+    const q = fsApi.query(...queryParts);
     const snap = await fsApi.getDocs(q);
-    
+
     const comments = [];
+    let lastDoc = null;
     snap.forEach(doc => {
       const data = doc.data();
       comments.push({
@@ -10609,12 +10262,13 @@ async function loadCommentsFromFirebase(videoId) {
         likes: data.likes || 0,
         timestamp: data.timestamp,
       });
+      lastDoc = doc;
     });
 
-    return comments;
+    return { comments, lastDoc, hasMore: comments.length === PAGE_SIZE };
   } catch (error) {
     console.error('Load comments error:', error);
-    return [];
+    return { comments: [], lastDoc: null, hasMore: false };
   }
 }
 
@@ -10640,79 +10294,143 @@ function getTimeAgo(timestamp) {
 }
 
 // Update renderComments to use Firebase data
+// Builds one comment's DOM node — shared by the initial render and by
+// "load more" so appending a page never has to duplicate this logic.
+function _buildCommentItem(c, videoId, myUid, videoOwnerId) {
+  const item = document.createElement('div');
+  item.className = 'comment-item';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'comment-avatar';
+  if (c.avatar) {
+    avatar.innerHTML = `<img src="${c.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+  } else {
+    avatar.textContent = c.initials;
+  }
+
+  const bubble = document.createElement('div');
+  bubble.className = 'comment-bubble';
+
+  const user = document.createElement('div');
+  user.className = 'comment-user';
+  user.textContent = c.user;
+
+  const text = document.createElement('div');
+  text.className = 'comment-text';
+  text.textContent = c.text;
+
+  const time = document.createElement('div');
+  time.className = 'comment-time';
+  time.textContent = c.time;
+
+  bubble.appendChild(user);
+  bubble.appendChild(text);
+  bubble.appendChild(time);
+  item.appendChild(avatar);
+  item.appendChild(bubble);
+
+  // Delete: available to the comment's own author, or to the video owner
+  // moderating comments on their own post — nobody else.
+  const canDelete = myUid && (c.userId === myUid || videoOwnerId === myUid);
+  if (canDelete) {
+    const del = document.createElement('div');
+    del.className = 'comment-delete';
+    del.textContent = '🗑️';
+    del.title = 'Delete comment';
+    del.onclick = () => _deleteComment(c.id, videoId);
+    item.appendChild(del);
+  } else if (myUid && c.userId && c.userId !== myUid) {
+    // Not your comment and not your video — the only option is to report it
+    const report = document.createElement('div');
+    report.className = 'comment-delete';
+    report.textContent = '🚩';
+    report.title = 'Report comment';
+    report.onclick = () => _showModerationSheet({
+      contentType: 'comment', contentId: c.id, targetUserId: c.userId, targetUserName: c.user
+    });
+    item.appendChild(report);
+  }
+
+  return item;
+}
+
+function _renderCommentLoadMoreBtn(videoId) {
+  const wrap = document.createElement('div');
+  wrap.id = 'comment-load-more-wrap';
+  wrap.style.cssText = 'text-align:center;padding:12px 0 4px;';
+  wrap.innerHTML = `<button onclick="_loadMoreComments('${_esc(String(videoId))}')" style="padding:8px 20px;border-radius:20px;border:none;background:rgba(255,255,255,0.08);color:var(--text2);font-size:12.5px;font-weight:600;cursor:pointer;">Load more comments</button>`;
+  return wrap;
+}
+
+// Loads and renders the FIRST page of comments — resets pagination state
+// for this video. 20 at a time instead of the old unbounded single read,
+// which pulled every comment on a post in one shot every time it opened —
+// fine at 10 comments, a real cost and a real wait once anything gets
+// popular.
 async function renderComments(videoId) {
   const list = document.getElementById('comment-list');
-
-  // Firestore is the single source of truth now — no more merging in a
-  // local array, which was the actual cause of every comment appearing
-  // twice (once from here, once from Firestore, forever, on every reopen).
-  const allComments = await loadCommentsFromFirebase(videoId);
-  allComments.sort((a, b) => _tsToMs(b.timestamp) - _tsToMs(a.timestamp));
-
-  const commentCount = document.getElementById('comment-count');
-  if (commentCount) commentCount.textContent = `(${allComments.length})`;
-
   if (!list) return;
-
-  if (allComments.length === 0) {
-    list.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text3);font-size:13px;">No comments yet. Be the first!</div>`;
-    return;
-  }
 
   const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
   const v = VIDEOS.find(x => String(x.id) === String(videoId));
   const videoOwnerId = v && (v.userId || v.uid);
 
+  const { comments, lastDoc, hasMore } = await loadCommentsFromFirebase(videoId);
+  const visible = comments.filter(c => !(appState.blockedUsers || []).includes(c.userId));
+
+  _commentPagination[videoId] = { lastDoc, hasMore };
+
+  // The count badge uses the running total already tracked on the video
+  // doc (v.comments, kept in sync via increment/decrement on post and
+  // delete) rather than counting what's been fetched so far — pagination
+  // means this function only ever sees one page at a time, so counting
+  // fetched docs would show "20" forever once a post passes 20 comments.
+  const commentCount = document.getElementById('comment-count');
+  if (commentCount) commentCount.textContent = `(${(v && v.comments) || comments.length})`;
+
+  // Note: blocked-user filtering happens after the Firestore page is
+  // fetched, so a page can render shorter than 20 if several of that
+  // page's comments happen to be from someone you've blocked. That's a
+  // known, acceptable tradeoff for a client-side blocklist layered on
+  // top of server-side pagination — "Load more" still fetches the next
+  // real page regardless, so nothing is ever permanently hidden by it.
+
+  if (comments.length === 0) {
+    list.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text3);font-size:13px;">No comments yet. Be the first!</div>`;
+    return;
+  }
+
   list.innerHTML = '';
-  allComments.forEach(c => {
-    const item = document.createElement('div');
-    item.className = 'comment-item';
+  visible.forEach(c => list.appendChild(_buildCommentItem(c, videoId, myUid, videoOwnerId)));
 
-    const avatar = document.createElement('div');
-    avatar.className = 'comment-avatar';
-    if (c.avatar) {
-      avatar.innerHTML = `<img src="${c.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
-    } else {
-      avatar.textContent = c.initials;
-    }
+  if (hasMore) list.appendChild(_renderCommentLoadMoreBtn(videoId));
 
-    const bubble = document.createElement('div');
-    bubble.className = 'comment-bubble';
+  list.scrollTop = 0;
+}
 
-    const user = document.createElement('div');
-    user.className = 'comment-user';
-    user.textContent = c.user;
+// Fetches and appends the next page on top of what's already rendered —
+// never re-fetches or re-renders what's already on screen.
+async function _loadMoreComments(videoId) {
+  const state = _commentPagination[videoId];
+  if (!state || !state.hasMore) return;
 
-    const text = document.createElement('div');
-    text.className = 'comment-text';
-    text.textContent = c.text;
+  const list = document.getElementById('comment-list');
+  const oldBtn = document.getElementById('comment-load-more-wrap');
+  if (oldBtn) oldBtn.remove();
 
-    const time = document.createElement('div');
-    time.className = 'comment-time';
-    time.textContent = c.time;
+  const { comments, lastDoc, hasMore } = await loadCommentsFromFirebase(videoId, state.lastDoc);
+  const visible = comments.filter(c => !(appState.blockedUsers || []).includes(c.userId));
 
-    bubble.appendChild(user);
-    bubble.appendChild(text);
-    bubble.appendChild(time);
-    item.appendChild(avatar);
-    item.appendChild(bubble);
+  _commentPagination[videoId] = { lastDoc, hasMore };
 
-    // Delete: available to the comment's own author, or to the video owner
-    // moderating comments on their own post — nobody else.
-    const canDelete = myUid && (c.userId === myUid || videoOwnerId === myUid);
-    if (canDelete) {
-      const del = document.createElement('div');
-      del.className = 'comment-delete';
-      del.textContent = '🗑️';
-      del.title = 'Delete comment';
-      del.onclick = () => _deleteComment(c.id, videoId);
-      item.appendChild(del);
-    }
+  const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
+  const v = VIDEOS.find(x => String(x.id) === String(videoId));
+  const videoOwnerId = v && (v.userId || v.uid);
 
-    list.appendChild(item);
-  });
-
-  list.scrollTop = list.scrollHeight;
+  if (list) {
+    visible.forEach(c => list.appendChild(_buildCommentItem(c, videoId, myUid, videoOwnerId)));
+    if (hasMore) list.appendChild(_renderCommentLoadMoreBtn(videoId));
+  }
 }
 
 // Firestore Timestamp -> epoch ms, tolerant of already-plain dates/numbers.
@@ -11162,8 +10880,20 @@ function openFanFeedOverlay(startVideoId) {
   const slidesEl = document.getElementById('fanfeed-slides');
   if (!container || !slidesEl) return;
 
+  // Kick off the hls.js download the instant the feed opens, in parallel
+  // with everything else below, instead of waiting until the first video
+  // actually needs it. Safari doesn't need this (native HLS support), so
+  // this only matters on Chrome/Android — but on a slow connection that's
+  // a real extra network round-trip stacked directly in front of the
+  // first frame the person expects to see. No-op if it's already loaded
+  // or loading (see _loadHlsJs's own caching).
+  if (!(document.createElement('video').canPlayType('application/vnd.apple.mpegurl'))) {
+    _loadHlsJs().catch(() => {}); // failure here just means the normal per-video path retries it
+  }
+
   const posts = (typeof VIDEOS !== 'undefined' ? VIDEOS : []).filter(
     v => (v.userPost || v.playerPost) && v.mediaType !== 'image' && _ffGetVideoSrc(v)
+      && !(appState.blockedUsers || []).includes(v.userId || v.uid)
   );
 
   if (!posts.length) {
@@ -11819,7 +11549,8 @@ async function _ffOpenProfile(userId, posterName) {
           <span><b>${followingArr.length}</b> following</span>
         </div>
       </div>
-      ${isMe ? '' : `<button class="ffp-follow-btn ${following ? 'following' : ''}" id="ffp-follow-btn" onclick="_ffToggleFollowFromProfile('${_esc(userId)}')">${following ? 'Following' : '+ Follow'}</button>`}
+      ${isMe ? '' : `<button class="ffp-follow-btn ${following ? 'following' : ''}" id="ffp-follow-btn" onclick="_ffToggleFollowFromProfile('${_esc(userId)}')">${following ? 'Following' : '+ Follow'}</button>
+      <button class="ffp-more-btn" onclick="_showModerationSheet({contentType:'user', contentId:'${_esc(userId)}', targetUserId:'${_esc(userId)}', targetUserName:'${_esc(displayName)}'})">⋯</button>`}
     </div>
 
     ${bio ? `<div class="ffp-bio">${_esc(bio)}</div>` : ''}
@@ -11926,6 +11657,87 @@ function _ffFormatJoinDate(ts) {
 function _ffCloseProfile() {
   const overlay = document.getElementById('ff-profile-overlay');
   if (overlay) overlay.classList.remove('open');
+}
+
+/* ── Generic Report/Block sheet — reusable from a video, a comment, or a
+   profile. Two steps: pick an action, then (for report) pick a reason.
+   Reports go to a `reports` collection for manual review — no auto-hide,
+   since that's trivially abused by coordinated false-reporting. ── */
+function _showModerationSheet({ contentType, contentId, targetUserId, targetUserName }) {
+  const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
+  const isSelf = myUid && targetUserId && myUid === targetUserId;
+  const isBlocked = (appState.blockedUsers || []).includes(targetUserId);
+
+  let sheet = document.getElementById('mod-sheet');
+  let backdrop = document.getElementById('mod-sheet-backdrop');
+  if (!sheet) {
+    backdrop = document.createElement('div');
+    backdrop.id = 'mod-sheet-backdrop';
+    backdrop.className = 'mod-sheet-backdrop';
+    backdrop.onclick = _closeModerationSheet;
+    document.body.appendChild(backdrop);
+
+    sheet = document.createElement('div');
+    sheet.id = 'mod-sheet';
+    sheet.className = 'mod-sheet';
+    document.body.appendChild(sheet);
+  }
+
+  const rows = [];
+  if (!isSelf && targetUserId) {
+    rows.push(`<div class="mod-sheet-row" onclick="_modSheetShowReasons('${_esc(contentType)}','${_esc(String(contentId))}','${_esc(targetUserId)}')">🚩 Report ${_esc(contentType)}</div>`);
+    rows.push(isBlocked
+      ? `<div class="mod-sheet-row" onclick="_unblockUser('${_esc(targetUserId)}','${_esc(targetUserName || '')}'); _closeModerationSheet();">✓ Unblock ${_esc(targetUserName || 'user')}</div>`
+      : `<div class="mod-sheet-row danger" onclick="_blockUser('${_esc(targetUserId)}','${_esc(targetUserName || '')}'); _closeModerationSheet();">🚫 Block ${_esc(targetUserName || 'user')}</div>`);
+  } else {
+    rows.push(`<div class="mod-sheet-row" onclick="_modSheetShowReasons('${_esc(contentType)}','${_esc(String(contentId))}','${_esc(targetUserId || '')}')">🚩 Report ${_esc(contentType)}</div>`);
+  }
+  rows.push(`<div class="mod-sheet-row" onclick="_closeModerationSheet()">Cancel</div>`);
+
+  sheet.innerHTML = rows.join('');
+  backdrop.classList.add('open');
+  sheet.classList.add('open');
+}
+
+function _modSheetShowReasons(contentType, contentId, targetUserId) {
+  const sheet = document.getElementById('mod-sheet');
+  if (!sheet) return;
+  const reasons = ['Spam', 'Abusive or hateful', 'Inappropriate content', 'Something else'];
+  sheet.innerHTML = reasons.map(r =>
+    `<div class="mod-sheet-row" onclick="_reportContent('${_esc(contentType)}','${_esc(contentId)}','${_esc(targetUserId)}','${_esc(r)}'); _closeModerationSheet();">${_esc(r)}</div>`
+  ).join('') + `<div class="mod-sheet-row" onclick="_closeModerationSheet()">Cancel</div>`;
+}
+
+function _closeModerationSheet() {
+  const sheet = document.getElementById('mod-sheet');
+  const backdrop = document.getElementById('mod-sheet-backdrop');
+  if (sheet) sheet.classList.remove('open');
+  if (backdrop) backdrop.classList.remove('open');
+}
+
+/* ── Client-side rate limiting ──────────────────────────────────────
+   Honest about what this is: a client-side cooldown stops accidental
+   double-taps and naive scripted spam using the app's own JS — it does
+   NOT stop a determined attacker calling Firestore directly, since
+   client code can always be bypassed. For that, the write itself needs
+   a server-side check. We do that for comments below (the highest-
+   frequency abuse vector) using a get()-based minimum-gap rule — see
+   the videoComments rule in the reference block. Posts/follows/reports
+   only have this client-side guard for now; the same server-side
+   pattern used for comments should be replicated for them if abuse
+   shows up in practice. This isn't a stopgap being passed off as the
+   real fix — it's a deliberate, scoped decision about which vector
+   actually needs the heavier protection first. ── */
+const _rateLimits = {};
+function _checkRateLimit(key, cooldownMs, friendlyMessage) {
+  const now = Date.now();
+  const last = _rateLimits[key] || 0;
+  if (now - last < cooldownMs) {
+    if (friendlyMessage) showToast(friendlyMessage);
+    return false;
+  }
+  _rateLimits[key] = now;
+  return true;
 }
 
 async function _ffToggleFollowFromProfile(userId) {
