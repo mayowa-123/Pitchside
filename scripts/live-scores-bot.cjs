@@ -158,6 +158,24 @@ async function fetchTodaysMatches() {
 // TRANSFORM HIGHLIGHTLY → PITCHSIDE FORMAT
 // ─────────────────────────────────────────────────────────────
 
+// Highlightly's real score format — confirmed from their own published
+// sample response — is a single string like "5 - 0" under
+// state.score.current, NOT separate state.score.home/away numeric fields.
+// That wrong assumption is exactly why every match's score has shown up
+// as null this whole time, live and finished alike: the fields this code
+// was reading never existed in the actual API response.
+function parseScoreString(current) {
+  if (typeof current !== 'string') return { home: null, away: null };
+  const parts = current.split(/\s*-\s*/);
+  if (parts.length !== 2) return { home: null, away: null };
+  const home = parseInt(parts[0], 10);
+  const away = parseInt(parts[1], 10);
+  return {
+    home: Number.isNaN(home) ? null : home,
+    away: Number.isNaN(away) ? null : away,
+  };
+}
+
 function transformMatch(m) {
   const statusDescription =
     m.state?.description ||
@@ -166,12 +184,16 @@ function transformMatch(m) {
 
   const statusShort = getStatusShort(statusDescription);
 
+  const parsedScore = parseScoreString(m.state?.score?.current);
+
   const homeGoals =
+    parsedScore.home ??
     m.state?.score?.home ??
     m.homeGoals ??
     null;
 
   const awayGoals =
+    parsedScore.away ??
     m.state?.score?.away ??
     m.awayGoals ??
     null;
@@ -239,6 +261,48 @@ function transformMatch(m) {
 // ─────────────────────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────
+// WAR ROOM CLEANUP
+//
+// Flagged since the very first PitchSide session and never built until
+// now: match_chats/{matchId} (messages + presence heartbeats) never got
+// deleted when a match's day passed, so every match ever covered has
+// been sitting in Firestore permanently, accumulating storage and read
+// cost for zero benefit. This runs on the exact same schedule as the
+// live scores fetch above (it has to — "today's matches" is only known
+// right after that fetch succeeds) and deletes any match_chats document
+// whose ID isn't in today's active match list, including its messages
+// and presence subcollections via recursiveDelete.
+//
+// Deliberately non-fatal: if this fails, the live scores write above
+// already succeeded, which is the job's actual priority. A cleanup
+// failure should never take down the whole bot run.
+// ─────────────────────────────────────────────────────────────
+
+async function cleanupExpiredWarRooms(activeMatchIds) {
+  console.log('🧹 Checking for expired War Room chats…');
+
+  try {
+    const activeSet = new Set(activeMatchIds.map(String));
+    const docRefs = await db.collection('match_chats').listDocuments();
+
+    const expired = docRefs.filter(ref => !activeSet.has(ref.id));
+
+    if (expired.length === 0) {
+      console.log('🧹 No expired War Room chats to remove');
+      return;
+    }
+
+    for (const ref of expired) {
+      await db.recursiveDelete(ref);
+    }
+
+    console.log(`🧹 Removed ${expired.length} expired War Room chat(s)`);
+  } catch (error) {
+    console.error('⚠️ War Room cleanup failed (non-fatal):', error.message);
+  }
+}
 
 async function run() {
   console.log('');
@@ -325,6 +389,11 @@ async function run() {
     console.log(
       `🔥 Firestore: liveScores/current`
     );
+
+    // Clean up War Room chats for matches that are no longer today's —
+    // must happen after the write above, since we need today's real
+    // match ID list to know what to keep.
+    await cleanupExpiredWarRooms(matches.map(m => m.fixture.id));
 
     console.log('='.repeat(60));
   } catch (error) {
