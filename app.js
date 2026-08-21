@@ -3351,59 +3351,33 @@ async function handleAvatarUpload(e) {
 
 function updateProfileStats() {
   const currentUid = window._psAuth?.currentUser?.uid || '';
-  const storageKey = '_ps_my_videos_' + currentUid;
-  
-  // Get videos from localStorage (these are your uploaded videos)
-  let myVideos = [];
-  try {
-    const stored = localStorage.getItem(storageKey);
-    if (stored) {
-      myVideos = JSON.parse(stored);
-    }
-  } catch(e) {
-    console.warn('Failed to load stored videos:', e);
-  }
-  
-  // Also check VIDEOS array for user posts
-  const fromVideos = VIDEOS.filter(function(v) {
-    return v.userPost && (v.userId === currentUid || v.uid === currentUid);
+
+  // Was previously two different rules for "how many videos do I have":
+  // this required a `userPost` flag AND merged in a separate per-device
+  // localStorage cache, while the swipe-in profile overlay just counted
+  // every video matching your uid — no flag requirement, no local cache.
+  // Same account, two different numbers (9 vs 18 is exactly this kind of
+  // mismatch). VIDEOS is already the live, authoritative list — including
+  // your own just-posted content via the optimistic local entry added at
+  // post time — so there's no need for a second, separately-drifting
+  // local cache on top of it. Now matches the overlay's count exactly.
+  const merged = VIDEOS.filter(function(v) {
+    return v.userId === currentUid || v.uid === currentUid;
   });
-  
-  // Combine both sources, remove duplicates by ID
-  const allIds = {};
-  const merged = [];
-  
-  // Add fromVideos first
-  for (var i = 0; i < fromVideos.length; i++) {
-    var v = fromVideos[i];
-    if (!allIds[v.id]) {
-      allIds[v.id] = true;
-      merged.push(v);
-    }
-  }
-  
-  // Add myVideos second (if not already added)
-  for (var i = 0; i < myVideos.length; i++) {
-    var v = myVideos[i];
-    if (!allIds[v.id]) {
-      allIds[v.id] = true;
-      merged.push(v);
-    }
-  }
-  
+
   var videoCount = merged.length;
-  
+
   // Store in global cache for My Videos modal
   window._userVideosCache = merged;
-  
+
   // Update the stats display in the profile
   var teamsCount = selectedTeams.size;
   var leaguesCount = selectedLeagues.size;
-  
+
   var statV = document.getElementById('stat-videos');
   var statT = document.getElementById('stat-teams');
   var statL = document.getElementById('stat-leagues');
-  
+
   if (statV) statV.textContent = videoCount;
   if (statT) statT.textContent = teamsCount;
   if (statL) statL.textContent = leaguesCount;
@@ -6497,7 +6471,7 @@ if (window.visualViewport) {
         ? (keyboardHeight + 8) + 'px'
         : '14px';
       // Scroll to bottom of chat
-      const messages = document.getElementById('ai-messages');
+      const messages = document.getElementById('ai-chat-body');
       if (messages) messages.scrollTop = messages.scrollHeight;
     }
   });
