@@ -55,38 +55,43 @@ const CONFIG = {
 function getStatusShort(statusDescription) {
   if (!statusDescription) return 'NS';
 
-  const desc = String(statusDescription).toLowerCase();
+  const desc = String(statusDescription).toLowerCase().trim();
 
-  // Finished
-  if (
-    desc.includes('finished') ||
-    desc.includes('ended') ||
-    desc === 'ft'
-  ) {
+  // These are Highlightly's actual documented state.description values —
+  // confirmed from their own published sample code, not guessed. The
+  // previous version checked for generic substrings like 'live', 'playing',
+  // '1h' — none of which appear in any of Highlightly's real strings below,
+  // so every single live match, in any state, fell through every check and
+  // landed on the NS default. That's exactly why a match with a real score
+  // already on the board was still showing "Not Started".
+
+  // Finished — kept as a substring check (not tightened to exact match)
+  // since this was already working correctly before this fix; no reason
+  // to risk a regression on the one thing that wasn't broken.
+  if (desc.includes('finished') || desc === 'ft' || desc.includes('ended')) {
     return 'FT';
   }
 
-  // Half time
-  if (
-    desc.includes('halftime') ||
-    desc.includes('half-time') ||
-    desc === 'ht'
-  ) {
+  // Half-time-style breaks (shown as their own HT badge, not lumped into LIVE)
+  if (desc === 'half time' || desc === 'extra time half time' || desc === 'ht') {
     return 'HT';
   }
 
-  // Live
+  // Live play — mapped to the app's existing sub-codes so index.html's
+  // display logic (which already collapses 1H/2H/ET/BT/P/INT into one
+  // "LIVE" badge) doesn't need to change at all
+  if (desc === 'first half' || desc === '1h') return '1H';
+  if (desc === 'second half' || desc === '2h') return '2H';
+  if (desc === 'extra time' || desc === 'et') return 'ET';
+  if (desc === 'break time' || desc === 'bt') return 'BT';
+  if (desc === 'penalty shootout' || desc === 'p') return 'P';
+  if (desc.includes('interrupted') || desc === 'int') return 'INT';
+
+  // Fallback net for any live-ish phrasing not explicitly listed above
   if (
     desc.includes('live') ||
     desc.includes('playing') ||
-    desc.includes('progress') ||
-    desc.includes('in progress') ||
-    desc === '1h' ||
-    desc === '2h' ||
-    desc === 'et' ||
-    desc === 'bt' ||
-    desc === 'p' ||
-    desc === 'int'
+    desc.includes('in progress')
   ) {
     return 'LIVE';
   }
@@ -259,6 +264,114 @@ function transformMatch(m) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// STANDINGS
+//
+// Only the app's core leagues (the ones with actual filter chips in the
+// UI) — not all 850+ leagues Highlightly covers. Standings barely change
+// within a few hours, so each league is only re-fetched if its last save
+// is older than STANDINGS_REFRESH_HOURS, regardless of how often this
+// whole script runs. On the free tier (100 requests/day total, shared
+// with the live-scores fetch above) this keeps standings to at most
+// 6 leagues × a few refreshes/day — nowhere near the cap. Raise
+// STANDINGS_REFRESH_HOURS down once on a paid plan if fresher tables
+// are worth the extra requests.
+//
+// League IDs are matched by name from today's already-fetched matches —
+// never hardcoded — so this can never drift out of sync with whatever
+// ID Highlightly actually assigns each league.
+// ─────────────────────────────────────────────────────────────
+
+const CORE_LEAGUES = [
+  'Premier League',
+  'La Liga',
+  'Serie A',
+  'Bundesliga',
+  'Ligue 1',
+  'Champions League',
+];
+
+const STANDINGS_REFRESH_HOURS = 4;
+
+async function fetchStandingsForCoreLeagues(rawMatches) {
+  console.log('📊 Checking core league standings...');
+
+  // Build { leagueName -> {id, season} } from today's real match data —
+  // this is the only place league IDs come from.
+  const leagueLookup = {};
+  for (const m of rawMatches) {
+    const name = m.league?.name;
+    const id = m.league?.id;
+    const season = m.league?.season ?? new Date().getFullYear();
+    if (name && id && CORE_LEAGUES.some(cl => name.includes(cl))) {
+      const matchedName = CORE_LEAGUES.find(cl => name.includes(cl));
+      if (!leagueLookup[matchedName]) leagueLookup[matchedName] = { id, season };
+    }
+  }
+
+  const foundCount = Object.keys(leagueLookup).length;
+  console.log(`📊 Found ${foundCount}/${CORE_LEAGUES.length} core leagues in today's matches`);
+
+  for (const [leagueName, { id: leagueId, season }] of Object.entries(leagueLookup)) {
+    try {
+      const docRef = db.collection('standings').doc(String(leagueId));
+      const existing = await docRef.get();
+
+      if (existing.exists) {
+        const lastFetched = existing.data().fetchedAt;
+        const lastFetchedMs = lastFetched?.toDate ? lastFetched.toDate().getTime() : 0;
+        const hoursSince = (Date.now() - lastFetchedMs) / (1000 * 60 * 60);
+        if (hoursSince < STANDINGS_REFRESH_HOURS) {
+          console.log(`📊 ${leagueName}: skipped, refreshed ${hoursSince.toFixed(1)}h ago`);
+          continue;
+        }
+      }
+
+      const url = `${CONFIG.BASE_URL}/standings?leagueId=${leagueId}&season=${season}`;
+      const response = await axios.get(url, {
+        headers: {
+          'x-rapidapi-key': CONFIG.API_KEY,
+          'x-rapidapi-host': CONFIG.API_HOST,
+          'Content-Type': 'application/json',
+        },
+        timeout: 15000,
+      });
+
+      // Defensive parsing, matching the same pattern used for the matches
+      // fetch above — the exact response shape wasn't confirmed from
+      // documentation alone, so try the most likely places for it, and
+      // log the raw shape once so a wrong guess here shows up in the
+      // Actions log instead of just silently saving an empty table.
+      const rawStandings = response.data;
+      const rows =
+        (Array.isArray(rawStandings) && rawStandings) ||
+        rawStandings?.data ||
+        rawStandings?.groups?.[0]?.standings ||
+        rawStandings?.standings ||
+        [];
+
+      if (!Array.isArray(rows) || rows.length === 0) {
+        console.log(`🔍 DIAGNOSTIC — unexpected standings shape for ${leagueName}:`);
+        console.log(JSON.stringify(rawStandings, null, 2).slice(0, 2000));
+      }
+
+      await docRef.set({
+        leagueId,
+        leagueName,
+        season,
+        rows,
+        fetchedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      console.log(`📊 ${leagueName}: saved ${Array.isArray(rows) ? rows.length : 0} rows`);
+    } catch (error) {
+      // One league's standings failing should never block the others or
+      // the main live-scores write — log and move on.
+      console.error(`⚠️ Standings fetch failed for ${leagueName}:`, error.message);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────────────────────
 
@@ -394,6 +507,12 @@ async function run() {
     // must happen after the write above, since we need today's real
     // match ID list to know what to keep.
     await cleanupExpiredWarRooms(matches.map(m => m.fixture.id));
+
+    // Standings for the app's core leagues — throttled independently
+    // (see STANDINGS_REFRESH_HOURS above), uses rawMatches (not the
+    // transformed `matches`) since it needs league.season, which doesn't
+    // survive transformMatch()'s output shape.
+    await fetchStandingsForCoreLeagues(rawMatches);
 
     console.log('='.repeat(60));
   } catch (error) {
