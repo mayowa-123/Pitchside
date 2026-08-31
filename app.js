@@ -629,6 +629,10 @@ function fetchLiveScores() {
         statusShort: statusShort,
 
         home: {
+          id:
+            teams.home?.id ??
+            null,
+
           name:
             teams.home?.name ||
             'Home',
@@ -639,6 +643,10 @@ function fetchLiveScores() {
         },
 
         away: {
+          id:
+            teams.away?.id ??
+            null,
+
           name:
             teams.away?.name ||
             'Away',
@@ -2782,6 +2790,21 @@ function handleWidgetTap(e) {
   showToast('Tap a match in the widget ⚽');
 }
 
+// Flattens lsData's league groups into a single match lookup. This is the
+// same Highlightly-sourced data already driving the visible Live Scores
+// list — reliable, no extra fetch needed, and (unlike the old fixture
+// fetch this replaces) actually has correct team IDs after the fix above.
+function _findMatchInLsData(matchId) {
+  if (!Array.isArray(lsData)) return null;
+  for (const group of lsData) {
+    const matches = group?.matches;
+    if (!Array.isArray(matches)) continue;
+    const found = matches.find(m => String(m.id) === String(matchId));
+    if (found) return found;
+  }
+  return null;
+}
+
 async function openMatchDetail(matchId, title) {
   const overlay = document.getElementById('match-overlay');
   const body = document.getElementById('match-ov-body');
@@ -2789,13 +2812,25 @@ async function openMatchDetail(matchId, title) {
 
   titleEl.textContent = title || 'MATCH DETAILS';
   overlay.classList.add('active');
-  
-  // Loading State
-  body.innerHTML = `<div class="ov-loading"><div class="spinner"></div>Loading live match data...</div>`;
 
+  body.innerHTML = `<div class="ov-loading"><div class="spinner"></div>Loading match data...</div>`;
+
+  // Look up the match in the same data already powering the Live Scores
+  // list — correct Highlightly IDs, no dependency on the fixture fetch
+  // below (which is fed the wrong provider's ID and never actually
+  // returns real data). If found, this alone is enough for a working
+  // overview, H2H, and odds section.
+  const m = _findMatchInLsData(matchId);
+
+  if (m && m.home?.id && m.away?.id) {
+    body.innerHTML = buildLiteMatchDetailCard(m, matchId);
+    return;
+  }
+
+  // Match not found in today's cached data (rare — e.g. a match from a
+  // league outside the ones the bot tracks). Fall back to the old fixture
+  // fetch, and if that also comes up empty, the ScoreAxis widget.
   try {
-    // Fetch Fixture Data (Overview, Timeline) + Lineups + Statistics in parallel —
-    // these live at separate Highlightly endpoints, not bundled into one call.
     const [fixtureRes, lineupsRes, statsRes] = await Promise.all([
       fetch(`/api/football?endpoint=fixtures&id=${matchId}`),
       fetch(`/api/football?endpoint=lineups&id=${matchId}`).catch(() => null),
@@ -2819,8 +2854,7 @@ async function openMatchDetail(matchId, title) {
       } catch(e) { console.warn('[Match] statistics fetch failed:', e); }
 
       body.innerHTML = buildRealMatchDetailCard(fixtureData);
-      
-      // Animate stat bars after rendering
+
       setTimeout(() => {
         body.querySelectorAll('.stat-bar-home, .stat-bar-away').forEach(el => {
           el.style.width = el.dataset.w + '%';
@@ -2833,6 +2867,50 @@ async function openMatchDetail(matchId, title) {
     console.error("Match Detail Error:", e);
     fallbackToScoreAxis(matchId, body);
   }
+}
+
+// Lightweight overview built entirely from correct, already-available data
+// (no broken fixture fetch involved). Covers Overview + a working H2H
+// button + Odds. Timeline/Lineups/Stats are intentionally left out of this
+// version — deferred, same as the rest of the match-detail rebuild — shown
+// as "coming soon" rather than attempted with data we know is wrong.
+function buildLiteMatchDetailCard(m, matchId) {
+  const homeName = _esc(m.home?.name || 'Home');
+  const awayName = _esc(m.away?.name || 'Away');
+  const homeBadge = m.home?.badge || '⚽';
+  const awayBadge = m.away?.badge || '⚽';
+  const score = (m.scoreH ?? m.scoreA != null) ? `${m.scoreH ?? '-'} - ${m.scoreA ?? '-'}` : '- - -';
+  const status = _esc(m.statusShort || m.status || 'NS');
+
+  return `
+    <div class="match-detail-card" style="padding-top:10px;">
+      <div style="display:flex;align-items:center;justify-content:space-around;padding:16px 0;">
+        <div style="text-align:center;flex:1;">
+          <img src="${_esc(homeBadge)}" style="width:48px;height:48px;object-fit:contain;" onerror="this.style.display='none'">
+          <div style="font-weight:700;margin-top:6px;font-size:13px;">${homeName}</div>
+        </div>
+        <div style="text-align:center;padding:0 12px;">
+          <div style="font-size:24px;font-weight:800;">${_esc(score)}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;">${status}</div>
+        </div>
+        <div style="text-align:center;flex:1;">
+          <img src="${_esc(awayBadge)}" style="width:48px;height:48px;object-fit:contain;" onerror="this.style.display='none'">
+          <div style="font-weight:700;margin-top:6px;font-size:13px;">${awayName}</div>
+        </div>
+      </div>
+
+      <div style="padding:0 4px;">
+        <button class="btn-cancel" onclick="loadMatchH2H('${_esc(String(m.home.id))}','${_esc(String(m.away.id))}','${homeName}','${awayName}')" style="width:100%;margin-bottom:10px;">Load Head-to-Head</button>
+        <div id="h2h-list" style="margin-bottom:16px;"></div>
+
+        <button class="btn-cancel" onclick="loadMatchOdds('${_esc(String(matchId))}')" style="width:100%;margin-bottom:10px;">Load Odds</button>
+        <div id="odds-list"></div>
+      </div>
+
+      <div style="text-align:center;color:var(--text3);font-size:12px;padding:16px 0 4px;">
+        Timeline, lineups, and stats aren't available yet — coming soon.
+      </div>
+    </div>`;
 }
 
 function fallbackToScoreAxis(matchId, body) {
@@ -2940,12 +3018,23 @@ function buildRealMatchDetailCard(d) {
 
 /* Load odds on demand — separate endpoint, paid tier only */
 async function loadMatchOdds(matchId) {
-  const container = document.getElementById('bookmakers-list');
+  // Supports both the new lite card (#odds-list) and the old full card
+  // (#bookmakers-list), whichever is actually present.
+  const container = document.getElementById('odds-list') || document.getElementById('bookmakers-list');
+  if (!container) return;
   container.innerHTML = `<div class="ov-loading"><div class="spinner"></div>Fetching odds...</div>`;
   try {
-    const res = await fetch(`/api/football?endpoint=odds&id=${matchId}`);
+    const res = await fetch(`/api/highlightly?endpoint=odds&matchId=${encodeURIComponent(matchId)}`);
+
+    // Highlightly's own docs mark this endpoint as unavailable on the
+    // Basic/Free plan — a 403 here means "not on this plan yet", not a bug.
+    if (res.status === 403) {
+      container.innerHTML = '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">Odds aren\'t available on the current plan yet.</div>';
+      return;
+    }
+
     const data = await res.json();
-    const bookmakers = data.response || [];
+    const bookmakers = data.bookmakers || data.response || data.data || [];
     container.innerHTML = bookmakers.length > 0
       ? renderBookmakers(bookmakers)
       : '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">No odds available yet</div>';
@@ -2954,18 +3043,49 @@ async function loadMatchOdds(matchId) {
   }
 }
 
+// Splits Highlightly's "5 - 0"-style score string into numbers — same
+// logic as the bot's parseScoreString, needed here since the H2H endpoint
+// returns matches in Highlightly's own raw shape, not pre-split.
+function _parseHighlightlyScoreString(current) {
+  if (typeof current !== 'string') return { home: null, away: null };
+  const parts = current.split(/\s*-\s*/);
+  if (parts.length !== 2) return { home: null, away: null };
+  const home = parseInt(parts[0], 10);
+  const away = parseInt(parts[1], 10);
+  return {
+    home: Number.isNaN(home) ? null : home,
+    away: Number.isNaN(away) ? null : away,
+  };
+}
+
 /* Load H2H on demand — needs both team IDs */
 async function loadMatchH2H(teamIdOne, teamIdTwo, homeName, awayName) {
   const container = document.getElementById('h2h-list');
   container.innerHTML = `<div class="ov-loading"><div class="spinner"></div>Fetching history...</div>`;
   try {
-    const res = await fetch(`/api/football?endpoint=h2h&teamIdOne=${teamIdOne}&teamIdTwo=${teamIdTwo}`);
+    const res = await fetch(`/api/highlightly?endpoint=h2h&teamIdOne=${encodeURIComponent(teamIdOne)}&teamIdTwo=${encodeURIComponent(teamIdTwo)}`);
     const data = await res.json();
-    const matches = data.response || [];
+    const rawMatches = data.data || data.matches || data.response || (Array.isArray(data) ? data : []);
+
+    // Map Highlightly's raw match shape into what renderH2H expects
+    // (teams.home/away.name, goals.home/away) — kept generic there so it
+    // works regardless of which provider actually supplied the data.
+    const matches = rawMatches.map(m => {
+      const parsed = _parseHighlightlyScoreString(m.state?.score?.current);
+      return {
+        teams: {
+          home: { name: m.homeTeam?.name || 'Home' },
+          away: { name: m.awayTeam?.name || 'Away' },
+        },
+        goals: { home: parsed.home, away: parsed.away },
+      };
+    });
+
     container.innerHTML = matches.length > 0
       ? renderH2H(matches, homeName, awayName)
       : '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">No history available</div>';
   } catch(e) {
+    console.error('[H2H] load failed:', e);
     container.innerHTML = '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">No history available</div>';
   }
 }
@@ -3162,17 +3282,29 @@ function generateStatsHTML(statistics) {
 async function loadLiveTable(leagueId, season) {
   const container = document.getElementById('live-table-container');
   container.innerHTML = `<div class="ov-loading"><div class="spinner"></div>Fetching table...</div>`;
-  
+
   try {
-    // Use the new footballdata.js API endpoint
-    const res = await fetch(`/api/footballdata?endpoint=competitions/${leagueId}/standings&season=${season}`, {
-      headers: {}
-    });
-    const data = await res.json();
-    const standings = data.standings?.[0]?.table;
+    // Reads the bot-fed cache instead of calling /api/footballdata
+    // directly — that endpoint was passing a Highlightly league ID into
+    // what's shaped like football-data.org's REST API (a different
+    // provider with an unrelated ID system), which is the likely reason
+    // it was returning an error page instead of JSON. The bot now fetches
+    // standings from the same provider and the same IDs already used for
+    // live scores, so there's no cross-provider mismatch possible here.
+    const fsApi = window._psFs;
+    const db = window._psDb;
+    if (!fsApi || !db) throw new Error('Firestore not ready');
 
-    if (!standings || !Array.isArray(standings)) throw new Error("No standings found");
+    const snap = await fsApi.getDoc(fsApi.doc(db, 'standings', String(leagueId)));
+    if (!snap.exists()) throw new Error('No cached standings for this league yet');
 
+    const rows = snap.data().rows;
+    if (!Array.isArray(rows) || rows.length === 0) throw new Error('No standings rows');
+
+    // Field names are read defensively — the bot saves Highlightly's
+    // response as-is, and the exact field naming wasn't confirmed from
+    // documentation alone. Falls back across the most likely variants
+    // for each value rather than assuming one exact shape.
     let html = `
       <div class="table-row table-hdr">
         <div class="tr-pos">#</div>
@@ -3182,15 +3314,24 @@ async function loadLiveTable(leagueId, season) {
         <div class="tr-pts">Pts</div>
       </div>`;
 
-    html += standings.map(row => `
+    html += rows.map((row, i) => {
+      const pos = row.position ?? row.rank ?? row.place ?? (i + 1);
+      const team = row.team || {};
+      const teamName = team.name || row.teamName || 'Unknown';
+      const teamLogo = team.logo || team.crest || row.teamLogo || '';
+      const played = row.played ?? row.playedGames ?? row.gamesPlayed ?? 0;
+      const gd = row.goalDifference ?? row.goalsDiff ?? row.gd ?? 0;
+      const pts = row.points ?? row.pts ?? 0;
+      return `
       <div class="table-row">
-        <div class="tr-pos">${row.position}</div>
-        <div class="tr-team"><img src="${row.team?.crest || ''}" onerror="this.src='⚽'">${row.team?.name || 'Unknown'}</div>
-        <div class="tr-stat">${row.playedGames || 0}</div>
-        <div class="tr-stat">${row.goalDifference || 0}</div>
-        <div class="tr-pts">${row.points || 0}</div>
-      </div>`).join('');
-      
+        <div class="tr-pos">${pos}</div>
+        <div class="tr-team">${teamLogo ? `<img src="${_esc(teamLogo)}" onerror="this.style.display='none'">` : ''}${_esc(String(teamName))}</div>
+        <div class="tr-stat">${played}</div>
+        <div class="tr-stat">${gd}</div>
+        <div class="tr-pts">${pts}</div>
+      </div>`;
+    }).join('');
+
     container.innerHTML = html;
   } catch (e) {
     console.error('Error loading standings:', e);
