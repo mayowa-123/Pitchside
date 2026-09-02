@@ -2805,6 +2805,129 @@ function _findMatchInLsData(matchId) {
   return null;
 }
 
+// ── Highlightly → legacy shape adapters ──────────────────────────────
+// generateTimelineHTML/generateLineupsHTML/generateStatsHTML below were
+// built tightly coupled to API-Football's exact field names. Rather than
+// rewrite those renderers (and risk missing some visual detail they
+// already handle correctly), these adapters translate Highlightly's
+// response into that same shape. Unlike the score/status/H2H fixes above
+// — which were verified against Highlightly's own documented sample
+// responses — the exact field names for events/lineups/statistics
+// weren't confirmed from a full sample, only descriptions of what's
+// included. Every field access below is defensive (checks several
+// plausible names, never assumes a path exists) specifically because of
+// that extra uncertainty, and the raw response gets logged once via
+// console.error — which Sentry already captures — so a wrong guess here
+// shows up as a real, inspectable event instead of a silent blank tab.
+
+function _adaptHighlightlyEvents(rawEvents) {
+  if (!Array.isArray(rawEvents)) return [];
+  return rawEvents.map(ev => {
+    const minute = ev.time ?? ev.minute ?? ev.elapsed ?? 0;
+    const typeRaw = String(ev.type || ev.eventType || '').toLowerCase();
+    let type = 'Other';
+    if (typeRaw.includes('goal')) type = 'Goal';
+    else if (typeRaw.includes('card')) type = 'Card';
+    else if (typeRaw.includes('sub')) type = 'subst';
+    return {
+      time: { elapsed: minute, extra: ev.extraTime ?? ev.addedTime ?? null },
+      type,
+      detail: ev.detail || ev.description ||
+        (typeRaw.includes('yellow') ? 'Yellow Card' : typeRaw.includes('red') ? 'Red Card' : (ev.type || '')),
+      player: { name: ev.player?.name || ev.playerName || 'Unknown' },
+      assist: { name: ev.assist?.name || ev.assistName || ev.substitutedFor?.name || '' },
+    };
+  });
+}
+
+function _adaptHighlightlyLineups(rawLineups) {
+  if (!Array.isArray(rawLineups) || rawLineups.length < 2) return [];
+  return rawLineups.slice(0, 2).map(team => ({
+    team: { name: team.team?.name || team.teamName || 'Team' },
+    formation: team.formation || 'N/A',
+    startXI: (team.startXI || team.startingXI || team.starters || []).map(p => ({
+      player: {
+        number: p.number ?? p.player?.number ?? '',
+        name: p.name || p.player?.name || 'Unknown',
+        pos: p.position || p.player?.position || p.pos || '',
+      },
+    })),
+    substitutes: (team.substitutes || team.subs || []).map(p => ({
+      player: {
+        number: p.number ?? p.player?.number ?? '',
+        name: p.name || p.player?.name || 'Unknown',
+      },
+    })),
+    coach: { name: team.coach?.name || team.manager?.name || '' },
+  }));
+}
+
+function _adaptHighlightlyStatistics(rawStats) {
+  if (!Array.isArray(rawStats) || rawStats.length < 2) return [];
+  return rawStats.slice(0, 2).map(team => ({
+    team: { name: team.team?.name || '' },
+    statistics: (team.statistics || team.stats || []).map(s => ({
+      type: s.type || s.name || 'Stat',
+      value: s.value ?? s.displayValue ?? 0,
+    })),
+  }));
+}
+
+// Full translation from Highlightly's /matches/{matchId} response into
+// the exact `d` shape buildRealMatchDetailCard already expects — reuses
+// that existing, already-styled renderer entirely rather than duplicating
+// its markup. lsMatch (from _findMatchInLsData) fills in anything the
+// detail response is missing, since that data's already confirmed correct.
+function _adaptHighlightlyMatchToLegacyShape(raw, lsMatch) {
+  const homeTeam = raw.homeTeam || {};
+  const awayTeam = raw.awayTeam || {};
+  const parsedScore = _parseHighlightlyScoreString(raw.state?.score?.current);
+
+  if (!Array.isArray(raw.events) && !Array.isArray(raw.lineups) && !Array.isArray(raw.matchStatistics)) {
+    console.error('[MatchDetail] Unexpected /matches/{id} shape — no events/lineups/matchStatistics found:', JSON.stringify(raw).slice(0, 1500));
+  }
+
+  return {
+    fixture: {
+      id: raw.id ?? lsMatch?.id,
+      status: {
+        short: normalizeLiveScoreStatus(raw.state?.description) || lsMatch?.statusShort || 'NS',
+        elapsed: raw.state?.clock ?? null,
+      },
+      venue: {
+        name: raw.venue?.name || raw.venue?.stadium || '',
+        city: raw.venue?.city || '',
+      },
+      referee: raw.referee?.name || raw.referee || '',
+    },
+    goals: {
+      home: parsedScore.home ?? lsMatch?.scoreH ?? null,
+      away: parsedScore.away ?? lsMatch?.scoreA ?? null,
+    },
+    teams: {
+      home: {
+        id: homeTeam.id ?? lsMatch?.home?.id,
+        name: homeTeam.name || lsMatch?.home?.name || 'Home',
+        logo: homeTeam.logo || lsMatch?.home?.badge || '',
+      },
+      away: {
+        id: awayTeam.id ?? lsMatch?.away?.id,
+        name: awayTeam.name || lsMatch?.away?.name || 'Away',
+        logo: awayTeam.logo || lsMatch?.away?.badge || '',
+      },
+    },
+    league: {
+      id: raw.league?.id ?? 0,
+      name: raw.league?.name || '',
+      season: raw.league?.season ?? new Date().getFullYear(),
+      round: raw.round || '',
+    },
+    events: _adaptHighlightlyEvents(raw.events),
+    lineups: _adaptHighlightlyLineups(raw.lineups),
+    statistics: _adaptHighlightlyStatistics(raw.matchStatistics),
+  };
+}
+
 async function openMatchDetail(matchId, title) {
   const overlay = document.getElementById('match-overlay');
   const body = document.getElementById('match-ov-body');
@@ -2815,58 +2938,40 @@ async function openMatchDetail(matchId, title) {
 
   body.innerHTML = `<div class="ov-loading"><div class="spinner"></div>Loading match data...</div>`;
 
-  // Look up the match in the same data already powering the Live Scores
-  // list — correct Highlightly IDs, no dependency on the fixture fetch
-  // below (which is fed the wrong provider's ID and never actually
-  // returns real data). If found, this alone is enough for a working
-  // overview, H2H, and odds section.
-  const m = _findMatchInLsData(matchId);
+  const lsMatch = _findMatchInLsData(matchId);
 
-  if (m && m.home?.id && m.away?.id) {
-    body.innerHTML = buildLiteMatchDetailCard(m, matchId);
+  // Primary path: Highlightly's own /matches/{id} — same provider and ID
+  // as everything else, includes Overview + Timeline + Stats in one call.
+  try {
+    const res = await fetch(`/api/highlightly?endpoint=match&matchId=${encodeURIComponent(matchId)}`);
+    if (res.ok) {
+      const raw = await res.json();
+      if (raw && (raw.id || raw.homeTeam || raw.awayTeam)) {
+        const d = _adaptHighlightlyMatchToLegacyShape(raw, lsMatch);
+        body.innerHTML = buildRealMatchDetailCard(d);
+        setTimeout(() => {
+          body.querySelectorAll('.stat-bar-home, .stat-bar-away').forEach(el => {
+            el.style.width = el.dataset.w + '%';
+          });
+        }, 100);
+        return;
+      }
+    }
+    throw new Error(`Highlightly match detail returned ${res.status}`);
+  } catch (e) {
+    console.warn('[MatchDetail] Highlightly detail fetch failed, falling back:', e.message);
+  }
+
+  // Second path: the lightweight card, built entirely from lsData —
+  // no timeline/lineups/stats, but a correct overview + working H2H/odds.
+  if (lsMatch && lsMatch.home?.id && lsMatch.away?.id) {
+    body.innerHTML = buildLiteMatchDetailCard(lsMatch, matchId);
     return;
   }
 
-  // Match not found in today's cached data (rare — e.g. a match from a
-  // league outside the ones the bot tracks). Fall back to the old fixture
-  // fetch, and if that also comes up empty, the ScoreAxis widget.
-  try {
-    const [fixtureRes, lineupsRes, statsRes] = await Promise.all([
-      fetch(`/api/football?endpoint=fixtures&id=${matchId}`),
-      fetch(`/api/football?endpoint=lineups&id=${matchId}`).catch(() => null),
-      fetch(`/api/football?endpoint=match-statistics&id=${matchId}`).catch(() => null),
-    ]);
-    const data = await fixtureRes.json();
-    const fixtureData = data.response && data.response[0];
-
-    if (fixtureData) {
-      try {
-        if (lineupsRes && lineupsRes.ok) {
-          const lu = await lineupsRes.json();
-          if (Array.isArray(lu.response) && lu.response.length) fixtureData.lineups = lu.response;
-        }
-      } catch(e) { console.warn('[Match] lineups fetch failed:', e); }
-      try {
-        if (statsRes && statsRes.ok) {
-          const st = await statsRes.json();
-          if (Array.isArray(st.response) && st.response.length) fixtureData.statistics = st.response;
-        }
-      } catch(e) { console.warn('[Match] statistics fetch failed:', e); }
-
-      body.innerHTML = buildRealMatchDetailCard(fixtureData);
-
-      setTimeout(() => {
-        body.querySelectorAll('.stat-bar-home, .stat-bar-away').forEach(el => {
-          el.style.width = el.dataset.w + '%';
-        });
-      }, 100);
-    } else {
-      fallbackToScoreAxis(matchId, body);
-    }
-  } catch (e) {
-    console.error("Match Detail Error:", e);
-    fallbackToScoreAxis(matchId, body);
-  }
+  // Last resort: match isn't in today's cached data at all (rare — e.g. a
+  // league outside the ones the bot tracks).
+  fallbackToScoreAxis(matchId, body);
 }
 
 // Lightweight overview built entirely from correct, already-available data
@@ -2908,7 +3013,7 @@ function buildLiteMatchDetailCard(m, matchId) {
       </div>
 
       <div style="text-align:center;color:var(--text3);font-size:12px;padding:16px 0 4px;">
-        Timeline, lineups, and stats aren't available yet — coming soon.
+        Full match details (timeline, lineups, stats) aren't available for this match right now — here's what's confirmed.
       </div>
     </div>`;
 }
