@@ -16,9 +16,9 @@ const BASE_URL = 'https://soccer.highlightly.net';
 module.exports = async function handler(req, res) {
   const { endpoint, teamIdOne, teamIdTwo, matchId } = req.query;
 
-  const apiKey = process.env.HIGHLIGHTLY_API_KEY;
+  const apiKey = process.env.HIGHLIGHTLY_API_KEY_DIRECT;
   if (!apiKey) {
-    res.status(500).json({ error: 'HIGHLIGHTLY_API_KEY is not configured on the server' });
+    res.status(500).json({ error: 'HIGHLIGHTLY_API_KEY_DIRECT is not configured on the server' });
     return;
   }
 
