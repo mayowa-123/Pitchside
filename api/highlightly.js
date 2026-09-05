@@ -10,10 +10,16 @@
 //
 // Add HIGHLIGHTLY_API_KEY to your Vercel project's Environment Variables
 // (same key your GitHub Actions bot already uses) — never hardcode it here.
+//
+// FIX (Sep 2026): this file used CommonJS `module.exports`, but the
+// project's package.json has "type": "module", so Node loads every .js
+// file as an ES module — `module` doesn't exist in that scope, so every
+// single request to this function crashed with a 500 before any of the
+// logic below ever ran. Switched to `export default` to match.
 
 const BASE_URL = 'https://soccer.highlightly.net';
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   const { endpoint, teamIdOne, teamIdTwo, matchId } = req.query;
 
   const apiKey = process.env.HIGHLIGHTLY_API_KEY_DIRECT;
@@ -84,4 +90,4 @@ module.exports = async function handler(req, res) {
   } catch (error) {
     res.status(502).json({ error: 'Failed to reach Highlightly', detail: error.message });
   }
-};
+}
