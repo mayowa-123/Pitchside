@@ -2873,77 +2873,59 @@ function _adaptHighlightlyStatistics(rawStats) {
   }));
 }
 
-// Builds the `d` shape buildRealMatchDetailCard expects, starting from our
-// own backend's completeMatch object (from endpoint=fixtures&id=), which
-// already carries fixture/teams/goals/league in the right shape.
-// completeMatch hardcodes lineups:[] and passes statistics/events through
-// unshaped, so those two are fetched separately from the dedicated
-// match-statistics and lineups endpoints, which already transform their
-// data into the exact shape generateStatsHTML()/generateLineupsHTML()
-// expect — no further adapting needed on those two once fetched.
-// lsMatch (from _findMatchInLsData) fills in anything missing.
-async function _buildMatchDetailData(match, lsMatch) {
-  const d = {
+// Full translation from Highlightly's /matches/{matchId} response into
+// the exact `d` shape buildRealMatchDetailCard already expects — reuses
+// that existing, already-styled renderer entirely rather than duplicating
+// its markup. lsMatch (from _findMatchInLsData) fills in anything the
+// detail response is missing, since that data's already confirmed correct.
+// NOTE: /api/highlightly's `match` endpoint proxies Highlightly's response
+// through UNCHANGED (res.send(text) — no server-side transform), so this
+// adapter works on the RAW Highlightly shape (homeTeam/awayTeam/state/...),
+// not any pre-transformed shape.
+function _adaptHighlightlyMatchToLegacyShape(raw, lsMatch) {
+  const homeTeam = raw.homeTeam || {};
+  const awayTeam = raw.awayTeam || {};
+  const parsedScore = _parseHighlightlyScoreString(raw.state?.score?.current);
+
+  return {
     fixture: {
-      id: match.fixture?.id ?? lsMatch?.id,
+      id: raw.id ?? lsMatch?.id,
       status: {
-        short: match.fixture?.status?.short || lsMatch?.statusShort || 'NS',
-        elapsed: match.fixture?.status?.elapsed ?? null,
+        short: normalizeLiveScoreStatus(raw.state?.description) || lsMatch?.statusShort || 'NS',
+        elapsed: raw.state?.clock ?? null,
       },
       venue: {
-        name: match.fixture?.venue?.name || '',
-        city: match.fixture?.venue?.city || '',
+        name: raw.venue?.name || raw.venue?.stadium || '',
+        city: raw.venue?.city || '',
       },
-      referee: match.fixture?.referee || '',
+      referee: raw.referee?.name || raw.referee || '',
     },
     goals: {
-      home: match.goals?.home ?? lsMatch?.scoreH ?? null,
-      away: match.goals?.away ?? lsMatch?.scoreA ?? null,
+      home: parsedScore.home ?? lsMatch?.scoreH ?? null,
+      away: parsedScore.away ?? lsMatch?.scoreA ?? null,
     },
     teams: {
       home: {
-        id: match.teams?.home?.id ?? lsMatch?.home?.id,
-        name: match.teams?.home?.name || lsMatch?.home?.name || 'Home',
-        logo: match.teams?.home?.logo || lsMatch?.home?.badge || '',
+        id: homeTeam.id ?? lsMatch?.home?.id,
+        name: homeTeam.name || lsMatch?.home?.name || 'Home',
+        logo: homeTeam.logo || lsMatch?.home?.badge || '',
       },
       away: {
-        id: match.teams?.away?.id ?? lsMatch?.away?.id,
-        name: match.teams?.away?.name || lsMatch?.away?.name || 'Away',
-        logo: match.teams?.away?.logo || lsMatch?.away?.badge || '',
+        id: awayTeam.id ?? lsMatch?.away?.id,
+        name: awayTeam.name || lsMatch?.away?.name || 'Away',
+        logo: awayTeam.logo || lsMatch?.away?.badge || '',
       },
     },
     league: {
-      id: match.league?.id ?? 0,
-      name: match.league?.name || '',
-      season: match.league?.season ?? new Date().getFullYear(),
-      round: match.league?.round || '',
+      id: raw.league?.id ?? 0,
+      name: raw.league?.name || '',
+      season: raw.league?.season ?? new Date().getFullYear(),
+      round: raw.round || '',
     },
-    events: _adaptHighlightlyEvents(match.events),
-    lineups: [],
-    statistics: [],
+    events: _adaptHighlightlyEvents(raw.events),
+    lineups: _adaptHighlightlyLineups(raw.lineups),
+    statistics: _adaptHighlightlyStatistics(raw.matchStatistics),
   };
-
-  try {
-    const statsRes = await fetch(`/api/highlightly?endpoint=match-statistics&id=${encodeURIComponent(d.fixture.id)}`);
-    if (statsRes.ok) {
-      const statsRaw = await statsRes.json();
-      d.statistics = statsRaw.response || [];
-    }
-  } catch (e) {
-    console.warn('[MatchDetail] stats fetch failed:', e.message);
-  }
-
-  try {
-    const lineupsRes = await fetch(`/api/highlightly?endpoint=lineups&id=${encodeURIComponent(d.fixture.id)}`);
-    if (lineupsRes.ok) {
-      const lineupsRaw = await lineupsRes.json();
-      d.lineups = lineupsRaw.response || [];
-    }
-  } catch (e) {
-    console.warn('[MatchDetail] lineups fetch failed:', e.message);
-  }
-
-  return d;
 }
 
 async function openMatchDetail(matchId, title) {
@@ -2958,32 +2940,41 @@ async function openMatchDetail(matchId, title) {
 
   const lsMatch = _findMatchInLsData(matchId);
 
-  // Primary path: our own /api/highlightly?endpoint=fixtures&id= route —
-  // this is the actual endpoint+param name football.js implements for
-  // single-match lookups (there is no `endpoint=match` route on the
-  // backend, and it reads `id`, not `matchId`).
+  // Primary path: Highlightly's own /matches/{id}, proxied by
+  // /api/highlightly?endpoint=match&matchId= — this is the actual
+  // endpoint+param name the deployed api/highlightly.js implements.
+  // (The old fix targeted api/football.js, a different, unrelated file
+  // that isn't the one being called here.)
   let debugReason = '';
   try {
-    const res = await fetch(`/api/highlightly?endpoint=fixtures&id=${encodeURIComponent(matchId)}`);
-    let bodyJson = null;
-    try { bodyJson = await res.json(); } catch (_) { /* non-JSON body */ }
+    const res = await fetch(`/api/highlightly?endpoint=match&matchId=${encodeURIComponent(matchId)}`);
+    let raw = null;
+    try { raw = await res.json(); } catch (_) { /* non-JSON body */ }
 
-    if (res.ok) {
-      const match = Array.isArray(bodyJson?.response) ? bodyJson.response[0] : null;
-      if (match && match.teams && (match.teams.home?.name || match.teams.away?.name)) {
-        const d = await _buildMatchDetailData(match, lsMatch);
-        body.innerHTML = buildRealMatchDetailCard(d);
-        setTimeout(() => {
-          body.querySelectorAll('.stat-bar-home, .stat-bar-away').forEach(el => {
-            el.style.width = el.dataset.w + '%';
-          });
-        }, 100);
-        return;
+    if (res.ok && raw && (raw.id || raw.homeTeam || raw.awayTeam)) {
+      const d = _adaptHighlightlyMatchToLegacyShape(raw, lsMatch);
+
+      // Lineups aren't bundled into /matches/{id} — fetch separately.
+      try {
+        const lRes = await fetch(`/api/highlightly?endpoint=lineups&matchId=${encodeURIComponent(matchId)}`);
+        if (lRes.ok) {
+          const lRaw = await lRes.json();
+          const lineupsList = Array.isArray(lRaw) ? lRaw : (lRaw?.data || []);
+          if (lineupsList.length) d.lineups = _adaptHighlightlyLineups(lineupsList);
+        }
+      } catch (e) {
+        console.warn('[MatchDetail] lineups fetch failed:', e.message);
       }
-      debugReason = `status ${res.status}, ok but no usable match in response: ${JSON.stringify(bodyJson).slice(0, 200)}`;
-    } else {
-      debugReason = `status ${res.status}${bodyJson?.error ? ' — ' + bodyJson.error : ''}${bodyJson?.errors?.api ? ' — ' + bodyJson.errors.api : ''}`;
+
+      body.innerHTML = buildRealMatchDetailCard(d);
+      setTimeout(() => {
+        body.querySelectorAll('.stat-bar-home, .stat-bar-away').forEach(el => {
+          el.style.width = el.dataset.w + '%';
+        });
+      }, 100);
+      return;
     }
+    debugReason = `status ${res.status}${raw?.error ? ' — ' + raw.error : ''}`;
     throw new Error(debugReason);
   } catch (e) {
     debugReason = debugReason || e.message;
@@ -2995,6 +2986,7 @@ async function openMatchDetail(matchId, title) {
   if (lsMatch && lsMatch.home?.id && lsMatch.away?.id) {
     body.innerHTML = buildLiteMatchDetailCard(lsMatch, matchId);
     // TEMPORARY debug line — shows exactly why the primary fetch failed,
+
     // so this is visible on-device without needing devtools. Remove once
     // the real cause is confirmed and fixed.
     body.innerHTML += `<div style="margin:0 16px 16px;padding:10px;background:#3a1414;color:#ff8a8a;font-size:11px;border-radius:8px;word-break:break-all;">DEBUG: ${_esc(debugReason)}</div>`;
@@ -3161,7 +3153,7 @@ async function loadMatchOdds(matchId) {
   if (!container) return;
   container.innerHTML = `<div class="ov-loading"><div class="spinner"></div>Fetching odds...</div>`;
   try {
-    const res = await fetch(`/api/highlightly?endpoint=odds&id=${encodeURIComponent(matchId)}`);
+    const res = await fetch(`/api/highlightly?endpoint=odds&matchId=${encodeURIComponent(matchId)}`);
 
     // Highlightly's own docs mark this endpoint as unavailable on the
     // Basic/Free plan — a 403 here means "not on this plan yet", not a bug.
