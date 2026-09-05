@@ -2962,11 +2962,14 @@ async function openMatchDetail(matchId, title) {
   // this is the actual endpoint+param name football.js implements for
   // single-match lookups (there is no `endpoint=match` route on the
   // backend, and it reads `id`, not `matchId`).
+  let debugReason = '';
   try {
     const res = await fetch(`/api/highlightly?endpoint=fixtures&id=${encodeURIComponent(matchId)}`);
+    let bodyJson = null;
+    try { bodyJson = await res.json(); } catch (_) { /* non-JSON body */ }
+
     if (res.ok) {
-      const raw = await res.json();
-      const match = Array.isArray(raw.response) ? raw.response[0] : null;
+      const match = Array.isArray(bodyJson?.response) ? bodyJson.response[0] : null;
       if (match && match.teams && (match.teams.home?.name || match.teams.away?.name)) {
         const d = await _buildMatchDetailData(match, lsMatch);
         body.innerHTML = buildRealMatchDetailCard(d);
@@ -2977,16 +2980,24 @@ async function openMatchDetail(matchId, title) {
         }, 100);
         return;
       }
+      debugReason = `status ${res.status}, ok but no usable match in response: ${JSON.stringify(bodyJson).slice(0, 200)}`;
+    } else {
+      debugReason = `status ${res.status}${bodyJson?.error ? ' — ' + bodyJson.error : ''}${bodyJson?.errors?.api ? ' — ' + bodyJson.errors.api : ''}`;
     }
-    throw new Error(`Highlightly match detail returned ${res.status}`);
+    throw new Error(debugReason);
   } catch (e) {
-    console.warn('[MatchDetail] Highlightly detail fetch failed, falling back:', e.message);
+    debugReason = debugReason || e.message;
+    console.warn('[MatchDetail] Highlightly detail fetch failed, falling back:', debugReason);
   }
 
   // Second path: the lightweight card, built entirely from lsData —
   // no timeline/lineups/stats, but a correct overview + working H2H/odds.
   if (lsMatch && lsMatch.home?.id && lsMatch.away?.id) {
     body.innerHTML = buildLiteMatchDetailCard(lsMatch, matchId);
+    // TEMPORARY debug line — shows exactly why the primary fetch failed,
+    // so this is visible on-device without needing devtools. Remove once
+    // the real cause is confirmed and fixed.
+    body.innerHTML += `<div style="margin:0 16px 16px;padding:10px;background:#3a1414;color:#ff8a8a;font-size:11px;border-radius:8px;word-break:break-all;">DEBUG: ${_esc(debugReason)}</div>`;
     return;
   }
 
