@@ -36,7 +36,7 @@ export default async function handler(req, res) {
         res.status(400).json({ error: 'teamIdOne and teamIdTwo are required for h2h' });
         return;
       }
-      url = `${BASE_URL}/h2h?teamIdOne=${encodeURIComponent(teamIdOne)}&teamIdTwo=${encodeURIComponent(teamIdTwo)}`;
+      url = `${BASE_URL}/head-2-head?teamIdOne=${encodeURIComponent(teamIdOne)}&teamIdTwo=${encodeURIComponent(teamIdTwo)}`;
     } else if (endpoint === 'odds') {
       if (!matchId) {
         res.status(400).json({ error: 'matchId is required for odds' });
