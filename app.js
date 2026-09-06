@@ -2834,41 +2834,53 @@ function _adaptHighlightlyEvents(rawEvents) {
       type,
       detail: ev.detail || ev.description ||
         (typeRaw.includes('yellow') ? 'Yellow Card' : typeRaw.includes('red') ? 'Red Card' : (ev.type || '')),
-      player: { name: ev.player?.name || ev.playerName || 'Unknown' },
-      assist: { name: ev.assist?.name || ev.assistName || ev.substitutedFor?.name || '' },
+      player: { name: (typeof ev.player === 'string' ? ev.player : ev.player?.name) || 'Unknown' },
+      assist: { name: (typeof ev.assist === 'string' ? ev.assist : ev.assist?.name) || ev.substitutedFor?.name || '' },
     };
   });
 }
 
-function _adaptHighlightlyLineups(rawLineups) {
-  if (!Array.isArray(rawLineups) || rawLineups.length < 2) return [];
-  return rawLineups.slice(0, 2).map(team => ({
-    team: { name: team.team?.name || team.teamName || 'Team' },
-    formation: team.formation || 'N/A',
-    startXI: (team.startXI || team.startingXI || team.starters || []).map(p => ({
-      player: {
-        number: p.number ?? p.player?.number ?? '',
-        name: p.name || p.player?.name || 'Unknown',
-        pos: p.position || p.player?.position || p.pos || '',
-      },
-    })),
-    substitutes: (team.substitutes || team.subs || []).map(p => ({
-      player: {
-        number: p.number ?? p.player?.number ?? '',
-        name: p.name || p.player?.name || 'Unknown',
-      },
-    })),
-    coach: { name: team.coach?.name || team.manager?.name || '' },
-  }));
+// Highlightly's /lineups/{matchId} returns { homeTeam: {...}, awayTeam: {...} },
+// NOT an array of two teams. Each team has `initialLineup`: an array of rows
+// (first row is always the goalkeeper, remaining rows are the rest of the
+// formation grouped by line) rather than a flat startXI list.
+function _adaptHighlightlyLineups(rawLineupsObj) {
+  if (!rawLineupsObj || (!rawLineupsObj.homeTeam && !rawLineupsObj.awayTeam)) return [];
+  const sides = [rawLineupsObj.homeTeam, rawLineupsObj.awayTeam].filter(Boolean);
+  if (sides.length < 2) return [];
+
+  return sides.map(team => {
+    const flatXI = Array.isArray(team.initialLineup)
+      ? team.initialLineup.flat()
+      : [];
+    return {
+      team: { name: team.name || 'Team' },
+      formation: team.formation || 'N/A',
+      startXI: flatXI.map(p => ({
+        player: {
+          number: p.number ?? '',
+          name: p.name || 'Unknown',
+          pos: p.position || '',
+        },
+      })),
+      substitutes: (team.substitutes || []).map(p => ({
+        player: {
+          number: p.number ?? '',
+          name: p.name || 'Unknown',
+        },
+      })),
+      coach: { name: '' },
+    };
+  });
 }
 
 function _adaptHighlightlyStatistics(rawStats) {
   if (!Array.isArray(rawStats) || rawStats.length < 2) return [];
   return rawStats.slice(0, 2).map(team => ({
     team: { name: team.team?.name || '' },
-    statistics: (team.statistics || team.stats || []).map(s => ({
-      type: s.type || s.name || 'Stat',
-      value: s.value ?? s.displayValue ?? 0,
+    statistics: (team.statistics || []).map(s => ({
+      type: s.displayName || 'Stat',
+      value: s.value ?? 0,
     })),
   }));
 }
@@ -2943,24 +2955,27 @@ async function openMatchDetail(matchId, title) {
   // Primary path: Highlightly's own /matches/{id}, proxied by
   // /api/highlightly?endpoint=match&matchId= — this is the actual
   // endpoint+param name the deployed api/highlightly.js implements.
-  // (The old fix targeted api/football.js, a different, unrelated file
-  // that isn't the one being called here.)
+  // Per Highlightly's official docs, this response is a JSON ARRAY
+  // (`[ {...} ]`), not a bare object — must unwrap raw[0].
   let debugReason = '';
   try {
     const res = await fetch(`/api/highlightly?endpoint=match&matchId=${encodeURIComponent(matchId)}`);
-    let raw = null;
-    try { raw = await res.json(); } catch (_) { /* non-JSON body */ }
+    let rawBody = null;
+    try { rawBody = await res.json(); } catch (_) { /* non-JSON body */ }
+    const raw = Array.isArray(rawBody) ? rawBody[0] : rawBody;
 
     if (res.ok && raw && (raw.id || raw.homeTeam || raw.awayTeam)) {
       const d = _adaptHighlightlyMatchToLegacyShape(raw, lsMatch);
 
       // Lineups aren't bundled into /matches/{id} — fetch separately.
+      // Per official docs, /lineups/{matchId} returns a single object
+      // { homeTeam, awayTeam } — not an array or a { data: [...] } wrapper.
       try {
         const lRes = await fetch(`/api/highlightly?endpoint=lineups&matchId=${encodeURIComponent(matchId)}`);
         if (lRes.ok) {
           const lRaw = await lRes.json();
-          const lineupsList = Array.isArray(lRaw) ? lRaw : (lRaw?.data || []);
-          if (lineupsList.length) d.lineups = _adaptHighlightlyLineups(lineupsList);
+          const adapted = _adaptHighlightlyLineups(lRaw);
+          if (adapted.length) d.lineups = adapted;
         }
       } catch (e) {
         console.warn('[MatchDetail] lineups fetch failed:', e.message);
@@ -3156,14 +3171,34 @@ async function loadMatchOdds(matchId) {
     const res = await fetch(`/api/highlightly?endpoint=odds&matchId=${encodeURIComponent(matchId)}`);
 
     // Highlightly's own docs mark this endpoint as unavailable on the
-    // Basic/Free plan — a 403 here means "not on this plan yet", not a bug.
-    if (res.status === 403) {
-      container.innerHTML = '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">Odds aren\'t available on the current plan yet.</div>';
+    // Basic/Free plan — empirically Highlightly returns 401 for this (not
+    // 403), so both are treated as "not on this plan", not a bug.
+    if (res.status === 401 || res.status === 403) {
+      container.innerHTML = '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">Odds aren\'t available on the current Highlightly plan.</div>';
       return;
     }
 
     const data = await res.json();
-    const bookmakers = data.bookmakers || data.response || data.data || [];
+    // Real shape per Highlightly's docs:
+    // { data: [ { matchId, odds: [ { bookmakerName, market, values: [{odd, value}] } ] } ] }
+    // — NOT a flat list of bookmaker objects with .odds.home_win etc.
+    const matchEntry = Array.isArray(data.data) ? data.data[0] : null;
+    const oddsEntries = matchEntry?.odds || [];
+    const bookmakers = oddsEntries
+      .filter(o => o.market === 'Full Time Result')
+      .map(o => {
+        const byOutcome = {};
+        (o.values || []).forEach(v => { byOutcome[v.value] = v.odd; });
+        return {
+          name: o.bookmakerName,
+          odds: {
+            home_win: byOutcome.Home,
+            draw: byOutcome.Draw,
+            away_win: byOutcome.Away,
+          },
+        };
+      });
+
     container.innerHTML = bookmakers.length > 0
       ? renderBookmakers(bookmakers)
       : '<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">No odds available yet</div>';
