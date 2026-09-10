@@ -2910,7 +2910,7 @@ function _adaptHighlightlyMatchToLegacyShape(raw, lsMatch) {
         name: raw.venue?.name || raw.venue?.stadium || '',
         city: raw.venue?.city || '',
       },
-      referee: raw.referee?.name || raw.referee || '',
+      referee: (typeof raw.referee === 'string' ? raw.referee : raw.referee?.name) || '',
     },
     goals: {
       home: parsedScore.home ?? lsMatch?.scoreH ?? null,
@@ -10547,7 +10547,10 @@ async function loadCommentsFromFirebase(videoId, cursorDoc) {
     return { comments, lastDoc, hasMore: comments.length === PAGE_SIZE };
   } catch (error) {
     console.error('Load comments error:', error);
-    return { comments: [], lastDoc: null, hasMore: false };
+    // TEMPORARY DEBUG: surface the real Firestore error (often a missing-
+    // composite-index message with a direct create-it link) so it's
+    // visible on-device without devtools. Remove once confirmed fixed.
+    return { comments: [], lastDoc: null, hasMore: false, loadError: error.message };
   }
 }
 
@@ -10654,7 +10657,7 @@ async function renderComments(videoId) {
   const v = VIDEOS.find(x => String(x.id) === String(videoId));
   const videoOwnerId = v && (v.userId || v.uid);
 
-  const { comments, lastDoc, hasMore } = await loadCommentsFromFirebase(videoId);
+  const { comments, lastDoc, hasMore, loadError } = await loadCommentsFromFirebase(videoId);
   const visible = comments.filter(c => !(appState.blockedUsers || []).includes(c.userId));
 
   _commentPagination[videoId] = { lastDoc, hasMore };
@@ -10675,7 +10678,10 @@ async function renderComments(videoId) {
   // real page regardless, so nothing is ever permanently hidden by it.
 
   if (comments.length === 0) {
-    list.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text3);font-size:13px;">No comments yet. Be the first!</div>`;
+    const debugLine = loadError
+      ? `<div style="margin-top:10px;padding:10px;background:#3a1414;color:#ff8a8a;font-size:11px;border-radius:8px;word-break:break-all;text-align:left;">DEBUG: ${_esc(loadError)}</div>`
+      : '';
+    list.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text3);font-size:13px;">No comments yet. Be the first!${debugLine}</div>`;
     return;
   }
 
