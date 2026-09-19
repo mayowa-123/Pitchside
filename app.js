@@ -1399,6 +1399,7 @@ function activateFirebaseListener() {
         ..._firebasePosts,
         ...localOnly
       ];
+      window.VIDEOS = VIDEOS; // mirror for lazy-loaded modules (see match-detail.js header comment)
 
       console.log('[PitchSide] VIDEOS merged:', VIDEOS.length,
         '| highlights:', _firebaseHighlights.length,
@@ -2189,6 +2190,7 @@ function _playInCard(videoId) {
   const v = VIDEOS.find(x => String(x.id) === vid);
   if (!v) return;
   currentVideoId = v.id;
+  window.currentVideoId = currentVideoId; // mirror for lazy-loaded modules (see match-detail.js header comment)
 
   const embedSlot = document.getElementById('vcard-embed-' + v.id);
   if (!embedSlot) return;
@@ -2204,6 +2206,7 @@ function _playInCard(videoId) {
 function _stopInCard(videoId) {
   if (String(currentVideoId) === String(videoId)) {
     currentVideoId = null;
+    window.currentVideoId = currentVideoId; // mirror for lazy-loaded modules (see match-detail.js header comment)
     // Hide speaker button when nothing is playing
     const spkBtn = document.getElementById('tt-speaker-btn');
     if (spkBtn) spkBtn.style.display = 'none';
@@ -2532,6 +2535,7 @@ function navigateVideo(direction) {
     // 2. Load the next video (updates embed + metadata)
     const nextV = VIDEOS[nextIdx];
     currentVideoId = nextV.id;
+    window.currentVideoId = currentVideoId; // mirror for lazy-loaded modules (see match-detail.js header comment)
     _loadVideoMeta(nextV);
     renderVideoEmbed(nextV);
     applyMuteState();
@@ -4635,6 +4639,7 @@ function openHlPlayer(id, title, videoUrl, embedHtml, thumbnail, ytSearch, video
 
   // Set current video ID for side action functions
   currentVideoId = id;
+  window.currentVideoId = currentVideoId; // mirror for lazy-loaded modules (see match-detail.js header comment)
   const v = VIDEOS.find(x => String(x.id) === String(id));
 
   // Real like count/state comes from videoMetrics (the actual collection
@@ -6117,7 +6122,16 @@ window.openMatchDetail = function(matchId, title) {
     const body = document.getElementById('match-ov-body');
     if (!body) return;
 
-    const stillLoading = body.querySelector('.ov-loading');
+    // Treat a completely empty body the same as .ov-loading: on the
+    // first tap of a session, match-detail.js is still being fetched
+    // over the network and hasn't written anything into body yet — an
+    // empty body here does NOT mean rendering is done, it means it
+    // hasn't started. Without this check, the button could get injected
+    // into the empty div and then immediately wiped out the moment the
+    // real card's body.innerHTML = ... landed a moment later (which is
+    // exactly why this only ever failed on the first tap of a session —
+    // subsequent taps reuse the already-loaded, near-instant module).
+    const stillLoading = body.querySelector('.ov-loading') || body.children.length === 0;
     if (stillLoading) {
       if (attempts < maxAttempts) setTimeout(tryAddBtn, 250);
       return;
@@ -8478,348 +8492,28 @@ function getTrendingVideos(limit = 20) {
     .slice(0, limit);
 }
 
-// ════════════════════════════════════════════════════════════════
-// 💬 COMMENTS SYSTEM - Full Firebase Integration
-// ════════════════════════════════════════════════════════════════
-
-async function submitComment() {
-  try {
-    const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
-    if (!currentUser?.uid) {
-      showToast('Please log in to comment');
-      return;
-    }
-
-    const input = document.getElementById('comment-input');
-    const text = input.value.trim();
-    
-    if (!text || !currentVideoId) {
-      showToast('Comment cannot be empty');
-      return;
-    }
-
-    if (text.length > 500) {
-      showToast('Comment too long (max 500 chars)');
-      return;
-    }
-
-    if (!_checkRateLimit('comment', 3000, 'Slow down a little before commenting again')) {
-      return;
-    }
-
-    const db = window._psDb;
-    const fsApi = window._psFs;
-
-    if (!db || !fsApi) {
-      showToast('Database not ready');
-      return;
-    }
-
-    // Add comment to Firebase
-    const commentsRef = fsApi.collection(db, 'videoComments');
-    const myName = getUserDisplayName(currentUser);
-    const v = VIDEOS.find(x => String(x.id) === String(currentVideoId));
-    const commentDoc = await fsApi.addDoc(commentsRef, {
-      videoId: String(currentVideoId),
-      videoOwnerId: (v && (v.userId || v.uid)) || '',
-      userId: currentUser.uid,
-      userName: myName,
-      userAvatar: (typeof profileData !== 'undefined' && profileData.avatarUrl) || '',
-      text: text,
-      timestamp: new Date(),
-      likes: 0,
-      likedBy: [],
-      createdAt: new Date(),
-    });
-
-    // Update videoMetrics comment count
-    const metricsRef = fsApi.doc(db, 'videoMetrics', String(currentVideoId));
-    await fsApi.updateDoc(metricsRef, {
-      comments: fsApi.increment(1),
-      updatedAt: new Date(),
-    }).catch(async (err) => {
-      if (err.code === 'not-found') {
-        await fsApi.setDoc(metricsRef, {
-          videoId: String(currentVideoId),
-          likes: [],
-          likeCount: 0,
-          comments: 1,
-          shares: 0,
-          reposts: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-      }
-    });
-
-    // Update UI — re-fetch from Firestore (the source of truth) rather than
-    // also keeping a local copy, which was causing every comment you posted
-    // to show up twice: once from this local array, once from Firestore.
-    input.value = '';
-    renderComments(currentVideoId);
-    showToast('Comment posted ✓');
-
-    // Notify video creator
-    const creator = v?.userId || v?.uid;
-    if (creator && creator !== currentUser.uid) {
-      const notifRef = fsApi.collection(db, 'notifications');
-      await fsApi.addDoc(notifRef, {
-        type: 'comment',
-        fromUserId: currentUser.uid,
-        fromUserName: myName,
-        toUserId: creator,
-        videoId: String(currentVideoId),
-        message: `${myName} commented: "${text.substring(0, 50)}"`,
-        timestamp: new Date(),
-        read: false,
-      }).catch(() => {});
-    }
-  } catch (error) {
-    console.error('Comment error:', error);
-    showToast('Failed to post comment');
+/* ═══════════════════════════════════════════
+   COMMENTS — LAZY MODULE LOADER
+═══════════════════════════════════════════ */
+// renderComments is called directly by openComments() (triggered by a
+// static onclick on every video's comment button), and submitComment is
+// called directly by the eager DOMContentLoaded keydown listener on
+// #comment-input plus the FanFeed's alternate "reading" comment box —
+// both reachable before this module has necessarily loaded, so both
+// need permanent stubs, same reasoning as match-detail.js.
+let _commentsModulePromise = null;
+function _loadCommentsModule() {
+  if (!_commentsModulePromise) {
+    _commentsModulePromise = import('./comments.js');
   }
+  return _commentsModulePromise;
 }
-
-// Load comments from Firebase
-// Pagination state, keyed per video so switching between two videos'
-// comment sections doesn't cross-contaminate cursors.
-const _commentPagination = {};
-
-async function loadCommentsFromFirebase(videoId, cursorDoc) {
-  const PAGE_SIZE = 20;
-  try {
-    const db = window._psDb;
-    const fsApi = window._psFs;
-
-    if (!db || !fsApi) return { comments: [], lastDoc: null, hasMore: false };
-
-    const commentsRef = fsApi.collection(db, 'videoComments');
-    const queryParts = [
-      commentsRef,
-      fsApi.where('videoId', '==', String(videoId)),
-      fsApi.orderBy('timestamp', 'desc'),
-      fsApi.limit(PAGE_SIZE),
-    ];
-    if (cursorDoc) queryParts.push(fsApi.startAfter(cursorDoc));
-
-    const q = fsApi.query(...queryParts);
-    const snap = await fsApi.getDocs(q);
-
-    const comments = [];
-    let lastDoc = null;
-    snap.forEach(doc => {
-      const data = doc.data();
-      comments.push({
-        id: doc.id,
-        userId: data.userId || '',
-        user: data.userName || 'User',
-        avatar: data.userAvatar || '',
-        text: data.text,
-        time: getTimeAgo(data.timestamp),
-        initials: (data.userName || 'U')[0].toUpperCase(),
-        likes: data.likes || 0,
-        timestamp: data.timestamp,
-      });
-      lastDoc = doc;
-    });
-
-    return { comments, lastDoc, hasMore: comments.length === PAGE_SIZE };
-  } catch (error) {
-    console.error('Load comments error:', error);
-    // TEMPORARY DEBUG: surface the real Firestore error (often a missing-
-    // composite-index message with a direct create-it link) so it's
-    // visible on-device without devtools. Remove once confirmed fixed.
-    return { comments: [], lastDoc: null, hasMore: false, loadError: error.message };
-  }
-}
-
-// Helper: Get time ago string
-function getTimeAgo(timestamp) {
-  if (!timestamp) return 'now';
-
-  // Firestore returns a Timestamp object (with a .toDate() method), not a
-  // plain JS Date — passing that straight into `new Date(...)` silently
-  // produces an Invalid Date, which is why this was showing "NaNd ago".
-  const date = (timestamp && typeof timestamp.toDate === 'function')
-    ? timestamp.toDate()
-    : new Date(timestamp);
-  if (isNaN(date.getTime())) return 'now';
-
-  const now = new Date();
-  const seconds = Math.floor((now - date) / 1000);
-
-  if (seconds < 60) return 'now';
-  if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
-  if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
-  return Math.floor(seconds / 86400) + 'd ago';
-}
-
-// Update renderComments to use Firebase data
-// Builds one comment's DOM node — shared by the initial render and by
-// "load more" so appending a page never has to duplicate this logic.
-function _buildCommentItem(c, videoId, myUid, videoOwnerId) {
-  const item = document.createElement('div');
-  item.className = 'comment-item';
-
-  const avatar = document.createElement('div');
-  avatar.className = 'comment-avatar';
-  if (c.avatar) {
-    avatar.innerHTML = `<img src="${c.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
-  } else {
-    avatar.textContent = c.initials;
-  }
-
-  const bubble = document.createElement('div');
-  bubble.className = 'comment-bubble';
-
-  const user = document.createElement('div');
-  user.className = 'comment-user';
-  user.textContent = c.user;
-
-  const text = document.createElement('div');
-  text.className = 'comment-text';
-  text.textContent = c.text;
-
-  const time = document.createElement('div');
-  time.className = 'comment-time';
-  time.textContent = c.time;
-
-  bubble.appendChild(user);
-  bubble.appendChild(text);
-  bubble.appendChild(time);
-  item.appendChild(avatar);
-  item.appendChild(bubble);
-
-  // Delete: available to the comment's own author, or to the video owner
-  // moderating comments on their own post — nobody else.
-  const canDelete = myUid && (c.userId === myUid || videoOwnerId === myUid);
-  if (canDelete) {
-    const del = document.createElement('div');
-    del.className = 'comment-delete';
-    del.textContent = '🗑️';
-    del.title = 'Delete comment';
-    del.onclick = () => _deleteComment(c.id, videoId);
-    item.appendChild(del);
-  } else if (myUid && c.userId && c.userId !== myUid) {
-    // Not your comment and not your video — the only option is to report it
-    const report = document.createElement('div');
-    report.className = 'comment-delete';
-    report.textContent = '🚩';
-    report.title = 'Report comment';
-    report.onclick = () => _showModerationSheet({
-      contentType: 'comment', contentId: c.id, targetUserId: c.userId, targetUserName: c.user
-    });
-    item.appendChild(report);
-  }
-
-  return item;
-}
-
-function _renderCommentLoadMoreBtn(videoId) {
-  const wrap = document.createElement('div');
-  wrap.id = 'comment-load-more-wrap';
-  wrap.style.cssText = 'text-align:center;padding:12px 0 4px;';
-  wrap.innerHTML = `<button onclick="_loadMoreComments('${_esc(String(videoId))}')" style="padding:8px 20px;border-radius:20px;border:none;background:rgba(255,255,255,0.08);color:var(--text2);font-size:12.5px;font-weight:600;cursor:pointer;">Load more comments</button>`;
-  return wrap;
-}
-
-// Loads and renders the FIRST page of comments — resets pagination state
-// for this video. 20 at a time instead of the old unbounded single read,
-// which pulled every comment on a post in one shot every time it opened —
-// fine at 10 comments, a real cost and a real wait once anything gets
-// popular.
-async function renderComments(videoId) {
-  const list = document.getElementById('comment-list');
-  if (!list) return;
-
-  const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
-  const v = VIDEOS.find(x => String(x.id) === String(videoId));
-  const videoOwnerId = v && (v.userId || v.uid);
-
-  const { comments, lastDoc, hasMore, loadError } = await loadCommentsFromFirebase(videoId);
-  const visible = comments.filter(c => !(appState.blockedUsers || []).includes(c.userId));
-
-  _commentPagination[videoId] = { lastDoc, hasMore };
-
-  // The count badge uses the running total already tracked on the video
-  // doc (v.comments, kept in sync via increment/decrement on post and
-  // delete) rather than counting what's been fetched so far — pagination
-  // means this function only ever sees one page at a time, so counting
-  // fetched docs would show "20" forever once a post passes 20 comments.
-  const commentCount = document.getElementById('comment-count');
-  if (commentCount) commentCount.textContent = `(${(v && v.comments) || comments.length})`;
-
-  // Note: blocked-user filtering happens after the Firestore page is
-  // fetched, so a page can render shorter than 20 if several of that
-  // page's comments happen to be from someone you've blocked. That's a
-  // known, acceptable tradeoff for a client-side blocklist layered on
-  // top of server-side pagination — "Load more" still fetches the next
-  // real page regardless, so nothing is ever permanently hidden by it.
-
-  if (comments.length === 0) {
-    const debugLine = loadError
-      ? `<div style="margin-top:10px;padding:10px;background:#3a1414;color:#ff8a8a;font-size:11px;border-radius:8px;word-break:break-all;text-align:left;">DEBUG: ${_esc(loadError)}</div>`
-      : '';
-    list.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text3);font-size:13px;">No comments yet. Be the first!${debugLine}</div>`;
-    return;
-  }
-
-  list.innerHTML = '';
-  visible.forEach(c => list.appendChild(_buildCommentItem(c, videoId, myUid, videoOwnerId)));
-
-  if (hasMore) list.appendChild(_renderCommentLoadMoreBtn(videoId));
-
-  list.scrollTop = 0;
-}
-
-// Fetches and appends the next page on top of what's already rendered —
-// never re-fetches or re-renders what's already on screen.
-async function _loadMoreComments(videoId) {
-  const state = _commentPagination[videoId];
-  if (!state || !state.hasMore) return;
-
-  const list = document.getElementById('comment-list');
-  const oldBtn = document.getElementById('comment-load-more-wrap');
-  if (oldBtn) oldBtn.remove();
-
-  const { comments, lastDoc, hasMore } = await loadCommentsFromFirebase(videoId, state.lastDoc);
-  const visible = comments.filter(c => !(appState.blockedUsers || []).includes(c.userId));
-
-  _commentPagination[videoId] = { lastDoc, hasMore };
-
-  const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
-  const v = VIDEOS.find(x => String(x.id) === String(videoId));
-  const videoOwnerId = v && (v.userId || v.uid);
-
-  if (list) {
-    visible.forEach(c => list.appendChild(_buildCommentItem(c, videoId, myUid, videoOwnerId)));
-    if (hasMore) list.appendChild(_renderCommentLoadMoreBtn(videoId));
-  }
-}
-
-// Firestore Timestamp -> epoch ms, tolerant of already-plain dates/numbers.
-function _tsToMs(ts) {
-  if (!ts) return 0;
-  const d = (ts && typeof ts.toDate === 'function') ? ts.toDate() : new Date(ts);
-  const ms = d.getTime();
-  return isNaN(ms) ? 0 : ms;
-}
-
-async function _deleteComment(commentId, videoId) {
-  const fsApi = window._psFs;
-  const db = window._psDb;
-  if (!fsApi || !db || !fsApi.deleteDoc) { showToast('Delete is not available right now'); return; }
-  try {
-    await fsApi.deleteDoc(fsApi.doc(db, 'videoComments', commentId));
-    const metricsRef = fsApi.doc(db, 'videoMetrics', String(videoId));
-    fsApi.updateDoc(metricsRef, { comments: fsApi.increment(-1) }).catch(() => {});
-    showToast('Comment deleted');
-    renderComments(videoId);
-  } catch (e) {
-    console.warn('[Comments] delete failed:', e);
-    showToast('Could not delete — check your connection');
-  }
-}
+window.renderComments = function (...args) {
+  return _loadCommentsModule().then(mod => mod.renderComments(...args));
+};
+window.submitComment = function (...args) {
+  return _loadCommentsModule().then(mod => mod.submitComment(...args));
+};
 
 // ════════════════════════════════════════════════════════════════
 // 📤 SHARES SYSTEM - Multi-Platform
@@ -9623,6 +9317,7 @@ function _ffSubmitReadingComment() {
   if (!videoId) return;
 
   currentVideoId = videoId;
+  window.currentVideoId = currentVideoId; // mirror for lazy-loaded modules (see match-detail.js header comment)
   hiddenInput.value = readingInput.value;
   try {
     const result = submitComment();
@@ -9823,6 +9518,7 @@ function _ffMarkLiked(videoId, el) {
 
 function _ffComment(videoId) {
   currentVideoId = videoId;
+  window.currentVideoId = currentVideoId; // mirror for lazy-loaded modules (see match-detail.js header comment)
   try { if (typeof openComments === 'function') openComments(); } catch (e) {}
 }
 
