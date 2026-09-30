@@ -1122,95 +1122,6 @@ function renderLiveScores(groups, filter) {
   wrap.innerHTML = html;
 }
 
-// ─────────────────────────────────────────────
-// TICKER
-// ─────────────────────────────────────────────
-
-let _tickerSubscribed = false;
-
-function startTickerRefresh() {
-  _subscribeLiveScoresFirestore();
-}
-
-function stopTickerRefresh() {
-  // Firestore listener remains active.
-}
-
-function renderTicker(matches) {
-  const container =
-    document.getElementById(
-      'ticker-row'
-    );
-
-  if (!container) {
-    return;
-  }
-
-  container.innerHTML =
-    matches.map(m => {
-      const st =
-        m.status || 'NS';
-
-      const isLive =
-        [
-          '1H',
-          '2H',
-          'ET',
-          'HT',
-          'P',
-          'INT',
-          'LIVE'
-        ].includes(st);
-
-      const isHT =
-        st === 'HT';
-
-      const active =
-        isLive;
-
-      const displayStatus =
-        isLive && m.minute
-          ? `${m.minute}'`
-          : (
-              isHT
-                ? 'HT'
-                : st
-            );
-
-      return `
-        <div
-          class="t-card"
-          onclick="openMatchDetail(
-            '${_esc(String(m.matchId))}',
-            '${_esc(m.home + ' vs ' + m.away)}'
-          )"
-        >
-
-          <div class="t-teams">
-            <div>${m.home}</div>
-            <div>${m.away}</div>
-          </div>
-
-          <div class="t-score">
-            ${m.score}
-          </div>
-
-          <div
-            class="t-live"
-            style="
-              background:${active ? '#10b981' : '#333'};
-              color:${active ? '#fff' : '#999'};
-            "
-          >
-            ${displayStatus}
-          </div>
-
-        </div>
-      `;
-    })
-    .join('');
-}
-
 /* ═══════════════════════════════════════════
    VIDEO DATA SYSTEM
 /* ═══════════════════════════════════════════
@@ -8376,7 +8287,7 @@ function updateVideoMetricsUI(videoId) {
     const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
     const heartSvg = videoCard.querySelector('.ff-rail-btn svg');
     if (heartSvg && myUid) {
-      heartSvg.setAttribute('fill', metrics.likes?.includes(myUid) ? '#f43f5e' : '#fff');
+      heartSvg.setAttribute('fill', metrics.likes?.includes(myUid) ? '#1E9E56' : '#9CA79E');
     }
   });
 
@@ -9200,49 +9111,50 @@ function _ffRenderSlide(v) {
 
   return `
     <div class="ff-slide" data-id="${safeId}" data-video-id="${safeId}" data-uid="${_esc(posterUserId)}">
-      <video class="ff-video-bg" data-video-url="${_ffGetVideoSrc(v)}" loop playsinline muted preload="metadata"
-        disablePictureInPicture disableRemotePlayback controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
-        aria-hidden="true" tabindex="-1"></video>
-      <video class="ff-video" data-video-url="${_ffGetVideoSrc(v)}" loop playsinline preload="metadata"
-        disablePictureInPicture disableRemotePlayback controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
-        onclick="_ffHandleVideoTap(this, '${safeId}')"></video>
-
-      <div class="ff-topbar" onclick="_ffOpenSearch(); event.stopPropagation();">
-        <span class="ff-topbar-icon">🔍</span>
-        <span class="ff-topbar-text">Find related content</span>
-      </div>
-
-      <div class="ff-gradient-bottom"></div>
-
-      <div class="ff-info">
-        <div class="ff-poster" onclick="_ffOpenProfile('${_esc(posterUserId)}', '${_esc(posterName)}')" style="cursor:pointer;">${_esc(posterName)}</div>
-        <div class="ff-caption" id="ff-cap-${safeId}">${_ffFormatCaption(v.title || '')}</div>
-        ${_ffCaptionNeedsMore(v.title || '') ? `<div class="ff-caption-more" onclick="_ffOpenReadingMode('${safeId}')">...more</div>` : ''}
-        ${v.music ? `<div class="ff-music">🎵 ${_esc(v.music)}</div>` : ''}
-      </div>
-
-      <div class="ff-rail">
+      <div class="ff-header">
         <div class="ff-avatar-wrap" onclick="_ffOpenProfile('${_esc(posterUserId)}', '${_esc(posterName)}')">
           <div class="ff-avatar" id="ff-avatar-${safeId}">${v.posterAvatar ? `<img src="${_esc(v.posterAvatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : _esc(_ffAvatarInitial(posterName))}</div>
           ${(!isMe) ? `<div class="ff-follow-badge" data-follow-uid="${_esc(posterUserId)}" onclick="event.stopPropagation(); _ffQuickFollow('${_esc(posterUserId)}', this)">${alreadyFollowing ? '✓' : '+'}</div>` : ''}
         </div>
+        <div class="ff-info">
+          <div class="ff-poster" onclick="_ffOpenProfile('${_esc(posterUserId)}', '${_esc(posterName)}')" style="cursor:pointer;">${_esc(posterName)}</div>
+          <div class="ff-caption" id="ff-cap-${safeId}">${_ffFormatCaption(v.title || '')}</div>
+          ${_ffCaptionNeedsMore(v.title || '') ? `<div class="ff-caption-more" onclick="_ffOpenReadingMode('${safeId}')">...more</div>` : ''}
+          ${v.music ? `<div class="ff-music">🎵 ${_esc(v.music)}</div>` : ''}
+        </div>
+        <div class="ff-topbar" onclick="_ffOpenSearch(); event.stopPropagation();">
+          <span class="ff-topbar-icon">🔍</span>
+          <span class="ff-topbar-text">Find related content</span>
+        </div>
+      </div>
+
+      <div class="ff-video-frame">
+        <video class="ff-video-bg" data-video-url="${_ffGetVideoSrc(v)}" loop playsinline muted preload="metadata"
+          disablePictureInPicture disableRemotePlayback controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
+          aria-hidden="true" tabindex="-1"></video>
+        <video class="ff-video" data-video-url="${_ffGetVideoSrc(v)}" loop playsinline preload="metadata"
+          disablePictureInPicture disableRemotePlayback controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
+          onclick="_ffHandleVideoTap(this, '${safeId}')"></video>
+        <div class="ff-mute-btn" onclick="_ffToggleMute()">${_ffMuted ? '🔇' : '🔊'}</div>
+      </div>
+
+      <div class="ff-rail">
         <div class="ff-rail-btn" onclick="_ffLike('${safeId}', this)">
-          <svg width="34" height="34" fill="#fff" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+          <svg width="26" height="26" fill="#9CA79E" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
           <span class="ff-rail-count like-count">${likeCount}</span>
         </div>
         <div class="ff-rail-btn" onclick="_ffComment('${safeId}')">
-          <svg width="32" height="32" fill="#fff" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"/></svg>
+          <svg width="24" height="24" fill="#12160F" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"/></svg>
           <span class="ff-rail-count comment-count">${commentCount}</span>
         </div>
         <div class="ff-rail-btn" onclick="_ffSave('${safeId}', this)">
-          <svg width="30" height="30" fill="${(typeof savedHighlights !== 'undefined' && savedHighlights.has(v.id)) ? '#facc15' : '#fff'}" viewBox="0 0 24 24"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z"/></svg>
+          <svg width="22" height="22" fill="${(typeof savedHighlights !== 'undefined' && savedHighlights.has(v.id)) ? '#facc15' : '#12160F'}" viewBox="0 0 24 24"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z"/></svg>
           <span class="ff-rail-count">Save</span>
         </div>
         <div class="ff-rail-btn" onclick="_ffShare('${safeId}')">
-          <svg width="32" height="32" fill="#fff" viewBox="0 0 24 24"><path d="M18 8a3 3 0 1 0-2.83-4H15a3 3 0 0 0 .05.61L8.09 8.55a3 3 0 1 0 0 6.9l6.96 3.94A3 3 0 1 0 18 16a2.99 2.99 0 0 0-2.83 2H15l-6.96-3.94a3 3 0 0 0 0-1.12L15 9.6a2.99 2.99 0 0 0 3-1.6z"/></svg>
+          <svg width="24" height="24" fill="#12160F" viewBox="0 0 24 24"><path d="M18 8a3 3 0 1 0-2.83-4H15a3 3 0 0 0 .05.61L8.09 8.55a3 3 0 1 0 0 6.9l6.96 3.94A3 3 0 1 0 18 16a2.99 2.99 0 0 0-2.83 2H15l-6.96-3.94a3 3 0 0 0 0-1.12L15 9.6a2.99 2.99 0 0 0 3-1.6z"/></svg>
           <span class="ff-rail-count">Share</span>
         </div>
-        <div class="ff-mute-btn" onclick="_ffToggleMute()">${_ffMuted ? '🔇' : '🔊'}</div>
       </div>
     </div>`;
 }
@@ -9489,7 +9401,7 @@ async function _ffLike(videoId, el) {
     console.error('[FanFeed] like failed:', e);
     if (el) {
       const svg = el.querySelector('svg');
-      if (svg) svg.setAttribute('fill', '#fff');
+      if (svg) svg.setAttribute('fill', '#9CA79E');
     }
     if (typeof showToast === 'function') {
       const code = e?.code || 'no-code';
@@ -9511,7 +9423,7 @@ function _ffMarkLiked(videoId, el) {
   }
   if (!el) return;
   const svg = el.querySelector('svg');
-  if (svg) svg.setAttribute('fill', '#f43f5e');
+  if (svg) svg.setAttribute('fill', '#1E9E56');
   el.style.transform = 'scale(1.25)';
   setTimeout(() => { el.style.transform = 'scale(1)'; }, 150);
 }
@@ -9804,7 +9716,7 @@ function _ffHandleVideoTap(el, videoId) {
 // TikTok-style: single tap pauses/resumes and shows a big center icon that
 // fades out on its own after a moment, then reappears on the next tap.
 function _ffTogglePlayPause(videoEl) {
-  const slide = videoEl.closest('.ff-slide');
+  const slide = videoEl.closest('.ff-video-frame');
   if (!slide) return;
   if (videoEl.paused) {
     videoEl.play().catch(() => {});
