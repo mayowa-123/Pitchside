@@ -9126,6 +9126,9 @@ function _ffRenderSlide(v) {
           <span class="ff-topbar-icon">🔍</span>
           <span class="ff-topbar-text">Find related content</span>
         </div>
+        <div class="ff-topbar" onclick="event.stopPropagation(); _showModerationSheet({contentType:'video', contentId:'${safeId}', targetUserId:'${_esc(posterUserId)}', targetUserName:'${_esc(posterName)}'});" style="margin-left:6px;">
+          <span class="ff-topbar-icon" style="font-weight:800;letter-spacing:1px;">⋯</span>
+        </div>
       </div>
 
       <div class="ff-video-frame">
