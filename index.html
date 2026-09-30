@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1236,40 +1237,40 @@
     100% { transform: translate(-50%,-50%) scale(1); opacity: 0; }
   }
 
-  #ff-profile-overlay { position: fixed; inset: 0; background: #0b0b14; z-index: 70; display: none; flex-direction: column; overflow-y: auto; }
+  #ff-profile-overlay { position: fixed; inset: 0; background: #FFFFFF; z-index: 70; display: none; flex-direction: column; overflow-y: auto; }
   #ff-profile-overlay.open { display: flex; }
   .ffp-hdr { display: flex; align-items: center; gap: 14px; padding: 44px 16px 14px; position: relative; }
   .ffp-avatar { width: 70px; height: 70px; border-radius: 50%; background: linear-gradient(135deg,#10b981,#059669); display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 800; color: #fff; flex-shrink: 0; }
-  .ffp-name { font-size: 17px; font-weight: 800; color: #fff; }
-  .ffp-stats { display: flex; gap: 16px; margin-top: 6px; font-size: 12px; color: rgba(255,255,255,.7); }
-  .ffp-follow-btn { margin-left: auto; background: #f43f5e; color: #fff; border: none; border-radius: 8px; padding: 9px 20px; font-weight: 700; font-size: 13px; cursor: pointer; }
-  .ffp-follow-btn.following { background: rgba(255,255,255,.12); }
-  .ffp-more-btn { background: rgba(255,255,255,.1); color: #fff; border: none; border-radius: 8px; padding: 9px 12px; font-weight: 800; font-size: 15px; cursor: pointer; margin-left: 8px; }
-  .ffp-close { position: absolute; top: 14px; right: 14px; color: #fff; font-size: 24px; background: none; border: none; cursor: pointer; z-index: 2; }
+  .ffp-name { font-size: 17px; font-weight: 800; color: #12160F; }
+  .ffp-stats { display: flex; gap: 16px; margin-top: 6px; font-size: 12px; color: #6E7166; }
+  .ffp-follow-btn { margin-left: auto; background: #1E9E56; color: #fff; border: none; border-radius: 8px; padding: 9px 20px; font-weight: 700; font-size: 13px; cursor: pointer; }
+  .ffp-follow-btn.following { background: #EEF5F0; color: #12160F; }
+  .ffp-more-btn { background: #EEF5F0; color: #12160F; border: none; border-radius: 8px; padding: 9px 12px; font-weight: 800; font-size: 15px; cursor: pointer; margin-left: 8px; }
+  .ffp-close { position: absolute; top: 14px; right: 14px; color: #12160F; font-size: 24px; background: none; border: none; cursor: pointer; z-index: 2; }
   .ffp-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 2px; padding: 2px; }
-  .ffp-grid-item { position: relative; aspect-ratio: 9/16; background: #111; overflow: hidden; cursor: pointer; }
+  .ffp-grid-item { position: relative; aspect-ratio: 9/16; background: #EEF5F0; overflow: hidden; cursor: pointer; }
   .ffp-grid-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .ffp-handle { font-size: 13px; font-weight: 500; color: rgba(255,255,255,.5); }
-  .ffp-bio { padding: 2px 16px 12px; font-size: 13.5px; line-height: 1.4; color: rgba(255,255,255,.85); white-space: pre-wrap; }
+  .ffp-handle { font-size: 13px; font-weight: 500; color: #6E7166; }
+  .ffp-bio { padding: 2px 16px 12px; font-size: 13.5px; line-height: 1.4; color: #12160F; white-space: pre-wrap; }
   .ffp-links { padding: 0 16px 12px; display: flex; flex-direction: column; gap: 4px; }
-  .ffp-link { color: #34d399; font-size: 13px; text-decoration: none; font-weight: 600; }
-  .ffp-section-label { padding: 12px 16px 6px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: rgba(255,255,255,.4); }
+  .ffp-link { color: #1E9E56; font-size: 13px; text-decoration: none; font-weight: 600; }
+  .ffp-section-label { padding: 12px 16px 6px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #9AA39C; }
   .ffp-highlights { display: flex; gap: 12px; padding: 0 16px 10px; overflow-x: auto; }
   .ffp-highlight { flex-shrink: 0; width: 62px; text-align: center; cursor: pointer; }
-  .ffp-highlight-thumb { width: 58px; height: 58px; border-radius: 50%; overflow: hidden; background: #111; border: 2px solid #10b981; }
+  .ffp-highlight-thumb { width: 58px; height: 58px; border-radius: 50%; overflow: hidden; background: #EEF5F0; border: 2px solid #1E9E56; }
   .ffp-highlight-thumb img { width: 100%; height: 100%; object-fit: cover; }
-  .ffp-highlight-label { font-size: 10.5px; color: rgba(255,255,255,.65); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ffp-highlight-label { font-size: 10.5px; color: #6E7166; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ffp-details { padding: 0 16px 8px; display: flex; flex-direction: column; gap: 6px; }
-  .ffp-detail-row { font-size: 13px; color: rgba(255,255,255,.75); }
+  .ffp-detail-row { font-size: 13px; color: #4B5348; }
   .ffp-friends { display: flex; gap: 14px; padding: 0 16px 10px; overflow-x: auto; }
   .ffp-friend { flex-shrink: 0; width: 54px; text-align: center; cursor: pointer; }
-  .ffp-friend-avatar { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg,#334155,#1e293b); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: #fff; margin: 0 auto; }
-  .ffp-friend-name { font-size: 10.5px; color: rgba(255,255,255,.65); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ffp-tabs { display: flex; border-top: 1px solid rgba(255,255,255,.08); border-bottom: 1px solid rgba(255,255,255,.08); margin-top: 8px; }
-  .ffp-tab { flex: 1; text-align: center; padding: 11px 0; font-size: 12.5px; font-weight: 700; color: rgba(255,255,255,.45); cursor: pointer; border-bottom: 2px solid transparent; }
-  .ffp-tab.active { color: #fff; border-bottom-color: #10b981; }
+  .ffp-friend-avatar { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg,#7FCFA0,#1E9E56); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: #fff; margin: 0 auto; }
+  .ffp-friend-name { font-size: 10.5px; color: #6E7166; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ffp-tabs { display: flex; border-top: 1px solid #E9F3EC; border-bottom: 1px solid #E9F3EC; margin-top: 8px; }
+  .ffp-tab { flex: 1; text-align: center; padding: 11px 0; font-size: 12.5px; font-weight: 700; color: #9AA39C; cursor: pointer; border-bottom: 2px solid transparent; }
+  .ffp-tab.active { color: #12160F; border-bottom-color: #1E9E56; }
   .ffp-pin-btn { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; font-size: 11px; cursor: pointer; }
-  .ffp-pin-btn.pinned { background: #10b981; }
+  .ffp-pin-btn.pinned { background: #1E9E56; }
 
   /* ── Reading mode: TikTok's expanded-caption view ── */
   /* Defensive override: style.css sets #comment-panel's z-index for the
@@ -1320,7 +1321,7 @@
 </style>
 <div id="fanfeed-container">
   <button id="ff-close-btn" onclick="closeFanFeedOverlay()">
-    <svg width="26" height="26" fill="#fff" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+    <svg width="22" height="22" fill="#12160F" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
   </button>
   <div id="fanfeed-slides"></div>
 </div>
