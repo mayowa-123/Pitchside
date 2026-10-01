@@ -2296,117 +2296,75 @@
 
 
 <!-- ════════════════════════════════════════
-     WATCH PAGE OVERLAY (YOUTUBE STYLE)
+     HIGHLIGHTS MATCH HUB
+     Compact, match-first presentation for official clips.
 ════════════════════════════════════════ -->
 <div id="watch-page-overlay" class="watch-page-overlay">
-  <button class="watch-back-btn" onclick="closeWatchPage()">
-    <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
-  </button>
-  
-  <div class="watch-player-area" id="watch-player-body">
-    <!-- Iframe injected here -->
-  </div>
+  <header class="highlights-header">
+    <button class="highlights-icon-btn" onclick="closeWatchPage()" aria-label="Back to highlights">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+    </button>
+    <div class="highlights-header-title">Highlights</div>
+    <button class="highlights-icon-btn" onclick="handleWatchSearch()" aria-label="Search highlights">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7.5"/><path d="m20 20-3.7-3.7"/></svg>
+    </button>
+  </header>
 
-  <div class="watch-content-scroll">
-    <div class="watch-info-section">
-      <h2 class="watch-title" id="watch-video-title">Loading...</h2>
-      
-      <div class="watch-action-bar">
-        <button class="action-btn" onclick="toggleWatchAction(this, 'like')">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
-          <span id="watch-like-count">1.2k</span>
+  <main class="highlights-scroll">
+    <section class="highlight-hero" aria-labelledby="watch-video-title">
+      <div class="highlight-player-frame" id="watch-player-body">
+        <!-- Native video or embed injected here. -->
+      </div>
+      <div class="highlight-title-block">
+        <h1 class="highlight-match-title" id="watch-video-title">Arsenal 2 - 1 Chelsea</h1>
+        <p class="highlight-match-meta">
+          <span id="watch-competition">Premier League</span>
+          <span class="highlight-meta-dot">•</span>
+          <span id="watch-match-date">Sep 30, 2026</span>
+        </p>
+      </div>
+      <div class="highlight-action-row" aria-label="Highlight actions">
+        <button class="highlight-action highlight-action-like" onclick="toggleWatchAction(this, 'like')" aria-label="Like highlight">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 8.5c0 5.5-8.8 10.5-8.8 10.5S3.2 14 3.2 8.5A4.5 4.5 0 0 1 12 6.2a4.5 4.5 0 0 1 8.8 2.3Z"/></svg>
+          <span id="watch-like-count">1.2K</span>
         </button>
-        <button class="action-btn" onclick="toggleWatchAction(this, 'dislike')">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zM17 2h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"/></svg>
-          <span>Dislike</span>
-        </button>
-        <button class="action-btn" onclick="handleWatchAction('save')">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        <button class="highlight-action" onclick="handleWatchAction('save')" aria-label="Save highlight">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.5A2.5 2.5 0 0 1 7.5 2h9A2.5 2.5 0 0 1 19 4.5V21l-7-3.8L5 21V4.5Z"/></svg>
           <span>Save</span>
         </button>
-        <button class="action-btn" onclick="handleWatchAction('download')">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-          <span>Download</span>
-        </button>
-        <button class="action-btn" onclick="handleWatchAction('share')">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/></svg>
+        <button class="highlight-action" onclick="handleWatchAction('share')" aria-label="Share highlight">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.6M8.2 13.2l7.6 4.6"/></svg>
           <span>Share</span>
         </button>
       </div>
+    </section>
 
-      <div class="watch-channel-row">
-        <div class="channel-info">
-          <div class="channel-avatar" id="watch-channel-avatar">P</div>
-          <div>
-            <div class="channel-name" id="watch-channel-name">PitchSide Official</div>
-            <div style="font-size:11px;color:var(--text3);">45.2k subscribers</div>
-          </div>
-        </div>
-        <button class="follow-btn" onclick="handleWatchAction('follow')">Follow</button>
+    <section class="match-information-card" aria-labelledby="match-information-title">
+      <h2 id="match-information-title" class="highlight-section-label">Match Information</h2>
+      <div class="match-score-row">
+        <div class="match-team-name" id="watch-home-team">Arsenal</div>
+        <div class="match-score"><strong id="watch-home-score">2</strong><span>—</span><strong id="watch-away-score">1</strong></div>
+        <div class="match-team-name match-team-away" id="watch-away-team">Chelsea</div>
       </div>
-    </div>
-
-    <h3 class="related-header">Up Next</h3>
-    <div class="related-grid" id="watch-related-grid">
-      <!-- Related videos injected here -->
-    </div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════
-     PREMIUM STADIUM WATCH PAGE
-════════════════════════════════════════ -->
-<div id="watch-page-overlay" class="watch-page-overlay">
-  <button class="watch-back-btn" onclick="closeWatchPage()">
-    <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
-  </button>
-  
-  <div class="watch-player-area" id="watch-player-body">
-    <!-- Iframe or Video injected here -->
-  </div>
-
-  <div class="watch-content-scroll">
-    <div class="watch-info-section">
-      <h2 class="watch-title" id="watch-video-title">Loading...</h2>
-      
-      <div class="watch-action-bar">
-        <button class="action-btn" onclick="toggleWatchAction(this, 'like')">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
-          <span id="watch-like-count">1.2k</span>
-        </button>
-        <button class="action-btn" onclick="toggleWatchAction(this, 'dislike')">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zM17 2h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"/></svg>
-          <span>Dislike</span>
-        </button>
-        <button class="action-btn" onclick="handleWatchAction('save')">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
-          <span>Save</span>
-        </button>
-        <button class="action-btn" onclick="handleWatchAction('download')">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-          <span>Download</span>
-        </button>
-        <button class="action-btn" onclick="handleWatchAction('share')">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/></svg>
-          <span>Share</span>
-        </button>
+      <div class="match-venue-row">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+        <span id="watch-stadium">Emirates Stadium</span>
       </div>
+    </section>
 
-      <div class="watch-channel-row">
-        <div class="channel-info">
-          <div class="channel-avatar" id="watch-channel-avatar">P</div>
-          <div>
-            <div class="channel-name" id="watch-channel-name">PitchSide Official</div>
-            <div style="font-size:11px;color:rgba(255,255,255,0.4);">45.2k subscribers</div>
-          </div>
-        </div>
-        <button class="follow-btn" onclick="handleWatchAction('follow')">Follow</button>
+    <section class="highlight-section" aria-labelledby="latest-highlights-title">
+      <div class="highlight-section-heading">
+        <h2 id="latest-highlights-title">Latest Highlights</h2>
+        <button class="section-link" onclick="handleWatchSearch()">See all</button>
       </div>
-    </div>
+      <div class="latest-highlights-grid" id="watch-latest-grid"></div>
+    </section>
 
-    <h3 class="related-header">Up Next</h3>
-    <div class="related-grid" id="watch-related-grid">
-      <!-- Related videos injected here -->
-    </div>
-  </div>
+    <section class="highlight-section trending-highlight-section" aria-labelledby="trending-highlights-title">
+      <div class="highlight-section-heading">
+        <h2 id="trending-highlights-title">Trending Highlights</h2>
+      </div>
+      <div class="trending-highlights-list" id="watch-trending-grid"></div>
+    </section>
+  </main>
 </div>

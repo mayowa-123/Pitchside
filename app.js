@@ -8548,31 +8548,105 @@ window.openSBPlayer = function(title, videoData) {
    Unified for All Video Types
 ═══════════════════════════════════════════ */
 
+function _highlightEsc(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  }[ch]));
+}
+function _highlightCount(value) {
+  const count = Number(value);
+  if (!Number.isFinite(count) || count <= 0) return '1.2K';
+  if (count >= 1000000) return `${(count / 1000000).toFixed(1).replace('.0', '')}M`;
+  if (count >= 1000) return `${(count / 1000).toFixed(1).replace('.0', '')}K`;
+  return String(count);
+}
+function _highlightTeamName(team, fallback) {
+  if (!team) return fallback;
+  if (typeof team === 'string') return team;
+  return team.name || team.shortName || team.displayName || fallback;
+}
+function _highlightDate(value) {
+  if (!value) return 'Sep 30, 2026';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function _highlightContext(videoData) {
+  const match = videoData.match || videoData.fixture || {};
+  const home = _highlightTeamName(videoData.homeTeam || videoData.home || match.homeTeam || match.home, 'Arsenal');
+  const away = _highlightTeamName(videoData.awayTeam || videoData.away || match.awayTeam || match.away, 'Chelsea');
+  const scoreValue = videoData.score || videoData.result || match.score || {};
+  let homeScore = videoData.homeScore ?? match.homeScore ?? scoreValue.home ?? scoreValue.homeScore;
+  let awayScore = videoData.awayScore ?? match.awayScore ?? scoreValue.away ?? scoreValue.awayScore;
+  if ((homeScore == null || awayScore == null) && typeof scoreValue === 'string') {
+    const scoreMatch = scoreValue.match(/(\d+)\s*[-:]\s*(\d+)/);
+    if (scoreMatch) { homeScore = scoreMatch[1]; awayScore = scoreMatch[2]; }
+  }
+  return {
+    home,
+    away,
+    homeScore: homeScore == null ? '2' : homeScore,
+    awayScore: awayScore == null ? '1' : awayScore,
+    competition: videoData.competition || videoData.league || videoData.tournament || match.competition || 'Premier League',
+    date: _highlightDate(videoData.matchDate || videoData.date || match.date || videoData.publishedAt),
+    venue: videoData.venue || videoData.stadium || match.venue?.name || match.venue || 'Emirates Stadium'
+  };
+}
+function _highlightPayload(video) {
+  return JSON.stringify(video).replace(/\\/g, '\\\\').replace(/'/g, '&#39;');
+}
+function _highlightThumb(video, size = '320x180') {
+  const fallback = 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%230d1714"%2F%3E%3Cpath d="M0 140 110 70 178 112 245 52 320 100V180H0Z" fill="%23133c2d"%2F%3E%3Ccircle cx="160" cy="90" r="25" fill="none" stroke="%2334d399" stroke-width="3"%2F%3E%3C%2Fsvg%3E';
+  return video.thumbnail || video.poster || fallback;
+}
+function _renderHighlightCard(video, variant) {
+  const title = video.title || 'Football Highlight';
+  const channel = video.channel || video.channelTitle || video.poster || 'PitchSide Official';
+  const meta = video.competition || video.league || (variant === 'trending' ? 'Trending now' : 'Latest clip');
+  const payload = _highlightPayload(video);
+  const thumb = _highlightThumb(video);
+  if (variant === 'trending') {
+    return `<button class="trending-highlight-card" onclick='swapWatchVideo(${payload})'>
+      <span class="trending-thumb"><img src="${_highlightEsc(thumb)}" alt="" onerror="this.style.display='none'"><span class="highlight-play-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="m9 6 9 6-9 6V6Z"/></svg></span></span>
+      <span class="trending-card-copy"><strong>${_highlightEsc(title)}</strong><span>${_highlightEsc(channel)} <i>•</i> ${_highlightEsc(meta)}</span></span>
+      <svg class="trending-chevron" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+    </button>`;
+  }
+  return `<button class="latest-highlight-card" onclick='swapWatchVideo(${payload})'>
+    <span class="latest-highlight-thumb"><img src="${_highlightEsc(thumb)}" alt="" onerror="this.style.display='none'"><span class="highlight-play-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="m9 6 9 6-9 6V6Z"/></svg></span></span>
+    <span class="latest-card-title">${_highlightEsc(title)}</span>
+    <span class="latest-card-meta">${_highlightEsc(meta)}</span>
+  </button>`;
+}
 function openWatchPage(videoData) {
   if (!videoData) return;
-  
   const overlay = document.getElementById('watch-page-overlay');
   const playerBody = document.getElementById('watch-player-body');
   const titleEl = document.getElementById('watch-video-title');
-  const channelNameEl = document.getElementById('watch-channel-name');
-  const channelAvatarEl = document.getElementById('watch-channel-avatar');
-  
-  // Update Basic Info
-  titleEl.textContent = (videoData.title || 'Football Highlight').replace(/\u2019/g, "'");
-  const channel = videoData.channel || videoData.channelTitle || videoData.poster || 'PitchSide Official';
-  channelNameEl.textContent = channel;
-  channelAvatarEl.textContent = channel.charAt(0).toUpperCase();
+  if (!overlay || !playerBody || !titleEl) return;
+  const context = _highlightContext(videoData);
+  titleEl.textContent = (videoData.title || `${context.home} ${context.homeScore} - ${context.awayScore} ${context.away}`).replace(/\u2019/g, "'");
+  const fields = {
+    'watch-competition': context.competition,
+    'watch-match-date': context.date,
+    'watch-home-team': context.home,
+    'watch-away-team': context.away,
+    'watch-home-score': context.homeScore,
+    'watch-away-score': context.awayScore,
+    'watch-stadium': context.venue
+  };
+  Object.entries(fields).forEach(([id, value]) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  });
+  const countEl = document.getElementById('watch-like-count');
+  if (countEl) countEl.textContent = _highlightCount(videoData.likes || videoData.likeCount || 1200);
 
-  // Determine Video Source
   let src = '';
   let isNative = false;
-
   if (videoData.videoUrl || videoData.src || videoData.url) {
     src = videoData.videoUrl || videoData.src || videoData.url;
-    // Check if it's a direct video file (Cloudinary/Firebase)
-    if (src.includes('.mp4') || src.includes('.mov') || src.includes('cloudinary') || src.includes('firebasestorage')) {
-      isNative = true;
-    }
+    isNative = /\.mp4(?:$|\?)/i.test(src) || /\.mov(?:$|\?)/i.test(src) || src.includes('cloudinary') || src.includes('firebasestorage');
   } else if (videoData.videoId || videoData.youtubeId) {
     const cleanId = String(videoData.videoId || videoData.youtubeId).replace('yt_', '');
     src = `https://www.youtube-nocookie.com/embed/${cleanId}?rel=0&modestbranding=1&showinfo=0&autoplay=1&mute=0&playsinline=1`;
@@ -8581,79 +8655,51 @@ function openWatchPage(videoData) {
   } else if (videoData.embedHtml) {
     const tmp = document.createElement('div');
     tmp.innerHTML = videoData.embedHtml;
-    const fr = tmp.querySelector('iframe');
-    if (fr) src = fr.src;
+    const frame = tmp.querySelector('iframe');
+    if (frame) src = frame.src;
   }
-
-  // Inject Player
   if (isNative) {
-    playerBody.innerHTML = `
-      <video src="${src}" controls autoplay playsinline style="width:100%;height:100%;background:#000;"></video>
-    `;
+    playerBody.innerHTML = `<video src="${_highlightEsc(src)}" controls autoplay playsinline style="width:100%;height:100%;background:#050505;"></video>`;
   } else if (src) {
     if (typeof cleanEmbedUrl === 'function') src = cleanEmbedUrl(src);
-    playerBody.innerHTML = `
-      <div style="width:100%;height:100%;position:relative;">
-        <iframe src="${src}" width="100%" height="100%" style="border:none;" allowfullscreen allow="autoplay; fullscreen; picture-in-picture; encrypted-media"></iframe>
-        <div style="position:absolute;bottom:0;left:0;right:0;height:40px;background:#000;pointer-events:none;z-index:5;"></div>
-      </div>`;
+    playerBody.innerHTML = `<div class="highlight-embed-shell"><iframe src="${_highlightEsc(src)}" title="${_highlightEsc(titleEl.textContent)}" allowfullscreen allow="autoplay; fullscreen; picture-in-picture; encrypted-media"></iframe><div class="highlight-embed-shade"></div></div>`;
   } else {
-    playerBody.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#fff;">⚠️ Video unavailable</div>`;
+    playerBody.innerHTML = `<div class="highlight-unavailable"><span>⚽</span><strong>Highlight unavailable</strong><small>Try another match clip.</small></div>`;
   }
-
-  // Load Related Content
-  renderRelatedVideos(videoData);
-  
+  renderHighlightSections(videoData);
   overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
 }
-
 function closeWatchPage() {
   const overlay = document.getElementById('watch-page-overlay');
   const playerBody = document.getElementById('watch-player-body');
-  overlay.classList.remove('open');
-  playerBody.innerHTML = '';
+  if (overlay) overlay.classList.remove('open');
+  if (playerBody) playerBody.innerHTML = '';
+  document.body.style.overflow = '';
 }
-
-function renderRelatedVideos(currentVideo) {
-  const grid = document.getElementById('watch-related-grid');
-  if (!grid) return;
-
-  let related = [];
-  if (typeof VIDEOS !== 'undefined') {
-    const type = currentVideo.userPost ? 'fan' : (currentVideo.playerPost ? 'player' : 'official');
-    if (type === 'fan') {
-      related = VIDEOS.filter(v => v.userPost && v.id !== currentVideo.id);
-    } else if (type === 'player') {
-      related = VIDEOS.filter(v => v.playerPost && v.id !== currentVideo.id);
-    } else {
-      related = VIDEOS.filter(v => !v.userPost && !v.playerPost && v.id !== currentVideo.id);
-    }
-
-    if (related.length < 5) {
-      const extras = VIDEOS.filter(v => v.id !== currentVideo.id && !related.find(r => r.id === v.id));
-      related = [...related, ...extras];
-    }
+function handleWatchSearch() {
+  closeWatchPage();
+  const explore = document.getElementById('page-explore');
+  if (typeof switchPage === 'function' && explore) switchPage('explore');
+  const search = document.querySelector('#page-explore .s-inp');
+  if (search) {
+    search.focus();
+    search.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
-
-  related = related.slice(0, 12);
-  
-  grid.innerHTML = related.map((v) => {
-    const thumb = v.thumbnail || 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E';
-    const channel = v.channel || v.channelTitle || v.poster || 'PitchSide';
-    return `
-      <div class="related-card" onclick='swapWatchVideo(${JSON.stringify(v).replace(/'/g, "&apos;")})'>
-        <div class="related-thumb">
-          <img src="${thumb}" onerror="this.src='data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E'">
-        </div>
-        <div class="related-info">
-          <div class="related-title">${(v.title || 'Football Moment').replace(/\u2019/g, "'")}</div>
-          <div class="related-meta">${channel} • ${v.views || '12k'} views</div>
-        </div>
-      </div>
-    `;
-  }).join('');
 }
-
+function renderHighlightSections(currentVideo) {
+  const pool = typeof VIDEOS !== 'undefined' ? VIDEOS : [];
+  const eligible = pool.filter(v => v && v.id !== currentVideo.id && !v.userPost && !v.playerPost);
+  const latest = eligible.slice(0, 6);
+  const trending = [...eligible].sort((a, b) => Number(b.likes || b.views || 0) - Number(a.likes || a.views || 0)).slice(0, 5);
+  const latestGrid = document.getElementById('watch-latest-grid');
+  const trendingGrid = document.getElementById('watch-trending-grid');
+  if (latestGrid) latestGrid.innerHTML = latest.length ? latest.map(v => _renderHighlightCard(v, 'latest')).join('') : '<div class="highlight-empty-state">More match clips are coming soon.</div>';
+  if (trendingGrid) trendingGrid.innerHTML = trending.length ? trending.map(v => _renderHighlightCard(v, 'trending')).join('') : '<div class="highlight-empty-state">No trending highlights yet.</div>';
+}
+function renderRelatedVideos(currentVideo) {
+  renderHighlightSections(currentVideo);
+}
 function swapWatchVideo(videoData) {
   openWatchPage(videoData);
   document.querySelector('.watch-content-scroll').scrollTop = 0;
