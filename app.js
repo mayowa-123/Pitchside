@@ -1,4 +1,5 @@
 
+
   // ── YouTube Highlights ──────────────────────────────────────────
 let _sbAllVideos = [];
 let _sbCurrentFilter = 'all';
@@ -8983,11 +8984,12 @@ function _ffWireNewSlides() {
       updateVideoMetricsUI(videoId);
     }
 
-    // Self-heal the poster avatar for posts saved before posterAvatar
-    // existed — same lookup-and-cache approach used on the main video grid.
-    const avatarEl = slideEl.querySelector('.ff-avatar');
-    if (avatarEl && !avatarEl.querySelector('img') && uid) {
-      _resolveFeedAvatar(uid, videoId, avatarEl);
+    // Always resolve the poster's CURRENT name/handle/avatar live (unless
+    // this is your own post, which already rendered from live profileData
+    // above) — so a post never stays stuck showing a stale name forever.
+    const myUidForWire = (window._psCurrentUser && window._psCurrentUser.uid) || null;
+    if (uid && uid !== myUidForWire) {
+      _resolveFeedIdentity(uid, slideEl);
     }
   });
   setupFanFeedObserver();
@@ -9061,28 +9063,43 @@ function _patchCreatorAvatarDOM(videoId, url) {
   if (wrap) wrap.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
 }
 
-// Same lookup, but for the FanFeed slide's side-rail avatar specifically —
-// takes the element directly since it's already in hand from _ffWireNewSlides.
-async function _resolveFeedAvatar(userId, videoId, avatarEl) {
-  if (Object.prototype.hasOwnProperty.call(_avatarLookupCache, userId)) {
-    const cached = _avatarLookupCache[userId];
-    if (cached) avatarEl.innerHTML = `<img src="${cached}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+// A poster's name/handle/avatar are resolved LIVE from their current
+// users/{uid} profile doc, never trusted from what was frozen onto the
+// post at creation time — so if someone changes their display name or
+// username later, every past post they made reflects it immediately,
+// everywhere, instead of staying stuck with whatever was true the moment
+// they hit post. Cached per uid so a feed with many posts from the same
+// person only ever fetches once.
+const _identityCache = {};
+async function _resolveFeedIdentity(userId, slideEl) {
+  if (!userId || !slideEl) return;
+  if (Object.prototype.hasOwnProperty.call(_identityCache, userId)) {
+    if (_identityCache[userId]) _applyIdentityToSlide(slideEl, _identityCache[userId]);
     return;
   }
-  const { doc, getDoc, db, updateDoc } = window._psFs || {};
+  const { doc, getDoc, db } = window._psFs || {};
   if (!doc || !getDoc || !db) return;
   try {
     const snap = await getDoc(doc(db, 'users', userId));
-    const url = snap.exists() ? (snap.data().avatarUrl || null) : null;
-    _avatarLookupCache[userId] = url;
-    if (url) {
-      avatarEl.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
-      if (updateDoc) {
-        try { await updateDoc(doc(db, 'posts', String(videoId)), { posterAvatar: url }); }
-        catch (e) { /* fine if this post isn't in 'posts' (e.g. seed data) */ }
-      }
-    }
-  } catch (e) { console.warn('[Avatar] feed lookup failed:', e); }
+    const d = snap.exists() ? snap.data() : null;
+    const identity = d ? { name: d.name || d.username || '', handle: d.handle || '', avatarUrl: d.avatarUrl || '' } : null;
+    _identityCache[userId] = identity;
+    if (identity) _applyIdentityToSlide(slideEl, identity);
+  } catch (e) { console.warn('[Identity] lookup failed:', e); }
+}
+function _applyIdentityToSlide(slideEl, identity) {
+  if (!identity) return;
+  const posterEl = slideEl.querySelector('.ff-poster');
+  if (posterEl && identity.name) {
+    const handleTxt = identity.handle ? '@' + identity.handle : '';
+    const handleSpan = (handleTxt && handleTxt !== identity.name)
+      ? ` <span style="font-weight:400;color:#6E7166;font-size:12px;">${_esc(handleTxt)}</span>` : '';
+    posterEl.innerHTML = `${_esc(identity.name)}${handleSpan}`;
+  }
+  const avatarEl = slideEl.querySelector('.ff-avatar');
+  if (avatarEl && identity.avatarUrl && !avatarEl.querySelector('img')) {
+    avatarEl.innerHTML = `<img src="${identity.avatarUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+  }
 }
 
 // Turns "Great goal! #NPFL #PitchSide" into styled HTML with hashtags
@@ -9103,10 +9120,16 @@ function _ffRenderSlide(v) {
   const likeCount = (typeof formatCount === 'function') ? formatCount(v.likes || 0) : (v.likes || 0);
   const commentCount = (typeof formatCount === 'function') ? formatCount(v.comments || 0) : (v.comments || 0);
   const safeId = _esc(String(v.id));
-  const posterName = v.poster || '@pitchside';
   const posterUserId = v.userId || '';
   const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
   const isMe = myUid && posterUserId === myUid;
+  // Your own posts always show your CURRENT profile name/handle, live from
+  // memory — never the frozen value that was true when you first posted.
+  // Everyone else's starts as the best snapshot we have and gets live-patched
+  // by _resolveFeedIdentity() the moment their real profile loads (see
+  // _ffWireNewSlides) — so nothing here is the final word for another poster.
+  const posterHandle = (isMe && profileData.handle) ? ('@' + profileData.handle) : (v.poster || '@pitchside');
+  const posterName = (isMe && profileData.name) ? profileData.name : (v.userName || posterHandle);
   const alreadyFollowing = (typeof appState !== 'undefined' && appState.following) ? appState.following.includes(posterUserId) : false;
 
   return `
@@ -9117,7 +9140,7 @@ function _ffRenderSlide(v) {
           ${(!isMe) ? `<div class="ff-follow-badge" data-follow-uid="${_esc(posterUserId)}" onclick="event.stopPropagation(); _ffQuickFollow('${_esc(posterUserId)}', this)">${alreadyFollowing ? '✓' : '+'}</div>` : ''}
         </div>
         <div class="ff-info">
-          <div class="ff-poster" onclick="_ffOpenProfile('${_esc(posterUserId)}', '${_esc(posterName)}')" style="cursor:pointer;">${_esc(posterName)}</div>
+          <div class="ff-poster" onclick="_ffOpenProfile('${_esc(posterUserId)}', '${_esc(posterName)}')" style="cursor:pointer;">${_esc(posterName)}${(posterHandle && posterHandle !== posterName) ? ` <span style="font-weight:400;color:#6E7166;font-size:12px;">${_esc(posterHandle)}</span>` : ''}</div>
           <div class="ff-caption" id="ff-cap-${safeId}">${_ffFormatCaption(v.title || '')}</div>
           ${_ffCaptionNeedsMore(v.title || '') ? `<div class="ff-caption-more" onclick="_ffOpenReadingMode('${safeId}')">...more</div>` : ''}
           ${v.music ? `<div class="ff-music">🎵 ${_esc(v.music)}</div>` : ''}
@@ -9189,7 +9212,7 @@ function _ffOpenReadingMode(videoId) {
   body.innerHTML = `
     <div class="ff-reading-watermark">Read the caption.</div>
     <div class="ff-reading-scroll">
-      <div class="ff-reading-poster">${_esc(v.poster || '@pitchside')}</div>
+      <div class="ff-reading-poster">${_esc((_identityCache[v.userId] && _identityCache[v.userId].name) || v.userName || v.poster || '@pitchside')}</div>
       <div class="ff-reading-caption">${_ffFormatCaption(v.title || '')}</div>
       <div class="ff-reading-less" onclick="_ffCloseReadingMode()">less</div>
     </div>
