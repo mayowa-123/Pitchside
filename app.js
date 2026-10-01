@@ -1784,6 +1784,8 @@ function initExplore() {
    there was real traffic. Now it just listens to what the bot already wrote.
 ═══════════════════════════════════════════ */
 
+let _tickerSubscribed = false;
+
 function initTicker() {
   // Start empty — show a waiting state while Firestore connects
   renderTicker([]);
@@ -9074,7 +9076,13 @@ function closeFanFeedOverlay() {
 }
 
 function _ffAvatarInitial(name) {
-  return (name || '?').replace('@', '').charAt(0).toUpperCase();
+  // .charAt(0) grabs one UTF-16 code unit — for an emoji display name like
+  // "💯💯" that's only HALF of the surrogate pair, which renders as a
+  // broken "missing glyph" box instead of the emoji. Array.from() splits by
+  // actual Unicode code point instead, so the full emoji survives intact.
+  const clean = (name || '?').replace('@', '').trim();
+  const first = Array.from(clean)[0] || '?';
+  return /\p{L}/u.test(first) ? first.toUpperCase() : first;
 }
 
 // One-time-per-user lookup of a poster's CURRENT avatar for posts saved
