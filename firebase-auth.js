@@ -155,18 +155,56 @@ window.doEmailLogin = async function() {
 };
 
 // ── Register ────────────────────────────────────
+// Username and Display Name are both collected here now, at signup, instead
+// of being left blank until someone visits Edit Profile — which is exactly
+// how a post could previously get stuck forever showing an email-derived
+// fallback name/handle (see app.js's live-identity-resolution comments).
+// Same normalize/length rule and handles/{username} reservation pattern as
+// saveProfile() in app.js, so there's one consistent way a username ever
+// gets claimed, not two different implementations that could drift apart.
 window.doRegister = async function() {
   clearAuthErrors();
-  const name     = document.getElementById('reg-name').value.trim();
-  const email    = document.getElementById('reg-email').value.trim();
-  const password = document.getElementById('reg-password').value;
-  if (!name || !email || !password) { showAuthError('register-error', 'Please fill in all fields.'); return; }
+  const name       = document.getElementById('reg-name').value.trim();
+  const usernameEl = document.getElementById('reg-username');
+  const usernameRaw = usernameEl ? usernameEl.value.trim() : '';
+  const email      = document.getElementById('reg-email').value.trim();
+  const password   = document.getElementById('reg-password').value;
+  if (!name || !usernameRaw || !email || !password) { showAuthError('register-error', 'Please fill in all fields.'); return; }
   if (password.length < 6) { showAuthError('register-error', 'Password must be at least 6 characters.'); return; }
+
+  const handle = usernameRaw.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (handle.length < 3 || handle.length > 20) {
+    showAuthError('register-error', 'Username must be 3–20 characters (letters, numbers, underscore only).');
+    return;
+  }
+
   const btn = document.getElementById('register-btn');
   btn.disabled = true; btn.textContent = 'Creating account…';
+
+  try {
+    const takenSnap = await getDoc(doc(db, 'handles', handle));
+    if (takenSnap.exists()) {
+      btn.disabled = false; btn.textContent = 'Create Account';
+      showAuthError('register-error', '@' + handle + ' is already taken — try another');
+      return;
+    }
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Create Account';
+    showAuthError('register-error', 'Could not verify that username — check your connection and try again.');
+    return;
+  }
+
   try {
     const { user } = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(user, { displayName: name });
+    // Reserve the handle and write the real profile doc immediately — so
+    // _getPosterHandle()/profileData never has to fall back to an
+    // email-derived guess even for the very first post this person makes.
+    await setDoc(doc(db, 'handles', handle), { uid: user.uid });
+    await setDoc(doc(db, 'users', user.uid), { name, handle, email }, { merge: true });
+    if (typeof profileData !== 'undefined') {
+      profileData = { ...profileData, name, handle, email };
+    }
   } catch(e) {
     btn.disabled = false; btn.textContent = 'Create Account';
     const msg = e.code === 'auth/email-already-in-use'
