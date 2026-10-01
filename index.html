@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -90,6 +89,11 @@
       <div class="auth-field">
         <label>Display Name</label>
         <input type="text" id="reg-name" placeholder="Your name" autocomplete="name">
+      </div>
+      <div class="auth-field">
+        <label>Username</label>
+        <input type="text" id="reg-username" placeholder="mayowa" autocomplete="off" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9_]/g,'')">
+        <div style="font-size:11px;color:var(--text3,#888);margin-top:4px;">Lowercase letters, numbers, underscore only. This is your public @handle.</div>
       </div>
       <div class="auth-field">
         <label>Email</label>
