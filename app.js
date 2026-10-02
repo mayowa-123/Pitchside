@@ -1367,6 +1367,7 @@ function activateFirebaseListener() {
           poster:    d.poster    || d.userName || 'PitchSide User',
           userId:    d.userId    || '',
           userName:  d.userName  || '',
+          posterAvatar: d.posterAvatar || '',
           cat:       d.cat       || 'Trending',
           likes:     d.likes     || 0,
           comments:  d.comments  || 0,
@@ -1966,15 +1967,15 @@ function renderVideos(containerId, data) {
       </div>
       <div class="vinfo" style="padding:10px 12px 12px;">
         <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;">
-          <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,${catColor},${catColor}aa);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;">
-            ${getCatEmoji(v.cat)}
+          <div ${(v.userPost && v.userId) ? `data-av-uid="${_esc(v.userId)}"` : ''} style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,${catColor},${catColor}aa);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;overflow:hidden;">
+            ${(v.userPost && v.userId) ? _esc(_ffAvatarInitial(v.userName || v.poster)) : getCatEmoji(v.cat)}
           </div>
           <div style="flex:1;min-width:0;">
             <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;flex-wrap:wrap;">
               <div class="vtitle" style="font-size:13px;line-height:1.35;margin-bottom:0;">${v.title}</div>
             </div>
             <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
-              <span style="font-size:11px;color:var(--text3);">${v.poster || '@pitchside'} · ${v.date}</span>
+              <span style="font-size:11px;color:var(--text3);"><span ${(v.userPost && v.userId) ? `data-hdl-uid="${_esc(v.userId)}"` : ''}>${v.poster || '@pitchside'}</span> · ${v.date}</span>
               ${sourceBadge}
             </div>
           </div>
@@ -1998,6 +1999,7 @@ function renderVideos(containerId, data) {
 
   // FEATURE 2: Kick off IntersectionObserver (lazy loading) — only loads video when card is 60% visible
   requestAnimationFrame(() => _startScrollObserver());
+  try { _psHydrateAvatars(container); } catch (e) {}
 }
 
 /* ── Escape helper for data attributes ── */
@@ -9036,7 +9038,7 @@ function _ffWireNewSlides() {
     // this is your own post, which already rendered from live profileData
     // above) — so a post never stays stuck showing a stale name forever.
     const myUidForWire = (window._psCurrentUser && window._psCurrentUser.uid) || null;
-    if (uid && uid !== myUidForWire) {
+    if (uid) {
       _resolveFeedIdentity(uid, slideEl);
     }
   });
@@ -9156,6 +9158,46 @@ function _applyIdentityToSlide(slideEl, identity) {
   }
 }
 
+// ── ONE shared avatar pipeline ──────────────────────────────────────
+// Any element carrying data-av-uid="<uid>" gets that user's CURRENT photo
+// (from users/{uid}, cached). Any element carrying data-hdl-uid="<uid>"
+// gets their CURRENT @handle. Use it everywhere an avatar is drawn
+// (Explore cards, comments, War Room) instead of trusting data frozen
+// onto a post/comment/message at write time.
+async function _psFetchIdentity(uid) {
+  if (!uid) return null;
+  const me = window._psCurrentUser && window._psCurrentUser.uid;
+  if (uid === me && typeof profileData !== 'undefined' && profileData.avatarUrl) {
+    return { name: profileData.name || '', handle: profileData.handle || '', avatarUrl: profileData.avatarUrl };
+  }
+  if (Object.prototype.hasOwnProperty.call(_identityCache, uid)) return _identityCache[uid];
+  const { doc, getDoc, db } = window._psFs || {};
+  if (!doc || !getDoc || !db) return null;
+  try {
+    const snap = await getDoc(doc(db, 'users', uid));
+    const d = snap.exists() ? snap.data() : null;
+    const identity = d ? { name: d.name || d.username || '', handle: d.handle || '', avatarUrl: d.avatarUrl || '' } : null;
+    _identityCache[uid] = identity;
+    return identity;
+  } catch (e) { console.warn('[Identity] lookup failed:', e); return null; }
+}
+async function _psHydrateAvatars(root) {
+  const scope = root || document;
+  const avs = scope.querySelectorAll('[data-av-uid]');
+  for (const el of avs) {
+    const id = await _psFetchIdentity(el.dataset.avUid);
+    if (id && id.avatarUrl) {
+      el.innerHTML = `<img src="${_esc(id.avatarUrl)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+    }
+  }
+  const hdls = scope.querySelectorAll('[data-hdl-uid]');
+  for (const el of hdls) {
+    const id = await _psFetchIdentity(el.dataset.hdlUid);
+    if (id && id.handle) el.textContent = '@' + id.handle;
+  }
+}
+window._psHydrateAvatars = _psHydrateAvatars;
+
 // Turns "Great goal! #NPFL #PitchSide" into styled HTML with hashtags
 // highlighted, matching how TikTok visually distinguishes them.
 function _ffFormatCaption(text) {
@@ -9184,13 +9226,14 @@ function _ffRenderSlide(v) {
   // _ffWireNewSlides) — so nothing here is the final word for another poster.
   const posterHandle = (isMe && profileData.handle) ? ('@' + profileData.handle) : (v.poster || '@pitchside');
   const posterName = (isMe && profileData.name) ? profileData.name : (v.userName || posterHandle);
+  const posterAvatarUrl = (isMe && profileData.avatarUrl) || v.posterAvatar || '';
   const alreadyFollowing = (typeof appState !== 'undefined' && appState.following) ? appState.following.includes(posterUserId) : false;
 
   return `
     <div class="ff-slide" data-id="${safeId}" data-video-id="${safeId}" data-uid="${_esc(posterUserId)}">
       <div class="ff-header">
         <div class="ff-avatar-wrap" onclick="_ffOpenProfile('${_esc(posterUserId)}', '${_esc(posterName)}')">
-          <div class="ff-avatar" id="ff-avatar-${safeId}">${v.posterAvatar ? `<img src="${_esc(v.posterAvatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : _esc(_ffAvatarInitial(posterName))}</div>
+          <div class="ff-avatar" id="ff-avatar-${safeId}">${posterAvatarUrl ? `<img src="${_esc(posterAvatarUrl)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : _esc(_ffAvatarInitial(posterName))}</div>
           ${(!isMe) ? `<div class="ff-follow-badge" data-follow-uid="${_esc(posterUserId)}" onclick="event.stopPropagation(); _ffQuickFollow('${_esc(posterUserId)}', this)">${alreadyFollowing ? '✓' : '+'}</div>` : ''}
         </div>
         <div class="ff-info">
@@ -9634,7 +9677,7 @@ async function _ffOpenProfile(userId, posterName) {
     <div class="ffp-friends">
       ${friends.map(f => `
         <div class="ffp-friend" onclick="_ffOpenProfile('${_esc(f.id)}', '${_esc(f.name)}')">
-          <div class="ffp-friend-avatar">${_esc(_wrInitials(f.name))}</div>
+          <div class="ffp-friend-avatar">${f.avatarUrl ? `<img src="${_esc(f.avatarUrl)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : _esc(_wrInitials(f.name))}</div>
           <div class="ffp-friend-name">${_esc(f.name.split(' ')[0])}</div>
         </div>`).join('')}
     </div>` : ''}
