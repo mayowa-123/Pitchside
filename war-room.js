@@ -263,6 +263,7 @@ export function renderWarRoomMessages(msgs) {
 
     const avatarDiv = document.createElement('div');
     avatarDiv.className = 'wr-avatar';
+    if (m.uid) avatarDiv.dataset.avUid = m.uid;
     if (m.avatarUrl) {
       avatarDiv.innerHTML = `<img src="${m.avatarUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
     } else {
@@ -341,6 +342,7 @@ export function renderWarRoomMessages(msgs) {
     msgDiv.appendChild(colDiv);
     body.appendChild(msgDiv);
   });
+  if (window._psHydrateAvatars) window._psHydrateAvatars(body);
   body.scrollTop = body.scrollHeight;
 }
 
