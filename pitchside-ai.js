@@ -115,7 +115,7 @@ export function appendAiMessage(role, text, attachments) {
   }
 
   bubble.innerHTML = `
-    <div class="${isBot ? 'ai-avatar-bot' : 'ai-avatar-user'}">${isBot ? 'AI' : initials}</div>
+    <div class="${isBot ? 'ai-avatar-bot' : 'ai-avatar-user'}">${isBot ? 'AI' : ((typeof profileData !== 'undefined' && profileData && profileData.avatarUrl) ? `<img src="${escHtml(profileData.avatarUrl)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : initials)}</div>
     <div class="ai-msg-wrap">
       ${mediaHtml}
       <div class="ai-msg">${formatAiText(text)}</div>
