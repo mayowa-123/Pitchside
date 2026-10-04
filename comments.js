@@ -218,6 +218,7 @@ export function _buildCommentItem(c, videoId, myUid, videoOwnerId) {
 
   const avatar = document.createElement('div');
   avatar.className = 'comment-avatar';
+  if (c.userId) avatar.dataset.avUid = c.userId;
   if (c.avatar) {
     avatar.innerHTML = `<img src="${c.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
   } else {
@@ -244,6 +245,7 @@ export function _buildCommentItem(c, videoId, myUid, videoOwnerId) {
   bubble.appendChild(time);
   item.appendChild(avatar);
   item.appendChild(bubble);
+  if (window._psHydrateAvatars) window._psHydrateAvatars(item);
 
   // Delete: available to the comment's own author, or to the video owner
   // moderating comments on their own post — nobody else.
