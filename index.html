@@ -1035,38 +1035,34 @@
      HIGHLIGHTS PAGE
 ════════════════════════════════════════ -->
 <div id="page-highlights" class="page">
-  <header class="highlights-feed-header">
-    <div>
-      <div class="highlights-feed-eyebrow">LIVE FROM THE PITCH</div>
-      <h1>Highlights</h1>
-      <p>Official match clips, updated from PitchSide data.</p>
-    </div>
-    <button class="highlights-refresh-btn" onclick="refreshHighlightsFeed()" aria-label="Refresh highlights">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8.1 8.1 0 0 0-14.9-4.4L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 14.9 4.4L20 16"/><path d="M20 20v-4h-4"/></svg>
-    </button>
-  </header>
-  <div class="hl-discovery-tabs" role="tablist" aria-label="Highlight discovery feeds">
-    <button class="hl-discovery-tab active" data-hl-feed="for-you" onclick="switchHighlightsFeed('for-you', this)" role="tab" aria-selected="true">For You</button>
-    <button class="hl-discovery-tab" data-hl-feed="latest" onclick="switchHighlightsFeed('latest', this)" role="tab" aria-selected="false">Latest</button>
-    <button class="hl-discovery-tab" data-hl-feed="popular" onclick="switchHighlightsFeed('popular', this)" role="tab" aria-selected="false">Popular</button>
-    <button class="hl-discovery-tab" data-hl-feed="saved" onclick="switchHighlightsFeed('saved', this)" role="tab" aria-selected="false">Saved</button>
+  <div class="hdr">
+    <h1>HIGHLIGHTS</h1>
+    <p>Official match highlights · Updated automatically</p>
   </div>
-  <div class="hl-league-tabs" role="tablist" aria-label="Filter highlights by competition">
-    <button onclick="loadSBHighlights('all')" id="sb-btn-all" class="hl-league-tab active">All</button>
-    <button onclick="loadSBHighlights('ENGLAND: Premier League')" id="sb-btn-pl" class="hl-league-tab">Premier League</button>
-    <button onclick="loadSBHighlights('SPAIN: La Liga')" id="sb-btn-ll" class="hl-league-tab">La Liga</button>
-    <button onclick="loadSBHighlights('ITALY: Serie A')" id="sb-btn-sa" class="hl-league-tab">Serie A</button>
-    <button onclick="loadSBHighlights('GERMANY: Bundesliga')" id="sb-btn-bl" class="hl-league-tab">Bundesliga</button>
-    <button onclick="loadSBHighlights('UEFA: Champions League')" id="sb-btn-cl" class="hl-league-tab">UCL</button>
-    <button onclick="loadSBHighlights('FRANCE: Ligue 1')" id="sb-btn-l1" class="hl-league-tab">Ligue 1</button>
+
+  <!-- League Filter Tabs -->
+  <div style="display:flex;gap:8px;padding:10px 14px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-shrink:0;">
+    <button onclick="loadSBHighlights('all')" id="sb-btn-all" style="flex-shrink:0;padding:6px 14px;border-radius:20px;border:none;background:var(--green);color:#fff;font-size:12px;font-weight:600;cursor:pointer;">All</button>
+    <button onclick="loadSBHighlights('ENGLAND: Premier League')" id="sb-btn-pl" style="flex-shrink:0;padding:6px 14px;border-radius:20px;border:none;background:var(--bg2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">Premier League</button>
+    <button onclick="loadSBHighlights('SPAIN: La Liga')" id="sb-btn-ll" style="flex-shrink:0;padding:6px 14px;border-radius:20px;border:none;background:var(--bg2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">La Liga</button>
+    <button onclick="loadSBHighlights('ITALY: Serie A')" id="sb-btn-sa" style="flex-shrink:0;padding:6px 14px;border-radius:20px;border:none;background:var(--bg2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">Serie A</button>
+    <button onclick="loadSBHighlights('GERMANY: Bundesliga')" id="sb-btn-bl" style="flex-shrink:0;padding:6px 14px;border-radius:20px;border:none;background:var(--bg2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">Bundesliga</button>
+    <button onclick="loadSBHighlights('UEFA: Champions League')" id="sb-btn-cl" style="flex-shrink:0;padding:6px 14px;border-radius:20px;border:none;background:var(--bg2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">UCL</button>
+    <button onclick="loadSBHighlights('FRANCE: Ligue 1')" id="sb-btn-l1" style="flex-shrink:0;padding:6px 14px;border-radius:20px;border:none;background:var(--bg2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">Ligue 1</button>
   </div>
-  <div class="hl-feed-scroll" id="hl-feed-scroll">
-    <div class="hl-feed-status" id="hl-feed-status" aria-live="polite"></div>
-    <div id="sb-video-grid" class="hl-feed-grid">
-      <div class="hl-live-loader"><span class="hl-loader-ball">⚽</span><strong>Loading live highlights…</strong><small>Waiting for the latest PitchSide data.</small></div>
+
+  <!-- Video Cards Grid -->
+  <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px;" id="hl-panel-official">
+    <div id="sb-video-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <!-- Cards loaded by JS -->
+      <div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">
+        <div style="font-size:28px;">⚽</div>
+        <div style="margin-top:8px;font-size:14px;">Loading highlights...</div>
+      </div>
     </div>
   </div>
 </div>
+
 <!-- Video Player Overlay -->
 <div id="sb-player-overlay" style="display:none;position:fixed;inset:0;background:#000;z-index:9999;flex-direction:column;">
   <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:#111;">
@@ -2104,270 +2100,4 @@
     <!-- SUPPORT TAB -->
     <div class="ad-tab-content" id="about-support">
       <div class="ad-section-title">How Can We Help?</div>
-      <div class="ad-bio" style="margin-bottom: 8px;">We're here to support you. Choose how you'd like to help improve Pitchside:</div>
-
-      <div class="ad-support-item" onclick="openSupportOption('bug')">
-        <div class="ad-support-icon">🐛</div>
-        <div class="ad-support-text">
-          <div class="ad-support-title">Report a Bug</div>
-          <div class="ad-support-desc">Found an issue? Let us know so we can fix it</div>
-        </div>
-      </div>
-
-      <div class="ad-support-item" onclick="openSupportOption('feature')">
-        <div class="ad-support-icon">✨</div>
-        <div class="ad-support-text">
-          <div class="ad-support-title">Feature Request</div>
-          <div class="ad-support-desc">Have an idea to make Pitchside better?</div>
-        </div>
-      </div>
-
-      <div class="ad-support-item" onclick="openSupportOption('feedback')">
-        <div class="ad-support-icon">💬</div>
-        <div class="ad-support-text">
-          <div class="ad-support-title">Send Feedback</div>
-          <div class="ad-support-desc">Share your thoughts and suggestions</div>
-        </div>
-      </div>
-
-      <div class="ad-support-item" onclick="openSupportOption('email')">
-        <div class="ad-support-icon">📧</div>
-        <div class="ad-support-text">
-          <div class="ad-support-title">Email Support</div>
-          <div class="ad-support-desc">Contact us directly for assistance</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- CONTACT TAB -->
-    <div class="ad-tab-content" id="about-contact">
-      <div class="ad-section-title">Get in Touch</div>
-      <div class="ad-bio" style="margin-bottom: 8px;">Connect with Abass and stay updated with Pitchside:</div>
-
-      <div class="ad-contact-item" onclick="copyToClipboard('pitchside145@gmail.com', 'Email copied!')">
-        <div class="ad-contact-icon">📧</div>
-        <div class="ad-contact-info">
-          <div class="ad-contact-label">Email</div>
-          <div class="ad-contact-value">pitchside145@gmail.com</div>
-        </div>
-      </div>
-
-      <div class="ad-highlight">
-        <strong>💌 Quick Tip</strong><br>
-        Tap the email above to copy it to your clipboard, then send us your feedback, bug reports, or feature requests!
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Support Modal -->
-<div id="support-modal" style="display:none;position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,0.6);flex-direction:column;align-items:center;justify-content:center;padding:16px;">
-  <div style="background:var(--bg2);border-radius:16px;padding:20px;max-width:320px;width:100%;max-height:80vh;overflow-y:auto;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-      <div id="support-modal-title" style="font-size:16px;font-weight:700;color:var(--text);">Support</div>
-      <button onclick="closeSupportModal()" style="background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;">×</button>
-    </div>
-    <textarea id="support-message" placeholder="Tell us what's on your mind..." style="width:100%;min-height:120px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;resize:vertical;" maxlength="500"></textarea>
-    <div style="font-size:11px;color:var(--text3);margin-top:6px;text-align:right;" id="char-count">0/500</div>
-    <button onclick="submitSupport()" style="width:100%;margin-top:12px;padding:12px;background:var(--green);border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;">Send to pitchside145@gmail.com</button>
-  </div>
-</div>
-
-<!-- ═══════════════════════════════════════
-     Firebase Auth (ES Module — must stay inline as type="module")
-═══════════════════════════════════════ -->
-<script type="module" src="firebase-auth.js"></script>
-
-<!-- ═══════════════════════════════════════
-     PitchSide Application Logic
-═══════════════════════════════════════ -->
-<script src="app.js"></script>
-
-<!-- ═══════════════════════════════════════
-     PWA Install Logic
-═══════════════════════════════════════ -->
-<script>
-  (function() {
-    let deferredPrompt;
-    const btn = document.getElementById('pwa-install-btn');
-
-    window.addEventListener('beforeinstallprompt', function(e) {
-      e.preventDefault();
-      deferredPrompt = e;
-      btn.style.display = 'flex';
-    });
-
-    if (btn) {
-      btn.addEventListener('click', async function() {
-        if (!deferredPrompt) return;
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        if (outcome === 'accepted') {
-          btn.style.display = 'none';
-        }
-        deferredPrompt = null;
-      });
-    }
-
-    window.addEventListener('appinstalled', function() {
-      btn.style.display = 'none';
-      deferredPrompt = null;
-    });
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/service-worker.js');
-    }
-  })();
-</script>
-
-</body>
-</html>
-
-<!-- 💎 PREMIUM FEATURES UI ELEMENTS -->
-
-<!-- Notifications Panel -->
-<div id="notifications-panel" class="notifications-panel" style="display:none;position:fixed;top:60px;right:16px;width:320px;background:var(--bg);border-radius:12px;box-shadow:var(--shadow-lg);z-index:1000;max-height:400px;overflow-y:auto;flex-direction:column;border:1px solid rgba(16,185,129,0.2);">
-  <div style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.1);font-weight:600;color:var(--text);">🔔 Notifications</div>
-  <div id="notifications-list" style="flex:1;">
-    <div style="padding:16px;text-align:center;color:var(--text2);font-size:13px;">No new notifications</div>
-  </div>
-</div>
-
-<!-- Trending Videos Mini Section -->
-<div id="trending-mini" style="display:none;position:fixed;bottom:120px;left:16px;background:rgba(0,0,0,0.8);border-radius:12px;padding:12px;width:280px;z-index:500;border:1px solid rgba(16,185,129,0.3);">
-  <div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:8px;">🔥 Trending</div>
-  <div id="trending-mini-list" style="display:flex;flex-direction:column;gap:8px;max-height:200px;overflow-y:auto;"></div>
-</div>
-
-<!-- Collections Sidebar -->
-<div id="collections-sidebar" style="display:none;position:fixed;bottom:120px;right:16px;background:rgba(0,0,0,0.8);border-radius:12px;padding:12px;width:280px;z-index:500;border:1px solid rgba(16,185,129,0.3);">
-  <div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:8px;">📚 Collections</div>
-  <div id="collections-list" style="display:flex;flex-direction:column;gap:6px;">
-    <div onclick="toggleCollection('favorites')" style="padding:8px;background:rgba(16,185,129,0.1);border-radius:8px;cursor:pointer;color:var(--text2);font-size:12px;">❤️ Favorites</div>
-    <div onclick="toggleCollection('watchlist')" style="padding:8px;background:rgba(16,185,129,0.1);border-radius:8px;cursor:pointer;color:var(--text2);font-size:12px;">📋 Watch Later</div>
-  </div>
-</div>
-
-<!-- Video Quality Selector (Hidden by default) -->
-<div id="quality-selector" style="display:none;position:fixed;top:80px;right:16px;background:var(--bg);border-radius:12px;padding:8px;z-index:1000;border:1px solid rgba(16,185,129,0.2);">
-  <div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600;">📊 Quality</div>
-  <button onclick="setVideoQuality('auto')" style="display:block;width:100%;padding:6px;background:rgba(16,185,129,0.1);border:none;border-radius:6px;color:var(--text2);font-size:11px;cursor:pointer;margin-bottom:4px;">Auto</button>
-  <button onclick="setVideoQuality('1080p')" style="display:block;width:100%;padding:6px;background:rgba(16,185,129,0.1);border:none;border-radius:6px;color:var(--text2);font-size:11px;cursor:pointer;margin-bottom:4px;">1080p</button>
-  <button onclick="setVideoQuality('720p')" style="display:block;width:100%;padding:6px;background:rgba(16,185,129,0.1);border:none;border-radius:6px;color:var(--text2);font-size:11px;cursor:pointer;margin-bottom:4px;">720p</button>
-  <button onclick="setVideoQuality('480p')" style="display:block;width:100%;padding:6px;background:rgba(16,185,129,0.1);border:none;border-radius:6px;color:var(--text2);font-size:11px;cursor:pointer;">480p</button>
-</div>
-
-<!-- Creator Profile Card (shown on hover) -->
-<div id="creator-profile-card" style="display:none;position:fixed;background:var(--bg);border-radius:12px;padding:16px;z-index:1001;width:280px;border:1px solid rgba(16,185,129,0.2);box-shadow:var(--shadow-lg);">
-  <div style="display:flex;gap:12px;margin-bottom:12px;">
-    <div id="creator-avatar" style="width:48px;height:48px;border-radius:50%;background:var(--bg2);flex-shrink:0;"></div>
-    <div style="flex:1;">
-      <div id="creator-name" style="font-weight:600;color:var(--text);font-size:13px;"></div>
-      <div id="creator-followers" style="font-size:11px;color:var(--text2);"></div>
-      <div id="creator-badge" style="margin-top:4px;"></div>
-    </div>
-  </div>
-  <div id="creator-bio" style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:12px;"></div>
-  <div style="display:flex;gap:8px;">
-    <button id="follow-btn" onclick="toggleFollowFromCard()" style="flex:1;padding:8px;background:var(--green);border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer;">Follow</button>
-    <button onclick="closeCreatorCard()" style="flex:1;padding:8px;background:rgba(255,255,255,0.1);border:none;border-radius:8px;color:var(--text);font-weight:600;font-size:12px;cursor:pointer;">Close</button>
-  </div>
-</div>
-
-<!-- Share Menu (dynamically inserted) -->
-<!-- Share menu is created dynamically by showShareMenu() -->
-
-<!-- Notification Badge -->
-<style>
-.notification-badge {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  background: var(--green);
-  color: #fff;
-  border-radius: 50%;
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-}
-</style>
-
-<!-- End of Premium Features UI -->
-
-
-<!-- ════════════════════════════════════════
-     HIGHLIGHTS MATCH HUB
-     Compact, match-first presentation for official clips.
-════════════════════════════════════════ -->
-<div id="watch-page-overlay" class="watch-page-overlay">
-  <header class="highlights-header">
-    <button class="highlights-icon-btn" onclick="closeWatchPage()" aria-label="Back to highlights">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-    </button>
-    <div class="highlights-header-title">Highlights</div>
-    <button class="highlights-icon-btn" onclick="handleWatchSearch()" aria-label="Search highlights">
-      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7.5"/><path d="m20 20-3.7-3.7"/></svg>
-    </button>
-  </header>
-
-  <main class="highlights-scroll">
-    <section class="highlight-hero" aria-labelledby="watch-video-title">
-      <div class="highlight-player-frame" id="watch-player-body">
-        <!-- Native video or embed injected here. -->
-      </div>
-      <div class="highlight-title-block">
-        <h1 class="highlight-match-title" id="watch-video-title">Football highlight</h1>
-        <p class="highlight-match-meta">
-          <span id="watch-competition">Football</span>
-          <span class="highlight-meta-dot">•</span>
-          <span id="watch-match-date">Date unavailable</span>
-        </p>
-      </div>
-      <div class="highlight-action-row" aria-label="Highlight actions">
-        <button class="highlight-action highlight-action-like" id="watch-like-action" onclick="handleHighlightLike(this)" aria-label="Like highlight">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 8.5c0 5.5-8.8 10.5-8.8 10.5S3.2 14 3.2 8.5A4.5 4.5 0 0 1 12 6.2a4.5 4.5 0 0 1 8.8 2.3Z"/></svg>
-          <span id="watch-like-count">0</span>
-        </button>
-        <button class="highlight-action" id="watch-save-action" onclick="handleHighlightSave(this)" aria-label="Save highlight">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.5A2.5 2.5 0 0 1 7.5 2h9A2.5 2.5 0 0 1 19 4.5V21l-7-3.8L5 21V4.5Z"/></svg>
-          <span>Save</span>
-        </button>
-        <button class="highlight-action" onclick="handleHighlightShare()" aria-label="Share highlight">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.6M8.2 13.2l7.6 4.6"/></svg>
-          <span>Share</span>
-        </button>
-      </div>
-    </section>
-
-    <section class="match-information-card" aria-labelledby="match-information-title">
-      <h2 id="match-information-title" class="highlight-section-label">Match Information</h2>
-      <div class="match-score-row">
-        <div class="match-team-name" id="watch-home-team">Home team</div>
-        <div class="match-score"><strong id="watch-home-score">—</strong><span>—</span><strong id="watch-away-score">—</strong></div>
-        <div class="match-team-name match-team-away" id="watch-away-team">Away team</div>
-      </div>
-      <div class="match-venue-row">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
-        <span id="watch-stadium">Venue unavailable</span>
-      </div>
-    </section>
-
-    <section class="highlight-section watch-discovery-section" aria-labelledby="watch-discovery-title">
-      <div class="highlight-section-heading">
-        <h2 id="watch-discovery-title">More Highlights</h2>
-        <button class="section-link" onclick="handleWatchSearch()">See all</button>
-      </div>
-      <div class="watch-detail-tabs" role="tablist" aria-label="More highlights feeds">
-        <button class="watch-detail-tab active" data-watch-feed="for-you" onclick="switchWatchFeed('for-you', this)">For You</button>
-        <button class="watch-detail-tab" data-watch-feed="latest" onclick="switchWatchFeed('latest', this)">Latest</button>
-        <button class="watch-detail-tab" data-watch-feed="popular" onclick="switchWatchFeed('popular', this)">Popular</button>
-        <button class="watch-detail-tab" data-watch-feed="saved" onclick="switchWatchFeed('saved', this)">Saved</button>
-      </div>
-      <div class="latest-highlights-grid" id="watch-discovery-grid"></div>
-    </section>
-  </main>
-</div>
+      <div class="ad-bio" style="margin-bottom: 8px;">We're here to support you. Choo
