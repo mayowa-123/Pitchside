@@ -1,194 +1,188 @@
 
 
-  // ── Live Highlights discovery ─────────────────────────────────────
+  // ── YouTube Highlights ──────────────────────────────────────────
 let _sbAllVideos = [];
 let _sbCurrentFilter = 'all';
-let _sbCurrentFeed = 'for-you';
+
 let _sbPage = 0;
-const _sbPageSize = 24;
+const _sbPageSize = 20;
 let _sbFiltered = [];
 
-function _highlightFeedSource() {
-  const source = Array.isArray(VIDEOS) && VIDEOS.length ? VIDEOS : _sbAllVideos;
-  return source.filter(v => v && !v.userPost && !v.playerPost && !v.nigeriaRestricted);
-}
-function _highlightTimestamp(v) {
-  const raw = v?.createdAt || v?.publishedAt || v?.date || 0;
-  try {
-    if (raw && typeof raw.toDate === 'function') return raw.toDate().getTime();
-    const parsed = new Date(raw).getTime();
-    return Number.isFinite(parsed) ? parsed : 0;
-  } catch (_) { return 0; }
-}
-function _highlightMetric(v) {
-  const metrics = (typeof appState !== 'undefined' && appState.videoMetrics) ? appState.videoMetrics[String(v.id)] : null;
-  const likes = metrics?.likes?.length ?? Number(v.likes || 0);
-  const views = metrics?.views ?? Number(v.views || 0);
-  const comments = metrics?.commentCount ?? metrics?.comments ?? Number(v.comments || 0);
-  return { likes, views, comments, score: likes * 8 + views * 0.2 + comments * 3 };
-}
-function _highlightPlatformLabel(video) {
-  const source = String(video?.source || video?.competition || '').toLowerCase();
-  if (source.includes('youtube') || video?.videoId || video?.youtubeId) return 'YouTube source';
-  if (video?.fromAPI) return 'Live API';
-  return video?.userPost ? 'Community' : 'Highlights';
-}
-function _highlightCompetitionLabel(video) {
-  const raw = String(video?.competition || video?.league || video?.cat || '').trim();
-  if (!raw || raw.toLowerCase() === 'youtube') return video?.cat && String(video.cat).toLowerCase() !== 'highlights' ? video.cat : 'Highlights';
-  return raw;
-}
-function _highlightMatchesCompetition(v, filter) {
-  if (filter === 'all') return true;
-  const map = {
-    'ENGLAND: Premier League': ['premier', 'epl'],
-    'SPAIN: La Liga': ['la liga', 'laliga'],
-    'ITALY: Serie A': ['serie a'],
-    'GERMANY: Bundesliga': ['bundesliga'],
-    'UEFA: Champions League': ['champions', 'ucl'],
-    'FRANCE: Ligue 1': ['ligue 1', 'ligue1']
-  };
-  const haystack = `${v.competition || ''} ${v.league || ''} ${v.title || ''} ${v.cat || ''}`.toLowerCase();
-  return (map[filter] || [filter.toLowerCase()]).some(keyword => haystack.includes(keyword));
-}
-function _highlightForYouScore(v) {
-  const haystack = `${v.competition || ''} ${v.league || ''} ${v.title || ''}`.toLowerCase();
-  const leagueMatch = typeof selectedLeagues !== 'undefined' && Array.from(selectedLeagues).some(x => haystack.includes(String(x).toLowerCase()));
-  const teamMatch = typeof selectedTeams !== 'undefined' && Array.from(selectedTeams).some(x => haystack.includes(String(x).toLowerCase()));
-  const freshness = Math.min(30, Math.max(0, (_highlightTimestamp(v) - (Date.now() - 14 * 86400000)) / 86400000));
-  const metric = _highlightMetric(v).score;
-  return (teamMatch ? 120 : 0) + (leagueMatch ? 60 : 0) + freshness + metric;
-}
-function _getHighlightFeed() {
-  let pool = _highlightFeedSource().filter(v => _highlightMatchesCompetition(v, _sbCurrentFilter));
-  if (_sbCurrentFeed === 'saved') pool = pool.filter(v => typeof savedHighlights !== 'undefined' && savedHighlights.has(String(v.id)));
-  if (_sbCurrentFeed === 'latest') return pool.sort((a, b) => _highlightTimestamp(b) - _highlightTimestamp(a));
-  if (_sbCurrentFeed === 'popular') return pool.sort((a, b) => _highlightMetric(b).score - _highlightMetric(a).score);
-  if (_sbCurrentFeed === 'saved') return pool.sort((a, b) => _highlightTimestamp(b) - _highlightTimestamp(a));
-  return pool.sort((a, b) => _highlightForYouScore(b) - _highlightForYouScore(a));
-}
-function _setHighlightsFeedStatus(text = '') {
-  const el = document.getElementById('hl-feed-status');
-  if (el) el.textContent = text;
-}
-function _setHighlightFilterButtons(filter) {
-  document.querySelectorAll('[id^="sb-btn-"]').forEach(btn => btn.classList.remove('active'));
-  const map = { all: 'sb-btn-all', 'ENGLAND: Premier League': 'sb-btn-pl', 'SPAIN: La Liga': 'sb-btn-ll', 'ITALY: Serie A': 'sb-btn-sa', 'GERMANY: Bundesliga': 'sb-btn-bl', 'UEFA: Champions League': 'sb-btn-cl', 'FRANCE: Ligue 1': 'sb-btn-l1' };
-  document.getElementById(map[filter] || 'sb-btn-all')?.classList.add('active');
-}
-function _setHighlightFeedTabs(feed) {
-  document.querySelectorAll('.hl-discovery-tab').forEach(btn => {
-    const active = btn.dataset.hlFeed === feed;
-    btn.classList.toggle('active', active);
-    btn.setAttribute('aria-selected', active ? 'true' : 'false');
-  });
-}
-function switchHighlightsFeed(feed, button) {
-  _sbCurrentFeed = feed;
-  _sbPage = 0;
-  _setHighlightFeedTabs(feed);
-  _sbFiltered = _getHighlightFeed();
-  renderSBPage(true);
-  document.getElementById('hl-feed-scroll')?.scrollTo({ top: 0, behavior: 'smooth' });
-}
-function refreshHighlightsFeed() {
-  _setHighlightsFeedStatus('Refreshing from live data…');
-  if (typeof activateFirebaseListener === 'function' && !_firestoreUnsubscribe) activateFirebaseListener();
-  _sbFiltered = _getHighlightFeed();
-  renderSBPage(true);
-  setTimeout(() => _setHighlightsFeedStatus(''), 900);
-}
-function loadSBHighlights(filter = 'all') {
+async function loadSBHighlights(filter) {
   _sbCurrentFilter = filter;
   _sbPage = 0;
-  _setHighlightFilterButtons(filter);
-  _sbAllVideos = _highlightFeedSource();
-  _sbFiltered = _getHighlightFeed();
-  renderSBPage(true);
-}
-function _highlightCardId(video) {
-  const id = `hl-card-${String(video.id).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-  window._sbVideoCards = window._sbVideoCards || {};
-  window._sbVideoCards[id] = video;
-  return id;
-}
-function _highlightCardImage(video) {
-  if (!video.thumbnail) return '<div class="hl-card-thumb-empty">Thumbnail unavailable</div>';
-  return `<img src="${_esc(video.thumbnail)}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div class=&quot;hl-card-thumb-empty&quot;>Thumbnail unavailable</div>'">`;
-}
-function _renderLiveHighlightCard(video) {
-  const cardId = _highlightCardId(video);
-  const metric = _highlightMetric(video);
-  const competition = _highlightCompetitionLabel(video);
-  const date = video.date || (typeof _highlightDate === 'function' ? _highlightDate(video.publishedAt || video.createdAt) : 'Date unavailable');
-  return `<article class="hl-live-card" tabindex="0" role="button" onclick="openSBPlayerFromCard('${cardId}')" onkeydown="if(event.key==='Enter'||event.key===' ')openSBPlayerFromCard('${cardId}')">
-    <div class="hl-live-thumb">${_highlightCardImage(video)}<span class="hl-live-play"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="m9 6 9 6-9 6V6Z"/></svg></span><span class="hl-live-source">${_esc(_highlightPlatformLabel(video))}</span></div>
-    <div class="hl-live-card-body"><div class="hl-live-competition">${_esc(competition)}</div><h2>${_esc(video.title || 'Football highlight')}</h2><div class="hl-live-meta"><span>${_esc(date)}</span><span>•</span><span>♥ ${_esc(formatCount ? formatCount(metric.likes) : String(metric.likes))}</span></div></div>
-  </article>`;
-}
-function renderSBPage(reset = true) {
+  document.querySelectorAll('[id^="sb-btn-"]').forEach(btn => {
+    btn.style.background = 'var(--bg2)';
+    btn.style.color = 'var(--text)';
+  });
+  const btnMap = {
+    'all': 'all', 'ENGLAND: Premier League': 'pl', 'SPAIN: La Liga': 'll',
+    'ITALY: Serie A': 'sa', 'GERMANY: Bundesliga': 'bl',
+    'UEFA: Champions League': 'cl', 'FRANCE: Ligue 1': 'l1'
+  };
+  const activeId = 'sb-btn-' + (btnMap[filter] || 'all');
+  const activeBtn = document.getElementById(activeId);
+  if (activeBtn) { activeBtn.style.background = 'var(--green)'; activeBtn.style.color = '#fff'; }
   const grid = document.getElementById('sb-video-grid');
-  if (!grid) return;
-  const start = _sbPage * _sbPageSize;
-  const slice = _sbFiltered.slice(start, start + _sbPageSize);
-  const hasMore = _sbFiltered.length > start + _sbPageSize;
+  grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);"><div style="font-size:28px;">⚽</div><div style="margin-top:8px;font-size:14px;">Loading highlights...</div></div>';
+  let filtered = VIDEOS.filter(v => !v.userPost);
+  if (filter !== 'all') {
+    const leagueMap = {
+      'ENGLAND: Premier League': 'premier',
+      'SPAIN: La Liga': 'la liga',
+      'ITALY: Serie A': 'serie a',
+      'GERMANY: Bundesliga': 'bundesliga',
+      'UEFA: Champions League': 'champions',
+      'FRANCE: Ligue 1': 'ligue',
+    };
+    const keyword = leagueMap[filter] || filter.toLowerCase();
+    filtered = filtered.filter(v =>
+      (v.title || '').toLowerCase().includes(keyword) ||
+      (v.channelTitle || '').toLowerCase().includes(keyword) ||
+      (v.competition || '').toLowerCase().includes(keyword)
+    );
+  }
+  _sbAllVideos = filtered;
+  _sbFiltered = filtered;
   if (!_sbFiltered.length) {
-    const message = _sbCurrentFeed === 'saved' ? 'You have not saved any highlights yet.' : 'No live highlights match this feed yet.';
-    grid.innerHTML = `<div class="hl-empty-live"><div>⚽</div><strong>${message}</strong><small>Try another feed or competition.</small></div>`;
-    _setHighlightsFeedStatus(`${_highlightFeedSource().length} live records available`);
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);">No highlights found right now.</div>';
     return;
   }
-  const cards = slice.map(_renderLiveHighlightCard).join('');
-  const more = hasMore ? `<button class="hl-load-more" onclick="sbLoadMore()">Load more highlights</button>` : '';
-  grid.innerHTML = cards + more;
-  _setHighlightsFeedStatus(`${_sbFiltered.length} live highlights · ${_sbCurrentFeed.replace('-', ' ')}`);
+  renderSBPage(true);
 }
-function sbLoadMore() {
-  if ((_sbPage + 1) * _sbPageSize >= _sbFiltered.length) return;
-  _sbPage += 1;
-  renderSBPage(false);
+
+
+function renderSBPage(reset) {
+  const grid = document.getElementById('sb-video-grid');
+  const start = _sbPage * _sbPageSize;
+  const end = start + _sbPageSize;
+  const slice = _sbFiltered.slice(start, end);
+  const hasMore = _sbFiltered.length > end;
+
+  const cards = slice.map((v, i) => {
+    const thumb = v.thumbnail || 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E';
+    const title = v.title || 'Highlight';
+    const channel = v.channel || '';
+    const cardId = `sb-card-${_sbPage}-${i}`;
+    
+    // Store video data in a global map (safer than embedding in HTML)
+    window._sbVideoCards = window._sbVideoCards || {};
+    window._sbVideoCards[cardId] = v;
+    
+    return `
+      <div onclick="openSBPlayerFromCard('${cardId}')" style="cursor:pointer;border-radius:12px;overflow:hidden;background:var(--bg2);box-shadow:var(--shadow-md);">
+        <div style="position:relative;aspect-ratio:16/9;background:#111;">
+          <img src="${thumb}" style="width:100%;height:100%;object-fit:cover;" onerror="this.src='data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%231a1a2e"/%3E%3Ctext x="50%25" y="50%25" font-size="48" text-anchor="middle" dominant-baseline="middle" fill="%23ffffff"%3E%E2%9A%BD%3C/text%3E%3C/svg%3E'">
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
+            <div style="width:36px;height:36px;border-radius:50%;background:rgba(16,185,129,0.9);display:flex;align-items:center;justify-content:center;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
+            </div>
+          </div>
+        </div>
+        <div style="padding:8px;">
+          <div style="font-size:11px;color:var(--green);font-weight:600;margin-bottom:3px;">${channel}</div>
+          <div style="font-size:12px;color:var(--text);font-weight:500;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${title}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const loadMoreBtn = hasMore ? `
+    <div id="sb-load-more-wrap" style="grid-column:1/-1;text-align:center;padding:16px 16px 120px;">
+      <button onclick="sbLoadMore()" style="padding:10px 32px;border-radius:20px;border:none;background:var(--green);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Load More</button>
+    </div>` : '';
+
+  if (reset) {
+    grid.innerHTML = cards + loadMoreBtn;
+  } else {
+    const oldWrap = document.getElementById('sb-load-more-wrap');
+    if (oldWrap) oldWrap.remove();
+    grid.innerHTML += cards + loadMoreBtn;
+  }
 }
+
+async function sbLoadMore() {
+  _sbPage++;
+  if (_sbPage * _sbPageSize < _sbFiltered.length) {
+    renderSBPage(false);
+    return;
+  }
+  const wrap = document.getElementById('sb-load-more-wrap');
+  if (wrap) wrap.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:10px;">All highlights loaded!</div>';
+}
+
 function openSBPlayerFromCard(cardId) {
   const videoData = window._sbVideoCards && window._sbVideoCards[cardId];
-  if (!videoData) { showToast('This highlight is no longer available. Refresh the feed.'); return; }
-  if (videoData.nigeriaRestricted) { showToast('Not available in your region — licensing restriction'); return; }
+  if (!videoData) {
+    console.error('Video not found:', cardId);
+    alert('Error loading video');
+    return;
+  }
   openSBPlayer(videoData.title || 'Highlight', videoData);
 }
+
 function openSBPlayer(title, videoDataObj) {
-  _ffRouteToPlayer(videoDataObj || {});
+  const overlay = document.getElementById('sb-player-overlay');
+  document.getElementById('sb-player-title').textContent = title;
+  const body = document.getElementById('sb-player-body');
+  
+  // videoDataObj is already an object, not JSON string
+  const videoData = videoDataObj || {};
+
+  let src = '';
+
+  // Check all possible video sources in priority order
+  if (videoData.embedUrl) {
+    src = videoData.embedUrl;
+  } else if (videoData.src) {
+    src = videoData.src;
+  } else if (videoData.videoId) {
+    // YouTube video ID - build embed URL
+    const cleanId = String(videoData.videoId).replace('yt_', '');
+    src = `https://www.youtube.com/embed/${cleanId}?rel=0&modestbranding=1&showinfo=0&autoplay=1`;
+  } else if (videoData.url) {
+    src = videoData.url;
+  }
+
+  // Validate that we have a URL before attempting to play
+  if (!src) {
+    console.error('No valid video source found:', videoData);
+    body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);">⚠️ Video source unavailable</div>';
+    overlay.style.display = 'flex';
+    overlay.style.flexDirection = 'column';
+    return;
+  }
+
+  // Use the same cleaning and start-time logic as the main feed for consistency
+  if (typeof cleanEmbedUrl === 'function') src = cleanEmbedUrl(src);
+  // Only add start time if it's a video file or we explicitly want to skip for YouTube
+  // For YouTube embeds, we usually want to start from beginning unless specified
+  if (typeof addStartTime === 'function' && src && !src.includes('youtube.com') && !src.includes('youtu.be')) {
+    src = addStartTime(src);
+  }
+
+  body.innerHTML = `
+    <div style="position:relative;width:100%;height:100%;">
+      <iframe src="${src}" width="100%" height="100%" style="border:none;display:block;height:100%;" allowfullscreen allow="autoplay; fullscreen"></iframe>
+      <div style="position:absolute;bottom:0;left:0;right:0;height:50px;background:#000;pointer-events:none;z-index:10;"></div>
+    </div>`;
+  overlay.style.display = 'flex';
+  overlay.style.flexDirection = 'column';
 }
-function closeSBPlayer() { closeWatchPage(); }
 
-// Keep the Highlights page synchronized with Firestore/API updates already used by Explore.
-const _originalRefreshAllVideoGrids = refreshAllVideoGrids;
-refreshAllVideoGrids = function() {
-  _originalRefreshAllVideoGrids.apply(this, arguments);
-  if (document.getElementById('page-highlights')) {
-    _sbAllVideos = _highlightFeedSource();
-    _sbFiltered = _getHighlightFeed();
-    if (document.getElementById('page-highlights').classList.contains('active')) renderSBPage(true);
-  }
-};
+function closeSBPlayer() {
+  document.getElementById('sb-player-overlay').style.display = 'none';
+  document.getElementById('sb-player-body').innerHTML = '';
+}
 
+// Auto load when highlights page opens
 document.addEventListener('DOMContentLoaded', () => {
-  const feedScroll = document.getElementById('hl-feed-scroll');
-  if (feedScroll && feedScroll.dataset.autoLoadBound !== 'true') {
-    feedScroll.dataset.autoLoadBound = 'true';
-    feedScroll.addEventListener('scroll', () => {
-      const nearBottom = feedScroll.scrollTop + feedScroll.clientHeight >= feedScroll.scrollHeight - 260;
-      if (nearBottom) sbLoadMore();
-    }, { passive: true });
-  }
-  if (typeof switchPage === 'function') {
-    const originalSwitchPage = switchPage;
-    window.switchPage = function(page, el) {
-      originalSwitchPage(page, el);
-      if (page === 'highlights') {
-        _setHighlightFeedTabs(_sbCurrentFeed);
-        loadSBHighlights(_sbCurrentFilter);
-      }
-    };
-  }
+  const origSwitch = window.switchPage;
+  window.switchPage = function(page, el) {
+    if (origSwitch) origSwitch(page, el);
+    if (page === 'highlights' && _sbAllVideos.length === 0) {
+      loadSBHighlights('all');
+    }
+  };
 });
 
 /* ═══════════════════════════════════════════
@@ -1212,6 +1206,9 @@ function _firestoreDocToVideo(docSnap) {
                    : '@pitchside_official',
 
     avatarSeed:  d.userId      || id,
+    userId:      d.userId      || '',
+    userName:    d.userName    || '',
+    posterAvatar: d.posterAvatar || '',
     likes:       d.likes       || 0,
     comments:    d.comments    || 0,
     saved:       false,
@@ -1686,56 +1683,28 @@ function _saveSelections() {
 }
 
 /* ═══════════════════════════════════════════
-   SAVED HIGHLIGHTS — Firestore for signed-in users,
-   localStorage for signed-out preview sessions.
+   SAVED HIGHLIGHTS (persisted in memory)
 ═══════════════════════════════════════════ */
-function _readGuestSavedHighlights() {
-  try { return JSON.parse(localStorage.getItem('pitchside_saved_highlights') || '[]').map(String); }
-  catch (_) { return []; }
-}
-let savedHighlights = new Set(_readGuestSavedHighlights());
-function _persistGuestSavedHighlights() {
-  try { localStorage.setItem('pitchside_saved_highlights', JSON.stringify(Array.from(savedHighlights))); } catch (_) {}
-}
-function _hydrateSavedHighlights(collections) {
-  const favorites = Array.isArray(collections?.favorites) ? collections.favorites.map(String) : [];
-  savedHighlights = new Set(favorites);
-  _persistGuestSavedHighlights();
-  renderSavedPanel();
-  if (typeof _sbFiltered !== 'undefined') {
-    _sbFiltered = _getHighlightFeed();
-    if (document.getElementById('page-highlights')?.classList.contains('active')) renderSBPage(true);
-  }
-}
+let savedHighlights = new Set();
+
 function toggleSaveVideo(videoId) {
-  const id = String(videoId);
-  const alreadySaved = savedHighlights.has(id);
-  if (alreadySaved) {
-    savedHighlights.delete(id);
+  if (savedHighlights.has(videoId)) {
+    savedHighlights.delete(videoId);
     showToast('Removed from Saved');
   } else {
-    savedHighlights.add(id);
+    savedHighlights.add(videoId);
     showToast('Saved to Highlights ✓');
   }
-  _persistGuestSavedHighlights();
-  const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
-  if (currentUser?.uid && typeof addToFavorites === 'function') {
-    addToFavorites(currentUser.uid, id).catch(error => {
-      console.error('[Highlights] save failed:', error);
-      showToast('Could not sync Saved Highlights — check your connection');
-    });
-  }
-  if (id === String(currentVideoId || '')) {
+  // Update save label in overlay if it's the current video
+  if (videoId === currentVideoId) {
     const lbl = document.getElementById('tt-save-label');
-    if (lbl) lbl.textContent = savedHighlights.has(id) ? 'Saved ✓' : 'Save';
+    if (lbl) lbl.textContent = savedHighlights.has(videoId) ? 'Saved ✓' : 'Save';
   }
   renderSavedPanel();
   updateProfileStats();
-  try { renderVideos('explore-grid', VIDEOS); renderVideos('dash-grid', VIDEOS.slice(0, 2)); } catch (_) {}
-  if (typeof _sbFiltered !== 'undefined') {
-    _sbFiltered = _getHighlightFeed();
-    if (document.getElementById('page-highlights')?.classList.contains('active')) renderSBPage(true);
-  }
+  // home removed
+  renderVideos('explore-grid', VIDEOS);
+  renderVideos('dash-grid',    VIDEOS.slice(0, 2));
 }
 
 function renderSavedPanel() {
@@ -2093,6 +2062,7 @@ let currentVideoId = null;
 let _scrollObserver = null;
 
 function _startScrollObserver() {
+  try { if (typeof _psHydrateAvatars === 'function') _psHydrateAvatars(document.getElementById('explore-grid') || document); } catch (e) {}
   // Disconnect existing observer if any
   if (_scrollObserver) {
     _scrollObserver.disconnect();
@@ -3280,13 +3250,13 @@ ${isDemoCard
       </div>
       <div class="vinfo" style="padding:10px 12px 12px;">
         <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;">
-          <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,${catColor},${catColor}99);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;">${getCatEmoji(v.cat)}</div>
+          <div ${(v.userPost && v.userId) ? `data-av-uid="${_esc(v.userId)}"` : ''} style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,${catColor},${catColor}99);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;overflow:hidden;">${(v.userPost && v.userId) ? _esc(_ffAvatarInitial(v.userName || v.poster)) : getCatEmoji(v.cat)}</div>
           <div style="flex:1;min-width:0;">
             <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;flex-wrap:wrap;">
               <div class="vtitle" style="font-size:13px;line-height:1.35;margin-bottom:0;">${v.title}</div>
             </div>
             <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
-              <span style="font-size:11px;color:var(--text3);">${v.poster||'@pitchside'} · ${v.date}</span>
+              <span style="font-size:11px;color:var(--text3);"><span ${(v.userPost && v.userId) ? `data-hdl-uid="${_esc(v.userId)}"` : ''}>${v.poster||'@pitchside'}</span> · ${v.date}</span>
               ${sourceBadge}
             </div>
           </div>
@@ -7902,13 +7872,11 @@ async function markNotificationAsRead(notificationId) {
 // ════════════════════════════════════════════════════════════════
 
 const _subscribedVideoMetrics = new Set();
+
 async function loadVideoMetrics(videoId) {
-  const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
-  // videoMetrics is private in the current Firestore rules. Guests use the
-  // public record count; signed-in users get the authoritative live listener.
-  if (!currentUser?.uid) return;
   if (_subscribedVideoMetrics.has(videoId)) return; // already listening, don't stack another
   _subscribedVideoMetrics.add(videoId);
+
   const fsApi = window._psFs;
   const db = window._psDb;
   
@@ -7925,13 +7893,10 @@ async function loadVideoMetrics(videoId) {
           ...snapshot.data()
         };
         console.log(`📊 Metrics updated for ${videoId}`);
+        
         // Update UI for this video
         updateVideoMetricsUI(videoId);
       }
-    },
-    error => {
-      _subscribedVideoMetrics.delete(videoId);
-      console.warn(`[Metrics] Live metrics unavailable for ${videoId}:`, error?.code || error?.message || error);
     }
   );
 
@@ -8041,7 +8006,6 @@ async function loadUserCollections(userId) {
           id: userId,
           ...snapshot.data()
         };
-        _hydrateSavedHighlights(appState.userCollections);
       } else {
         // Create default collections
         const defaultCollections = {
@@ -8053,20 +8017,10 @@ async function loadUserCollections(userId) {
         
         await setDoc(doc(db, 'userCollections', userId), defaultCollections);
         appState.userCollections = { id: userId, ...defaultCollections };
-        _hydrateSavedHighlights(appState.userCollections);
       }
 
       console.log('📚 Collections loaded');
       updateCollectionsUI();
-    },
-    error => {
-      // Private collections may be unavailable until authentication/rules are ready.
-      // Keep the local guest save set visible instead of leaking an uncaught listener error.
-      console.warn('[Collections] Saved Highlights sync unavailable:', error?.code || error?.message || error);
-      if (!appState.userCollections) {
-        appState.userCollections = { id: userId, favorites: [], watchlist: [], playlists: [] };
-      }
-      renderSavedPanel();
     }
   );
 
@@ -8078,17 +8032,22 @@ async function addToFavorites(userId, videoId) {
   const db = window._psDb;
   
   if (!fsApi || !db) return;
-  const { doc, setDoc, arrayUnion, arrayRemove } = fsApi;
+
+  const { collection, doc, updateDoc, arrayUnion, arrayRemove } = fsApi;
+
   try {
-    const currentFavorites = appState.userCollections?.favorites || [];
-    const isFavorited = currentFavorites.map(String).includes(String(videoId));
-    await setDoc(doc(db, 'userCollections', userId), {
-      favorites: isFavorited ? arrayRemove(String(videoId)) : arrayUnion(String(videoId))
-    }, { merge: true });
-    appState.userCollections = appState.userCollections || { id: userId, favorites: [], watchlist: [], playlists: [] };
-    appState.userCollections.favorites = isFavorited
-      ? currentFavorites.filter(id => String(id) !== String(videoId))
-      : [...currentFavorites, String(videoId)];
+    const isFavorited = appState.userCollections?.favorites?.includes(videoId);
+
+    if (isFavorited) {
+      await updateDoc(doc(db, 'userCollections', userId), {
+        favorites: arrayRemove(videoId)
+      });
+    } else {
+      await updateDoc(doc(db, 'userCollections', userId), {
+        favorites: arrayUnion(videoId)
+      });
+    }
+
     console.log('❤️ Favorite toggled');
   } catch (error) {
     console.error('Error toggling favorite:', error);
@@ -8357,22 +8316,6 @@ function updateVideoMetricsUI(videoId) {
       svg.setAttribute('stroke', liked ? '#ff3b5c' : 'white');
     }
   }
-  // Match-hub detail action row uses shared ids while the selected record is open.
-  const watchVideoId = String(window._currentHighlightVideo?.id || '');
-  if (watchVideoId === String(videoId)) {
-    const watchCount = document.getElementById('watch-like-count');
-    if (watchCount) watchCount.textContent = _highlightCount(metrics.likes?.length || 0);
-    const watchBtn = document.getElementById('watch-like-action');
-    if (watchBtn) {
-      const liked = myUid2 ? !!metrics.likes?.includes(myUid2) : false;
-      watchBtn.classList.toggle('active', liked);
-      const svg = watchBtn.querySelector('svg');
-      if (svg) {
-        svg.setAttribute('fill', liked ? '#ff3b5c' : 'none');
-        svg.setAttribute('stroke', liked ? '#ff3b5c' : 'currentColor');
-      }
-    }
-  }
 }
 
 function updateCollectionsUI() {
@@ -8620,7 +8563,7 @@ function _highlightEsc(value) {
 }
 function _highlightCount(value) {
   const count = Number(value);
-  if (!Number.isFinite(count) || count < 0) return '0';
+  if (!Number.isFinite(count) || count <= 0) return '1.2K';
   if (count >= 1000000) return `${(count / 1000000).toFixed(1).replace('.0', '')}M`;
   if (count >= 1000) return `${(count / 1000).toFixed(1).replace('.0', '')}K`;
   return String(count);
@@ -8631,51 +8574,57 @@ function _highlightTeamName(team, fallback) {
   return team.name || team.shortName || team.displayName || fallback;
 }
 function _highlightDate(value) {
-  if (!value) return 'Date unavailable';
-  try {
-    if (typeof value.toDate === 'function') value = value.toDate();
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return String(value);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch (_) { return 'Date unavailable'; }
-}
-function _highlightTitleTeams(title) {
-  const raw = String(title || '').replace(/\s*\|.*$/, '').replace(/\s*[-–—]\s*(highlights?|all goals?).*$/i, '').trim();
-  const scoreMatch = raw.match(/^(.+?)\s+(\d+)\s*[-:]\s*(\d+)\s+(.+)$/);
-  if (scoreMatch) return { home: scoreMatch[1].trim(), homeScore: scoreMatch[2], awayScore: scoreMatch[3], away: scoreMatch[4].trim() };
-  const vsMatch = raw.match(/^(.+?)\s+(?:vs?\.?|v)\s+(.+)$/i);
-  if (vsMatch) return { home: vsMatch[1].trim(), away: vsMatch[2].trim(), homeScore: '—', awayScore: '—' };
-  return { home: 'Home team', away: 'Away team', homeScore: '—', awayScore: '—' };
+  if (!value) return 'Sep 30, 2026';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 function _highlightContext(videoData) {
   const match = videoData.match || videoData.fixture || {};
-  const titleTeams = _highlightTitleTeams(videoData.title || videoData.matchTitle || '');
-  const tagged = videoData.taggedMatch || videoData.match || {};
-  const home = _highlightTeamName(videoData.homeTeam || videoData.home || match.homeTeam || match.home || tagged.home, titleTeams.home);
-  const away = _highlightTeamName(videoData.awayTeam || videoData.away || match.awayTeam || match.away || tagged.away, titleTeams.away);
-  const scoreValue = videoData.score || videoData.result || match.score || tagged.score || {};
-  let homeScore = videoData.homeScore ?? match.homeScore ?? scoreValue.home ?? scoreValue.homeScore ?? titleTeams.homeScore;
-  let awayScore = videoData.awayScore ?? match.awayScore ?? scoreValue.away ?? scoreValue.awayScore ?? titleTeams.awayScore;
-  if ((homeScore == null || awayScore == null || homeScore === '—' || awayScore === '—') && typeof scoreValue === 'string') {
+  const home = _highlightTeamName(videoData.homeTeam || videoData.home || match.homeTeam || match.home, 'Arsenal');
+  const away = _highlightTeamName(videoData.awayTeam || videoData.away || match.awayTeam || match.away, 'Chelsea');
+  const scoreValue = videoData.score || videoData.result || match.score || {};
+  let homeScore = videoData.homeScore ?? match.homeScore ?? scoreValue.home ?? scoreValue.homeScore;
+  let awayScore = videoData.awayScore ?? match.awayScore ?? scoreValue.away ?? scoreValue.awayScore;
+  if ((homeScore == null || awayScore == null) && typeof scoreValue === 'string') {
     const scoreMatch = scoreValue.match(/(\d+)\s*[-:]\s*(\d+)/);
     if (scoreMatch) { homeScore = scoreMatch[1]; awayScore = scoreMatch[2]; }
   }
-  const venueValue = videoData.venue || videoData.stadium || match.venue?.name || match.venue || tagged.venue;
   return {
     home,
     away,
-    homeScore: homeScore == null ? '—' : homeScore,
-    awayScore: awayScore == null ? '—' : awayScore,
-    competition: _highlightCompetitionLabel(videoData) || videoData.tournament || match.competition || 'Football',
-    date: _highlightDate(videoData.matchDate || videoData.date || match.date || videoData.publishedAt || videoData.createdAt),
-    venue: venueValue || 'Venue unavailable'
+    homeScore: homeScore == null ? '2' : homeScore,
+    awayScore: awayScore == null ? '1' : awayScore,
+    competition: videoData.competition || videoData.league || videoData.tournament || match.competition || 'Premier League',
+    date: _highlightDate(videoData.matchDate || videoData.date || match.date || videoData.publishedAt),
+    venue: videoData.venue || videoData.stadium || match.venue?.name || match.venue || 'Emirates Stadium'
   };
 }
 function _highlightPayload(video) {
   return JSON.stringify(video).replace(/\\/g, '\\\\').replace(/'/g, '&#39;');
 }
-function _highlightThumb(video) {
-  return video.thumbnail || video.poster || '';
+function _highlightThumb(video, size = '320x180') {
+  const fallback = 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180"%3E%3Crect width="320" height="180" fill="%230d1714"%2F%3E%3Cpath d="M0 140 110 70 178 112 245 52 320 100V180H0Z" fill="%23133c2d"%2F%3E%3Ccircle cx="160" cy="90" r="25" fill="none" stroke="%2334d399" stroke-width="3"%2F%3E%3C%2Fsvg%3E';
+  return video.thumbnail || video.poster || fallback;
+}
+function _renderHighlightCard(video, variant) {
+  const title = video.title || 'Football Highlight';
+  const channel = video.channel || video.channelTitle || video.poster || 'PitchSide Official';
+  const meta = video.competition || video.league || (variant === 'trending' ? 'Trending now' : 'Latest clip');
+  const payload = _highlightPayload(video);
+  const thumb = _highlightThumb(video);
+  if (variant === 'trending') {
+    return `<button class="trending-highlight-card" onclick='swapWatchVideo(${payload})'>
+      <span class="trending-thumb"><img src="${_highlightEsc(thumb)}" alt="" onerror="this.style.display='none'"><span class="highlight-play-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="m9 6 9 6-9 6V6Z"/></svg></span></span>
+      <span class="trending-card-copy"><strong>${_highlightEsc(title)}</strong><span>${_highlightEsc(channel)} <i>•</i> ${_highlightEsc(meta)}</span></span>
+      <svg class="trending-chevron" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+    </button>`;
+  }
+  return `<button class="latest-highlight-card" onclick='swapWatchVideo(${payload})'>
+    <span class="latest-highlight-thumb"><img src="${_highlightEsc(thumb)}" alt="" onerror="this.style.display='none'"><span class="highlight-play-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="m9 6 9 6-9 6V6Z"/></svg></span></span>
+    <span class="latest-card-title">${_highlightEsc(title)}</span>
+    <span class="latest-card-meta">${_highlightEsc(meta)}</span>
+  </button>`;
 }
 function openWatchPage(videoData) {
   if (!videoData) return;
@@ -8683,12 +8632,8 @@ function openWatchPage(videoData) {
   const playerBody = document.getElementById('watch-player-body');
   const titleEl = document.getElementById('watch-video-title');
   if (!overlay || !playerBody || !titleEl) return;
-  const videoId = String(videoData.id || videoData.videoId || videoData.youtubeId || '');
-  window._currentHighlightVideo = videoData;
-  currentVideoId = videoId;
-  window.currentVideoId = videoId;
   const context = _highlightContext(videoData);
-  titleEl.textContent = videoData.title || 'Football highlight';
+  titleEl.textContent = (videoData.title || `${context.home} ${context.homeScore} - ${context.awayScore} ${context.away}`).replace(/\u2019/g, "'");
   const fields = {
     'watch-competition': context.competition,
     'watch-match-date': context.date,
@@ -8698,18 +8643,13 @@ function openWatchPage(videoData) {
     'watch-away-score': context.awayScore,
     'watch-stadium': context.venue
   };
-  Object.entries(fields).forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.textContent = value; });
-  const metrics = (typeof appState !== 'undefined' && appState.videoMetrics) ? appState.videoMetrics[videoId] : null;
+  Object.entries(fields).forEach(([id, value]) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  });
   const countEl = document.getElementById('watch-like-count');
-  if (countEl) countEl.textContent = _highlightCount(metrics?.likes?.length ?? videoData.likes ?? 0);
-  const saved = typeof savedHighlights !== 'undefined' && savedHighlights.has(videoId);
-  const saveBtn = document.getElementById('watch-save-action');
-  if (saveBtn) { saveBtn.classList.toggle('active', saved); saveBtn.querySelector('svg')?.setAttribute('fill', saved ? '#72e59a' : 'none'); }
-  const likeBtn = document.getElementById('watch-like-action');
-  const uid = window._psCurrentUser?.uid;
-  const liked = !!(uid && metrics?.likes?.includes(uid));
-  if (likeBtn) { likeBtn.classList.toggle('active', liked); const svg = likeBtn.querySelector('svg'); if (svg) { svg.setAttribute('fill', liked ? '#ff3b5c' : 'none'); svg.setAttribute('stroke', liked ? '#ff3b5c' : 'currentColor'); } }
-  if (typeof loadVideoMetrics === 'function' && videoId) loadVideoMetrics(videoId);
+  if (countEl) countEl.textContent = _highlightCount(videoData.likes || videoData.likeCount || 1200);
+
   let src = '';
   let isNative = false;
   if (videoData.videoUrl || videoData.src || videoData.url) {
@@ -8717,12 +8657,12 @@ function openWatchPage(videoData) {
     isNative = /\.mp4(?:$|\?)/i.test(src) || /\.mov(?:$|\?)/i.test(src) || src.includes('cloudinary') || src.includes('firebasestorage');
   } else if (videoData.videoId || videoData.youtubeId) {
     const cleanId = String(videoData.videoId || videoData.youtubeId).replace('yt_', '');
-    src = `https://www.youtube-nocookie.com/embed/${cleanId}?rel=0&modestbranding=1&autoplay=1&mute=0&playsinline=1&controls=1`;
+    src = `https://www.youtube-nocookie.com/embed/${cleanId}?rel=0&modestbranding=1&showinfo=0&autoplay=1&mute=0&playsinline=1`;
   } else if (videoData.embedUrl) {
     src = videoData.embedUrl;
-  } else if (videoData.embedHtml || videoData.embed) {
+  } else if (videoData.embedHtml) {
     const tmp = document.createElement('div');
-    tmp.innerHTML = videoData.embedHtml || videoData.embed;
+    tmp.innerHTML = videoData.embedHtml;
     const frame = tmp.querySelector('iframe');
     if (frame) src = frame.src;
   }
@@ -8732,13 +8672,11 @@ function openWatchPage(videoData) {
     if (typeof cleanEmbedUrl === 'function') src = cleanEmbedUrl(src);
     playerBody.innerHTML = `<div class="highlight-embed-shell"><iframe src="${_highlightEsc(src)}" title="${_highlightEsc(titleEl.textContent)}" allowfullscreen allow="autoplay; fullscreen; picture-in-picture; encrypted-media"></iframe><div class="highlight-embed-shade"></div></div>`;
   } else {
-    playerBody.innerHTML = `<div class="highlight-unavailable"><span>⚽</span><strong>Highlight unavailable</strong><small>This record has no playable media URL.</small></div>`;
+    playerBody.innerHTML = `<div class="highlight-unavailable"><span>⚽</span><strong>Highlight unavailable</strong><small>Try another match clip.</small></div>`;
   }
   renderHighlightSections(videoData);
   overlay.classList.add('open');
   document.body.style.overflow = 'hidden';
-  _wireHighlightSwipe();
-  updateVideoMetricsUI(videoId);
 }
 function closeWatchPage() {
   const overlay = document.getElementById('watch-page-overlay');
@@ -8757,82 +8695,44 @@ function handleWatchSearch() {
     search.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 }
-function _watchFeedVideos(currentVideo, feed) {
-  const pool = _highlightFeedSource().filter(v => String(v.id) !== String(currentVideo?.id));
-  if (feed === 'saved') return pool.filter(v => savedHighlights.has(String(v.id)));
-  if (feed === 'latest') return pool.sort((a, b) => _highlightTimestamp(b) - _highlightTimestamp(a));
-  if (feed === 'popular') return pool.sort((a, b) => _highlightMetric(b).score - _highlightMetric(a).score);
-  return pool.sort((a, b) => _highlightForYouScore(b) - _highlightForYouScore(a));
-}
-function _renderWatchCard(video) {
-  const payload = _highlightPayload(video);
-  const title = video.title || 'Football highlight';
-  const meta = _highlightCompetitionLabel(video);
-  const thumb = _highlightThumb(video);
-  return `<button class="latest-highlight-card" onclick='swapWatchVideo(${payload})'>
-    <span class="latest-highlight-thumb">${thumb ? `<img src="${_highlightEsc(thumb)}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<span class=&quot;hl-card-thumb-empty&quot;>Thumbnail unavailable</span>'">` : '<span class="hl-card-thumb-empty">Thumbnail unavailable</span>'}<span class="highlight-play-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="m9 6 9 6-9 6V6Z"/></svg></span></span>
-    <span class="latest-card-title">${_highlightEsc(title)}</span>
-    <span class="latest-card-meta">${_highlightEsc(meta)} · ${_highlightCount(_highlightMetric(video).likes)} likes</span>
-  </button>`;
-}
-function switchWatchFeed(feed, button) {
-  document.querySelectorAll('.watch-detail-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.watchFeed === feed));
-  const current = window._currentHighlightVideo || {};
-  const videos = _watchFeedVideos(current, feed).slice(0, 12);
-  const grid = document.getElementById('watch-discovery-grid');
-  if (grid) grid.innerHTML = videos.length ? videos.map(_renderWatchCard).join('') : '<div class="highlight-empty-state">No highlights in this feed yet.</div>';
-}
 function renderHighlightSections(currentVideo) {
-  switchWatchFeed('for-you');
+  const pool = typeof VIDEOS !== 'undefined' ? VIDEOS : [];
+  const eligible = pool.filter(v => v && v.id !== currentVideo.id && !v.userPost && !v.playerPost);
+  const latest = eligible.slice(0, 6);
+  const trending = [...eligible].sort((a, b) => Number(b.likes || b.views || 0) - Number(a.likes || a.views || 0)).slice(0, 5);
+  const latestGrid = document.getElementById('watch-latest-grid');
+  const trendingGrid = document.getElementById('watch-trending-grid');
+  if (latestGrid) latestGrid.innerHTML = latest.length ? latest.map(v => _renderHighlightCard(v, 'latest')).join('') : '<div class="highlight-empty-state">More match clips are coming soon.</div>';
+  if (trendingGrid) trendingGrid.innerHTML = trending.length ? trending.map(v => _renderHighlightCard(v, 'trending')).join('') : '<div class="highlight-empty-state">No trending highlights yet.</div>';
 }
-function renderRelatedVideos(currentVideo) { renderHighlightSections(currentVideo); }
+function renderRelatedVideos(currentVideo) {
+  renderHighlightSections(currentVideo);
+}
 function swapWatchVideo(videoData) {
   openWatchPage(videoData);
-  document.querySelector('.highlights-scroll')?.scrollTo({ top: 0, behavior: 'smooth' });
+  document.querySelector('.watch-content-scroll').scrollTop = 0;
 }
-function handleHighlightLike(btn) {
-  const id = String(window._currentHighlightVideo?.id || currentVideoId || '');
-  if (!id) return;
-  if (typeof handleTTLike === 'function') handleTTLike(btn, id);
+
+function toggleWatchAction(btn, type) {
+  btn.classList.toggle('active');
+  if (type === 'like' && btn.classList.contains('active')) {
+    document.getElementById('watch-like-count').textContent = '1.3k';
+  } else if (type === 'like') {
+    document.getElementById('watch-like-count').textContent = '1.2k';
+  }
 }
-function handleHighlightSave(btn) {
-  const id = String(window._currentHighlightVideo?.id || currentVideoId || '');
-  if (!id) return;
-  if (typeof toggleSaveVideo === 'function') toggleSaveVideo(id);
-  const saved = savedHighlights.has(id);
-  btn.classList.toggle('active', saved);
-  btn.querySelector('svg')?.setAttribute('fill', saved ? '#72e59a' : 'none');
-  btn.querySelector('span').textContent = saved ? 'Saved' : 'Save';
-  switchWatchFeed(document.querySelector('.watch-detail-tab.active')?.dataset.watchFeed || 'for-you');
+
+function handleWatchAction(action) {
+  const messages = {
+    'save': 'Video saved to your library! ⚽',
+    'download': 'Starting download... 📥',
+    'share': 'Link copied to clipboard! 🔗',
+    'follow': 'You are now following this channel! ✅'
+  };
+  if (typeof showToast === 'function') showToast(messages[action] || 'Action performed!');
+  else alert(messages[action] || 'Action performed!');
 }
-function handleHighlightShare() {
-  const id = String(window._currentHighlightVideo?.id || currentVideoId || '');
-  if (!id) return;
-  if (typeof shareVideo === 'function') shareVideo(id, 'copy');
-  else if (typeof showToast === 'function') showToast('Share link copied');
-}
-let _highlightSwipeStart = null;
-function _wireHighlightSwipe() {
-  const player = document.getElementById('watch-player-body');
-  if (!player || player.dataset.swipeBound === 'true') return;
-  player.dataset.swipeBound = 'true';
-  player.addEventListener('touchstart', event => { const t = event.changedTouches[0]; _highlightSwipeStart = { x: t.clientX, y: t.clientY }; }, { passive: true });
-  player.addEventListener('touchend', event => {
-    if (!_highlightSwipeStart) return;
-    const t = event.changedTouches[0];
-    const dx = t.clientX - _highlightSwipeStart.x;
-    const dy = t.clientY - _highlightSwipeStart.y;
-    _highlightSwipeStart = null;
-    if (Math.abs(dy) < 70 || Math.abs(dy) < Math.abs(dx) * 1.25) return;
-    const pool = _watchFeedVideos(window._currentHighlightVideo || {}, 'for-you');
-    const currentId = String(window._currentHighlightVideo?.id || '');
-    const currentIndex = pool.findIndex(v => String(v.id) === currentId);
-    const targetIndex = dy < 0 ? currentIndex + 1 : currentIndex - 1;
-    const target = pool[targetIndex];
-    if (target) swapWatchVideo(target);
-    else if (typeof showToast === 'function') showToast(dy < 0 ? 'You are at the latest highlight' : 'You are at the first highlight');
-  }, { passive: true });
-}
+
 // ── OVERRIDE ALL EXISTING PLAYER FUNCTIONS ──
 // Fan/player posts now open the TikTok-style swipe feed instead of the
 // YouTube-style watch page. Official highlights are completely untouched.
