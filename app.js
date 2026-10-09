@@ -9001,9 +9001,10 @@ function _loadHlsJs() {
 }
 
 // Staged loading for one slide: shows a spinner while the main video is
-// buffering, and only once it is really playing loads the blurred background
-// copy and starts the next slide, so the video on screen always gets the
-// bandwidth first.
+// buffering, then starts the next slide once this one is really playing, so
+// the video on screen always gets the bandwidth first. The blurred backdrop
+// is just the thumbnail now (a second live video with a blur filter on top
+// was what made phones hang).
 function _ffBindSlideVideo(slideEl) {
   const fg = slideEl.querySelector('video.ff-video');
   const bg = slideEl.querySelector('video.ff-video-bg');
@@ -9015,15 +9016,11 @@ function _ffBindSlideVideo(slideEl) {
   ['loadstart', 'waiting', 'stalled'].forEach(ev => fg.addEventListener(ev, spinOn));
   ['playing', 'canplay', 'error'].forEach(ev => fg.addEventListener(ev, spinOff));
   fg.addEventListener('playing', () => {
-    if (bg && bg.dataset.videoUrl) {
-      _ffAttachVideoSource(bg, bg.dataset.videoUrl);
-      if (bg.paused) { try { bg.currentTime = fg.currentTime; } catch (e) {} bg.play().catch(() => {}); }
-    }
     if (slideEl.dataset.nextWarmed === '1') return;
     slideEl.dataset.nextWarmed = '1';
     const next = slideEl.nextElementSibling;
     const nv = next && next.querySelector('video.ff-video');
-    if (nv && nv.dataset.videoUrl) setTimeout(() => _ffAttachVideoSource(nv, nv.dataset.videoUrl), 600);
+    if (nv && nv.dataset.videoUrl) setTimeout(() => _ffAttachVideoSource(nv, nv.dataset.videoUrl, true), 600);
   });
 }
 function _ffPosterAttr(v) {
@@ -9033,10 +9030,10 @@ function _ffPosterAttr(v) {
 
 // Attaches the right playback method to a <video> element based on the URL.
 // Safe to call multiple times on the same element — it no-ops if already wired.
-async function _ffAttachVideoSource(videoEl, url) {
+async function _ffAttachVideoSource(videoEl, url, warmOnly) {
   if (!videoEl || !url || videoEl.dataset.srcWired === url) return;
   videoEl.dataset.srcWired = url;
-  if (videoEl.classList.contains('ff-video')) videoEl.preload = 'auto';
+  if (videoEl.classList.contains('ff-video') && !warmOnly) videoEl.preload = 'auto';
 
   const isHls = url.includes('.m3u8');
   if (!isHls) {
@@ -9155,6 +9152,7 @@ function openFanFeedOverlay(startVideoId) {
     </div>`;
   } else {
     _ffCurrentPosts = posts;
+    slidesEl.querySelectorAll('video').forEach(v => { try { v.pause(); } catch (e) {} _ffReleaseVideoMemory(v); });
     const shuffled = _ffShuffle(posts);
     slidesEl.innerHTML = shuffled.map(v => _ffRenderSlide(v)).join('');
     _ffWireNewSlides();
@@ -9313,7 +9311,7 @@ function closeFanFeedOverlay() {
   container.style.display = 'none';
   document.body.style.overflow = '';
   _ffSetChromeHidden(false);
-  document.querySelectorAll('#fanfeed-slides video').forEach(v => v.pause());
+  document.querySelectorAll('#fanfeed-slides video').forEach(v => { v.pause(); _ffReleaseVideoMemory(v); });
   if (_ffObserver) { _ffObserver.disconnect(); _ffObserver = null; }
 }
 
@@ -9492,7 +9490,7 @@ function _ffRenderSlide(v) {
       </div>
 
       <div class="ff-video-frame">
-        <video class="ff-video-bg" data-video-url="${_ffGetVideoSrc(v)}" loop playsinline muted preload="metadata"
+        <video class="ff-video-bg"${_ffPosterAttr(v)} loop playsinline muted preload="none"
           disablePictureInPicture disableRemotePlayback controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
           aria-hidden="true" tabindex="-1"></video>
         <video class="ff-video" data-video-url="${_ffGetVideoSrc(v)}"${_ffPosterAttr(v)} loop playsinline preload="metadata"
@@ -9660,7 +9658,7 @@ function setupFanFeedObserver() {
         if (videoBg) { videoBg.pause(); videoBg.currentTime = 0; }
 
         const distance = Math.abs(idx - _ffCurrentVisibleIdx);
-        if (distance > 3) {
+        if (distance > 1) {
           // Far enough away that you won't swipe back to it soon — fully
           // release its memory instead of just pausing. This is the actual
           // fix for the phone-wide hang: every paused-but-not-released video
