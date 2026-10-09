@@ -3577,3 +3577,13 @@ body {
 .hl-search-wrap svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text2); pointer-events: none; }
 .hl-search-wrap input { width: 100%; box-sizing: border-box; padding: 10px 14px 10px 38px; border-radius: 12px; border: 1px solid var(--border, rgba(0,0,0,.08)); background: var(--bg2); color: var(--text); font-size: 14px; outline: none; }
 .hl-search-wrap input:focus { border-color: var(--green); }
+
+
+/* ── FanFeed: buffering spinner (shown over the poster while a video loads) ── */
+.ff-video-frame { position: relative; }
+.ff-video-frame.ff-buffering::after {
+  content: ''; position: absolute; top: 50%; left: 50%; width: 40px; height: 40px;
+  margin: -20px 0 0 -20px; border: 3px solid rgba(255,255,255,.25); border-top-color: #22c55e;
+  border-radius: 50%; animation: ff-spin .8s linear infinite; z-index: 4; pointer-events: none;
+}
+@keyframes ff-spin { to { transform: rotate(360deg); } }
