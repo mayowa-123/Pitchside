@@ -9000,11 +9000,43 @@ function _loadHlsJs() {
   return _hlsJsLoadPromise;
 }
 
+// Staged loading for one slide: shows a spinner while the main video is
+// buffering, and only once it is really playing loads the blurred background
+// copy and starts the next slide, so the video on screen always gets the
+// bandwidth first.
+function _ffBindSlideVideo(slideEl) {
+  const fg = slideEl.querySelector('video.ff-video');
+  const bg = slideEl.querySelector('video.ff-video-bg');
+  const frame = slideEl.querySelector('.ff-video-frame');
+  if (!fg || fg.dataset.bound === '1') return;
+  fg.dataset.bound = '1';
+  const spinOn = () => { if (frame) frame.classList.add('ff-buffering'); };
+  const spinOff = () => { if (frame) frame.classList.remove('ff-buffering'); };
+  ['loadstart', 'waiting', 'stalled'].forEach(ev => fg.addEventListener(ev, spinOn));
+  ['playing', 'canplay', 'error'].forEach(ev => fg.addEventListener(ev, spinOff));
+  fg.addEventListener('playing', () => {
+    if (bg && bg.dataset.videoUrl) {
+      _ffAttachVideoSource(bg, bg.dataset.videoUrl);
+      if (bg.paused) { try { bg.currentTime = fg.currentTime; } catch (e) {} bg.play().catch(() => {}); }
+    }
+    if (slideEl.dataset.nextWarmed === '1') return;
+    slideEl.dataset.nextWarmed = '1';
+    const next = slideEl.nextElementSibling;
+    const nv = next && next.querySelector('video.ff-video');
+    if (nv && nv.dataset.videoUrl) setTimeout(() => _ffAttachVideoSource(nv, nv.dataset.videoUrl), 600);
+  });
+}
+function _ffPosterAttr(v) {
+  const t = (v && v.thumbnail) ? applyCloudinaryQuality(v.thumbnail) : '';
+  return t && t.length > 10 ? ` poster="${_esc(t)}"` : '';
+}
+
 // Attaches the right playback method to a <video> element based on the URL.
 // Safe to call multiple times on the same element — it no-ops if already wired.
 async function _ffAttachVideoSource(videoEl, url) {
   if (!videoEl || !url || videoEl.dataset.srcWired === url) return;
   videoEl.dataset.srcWired = url;
+  if (videoEl.classList.contains('ff-video')) videoEl.preload = 'auto';
 
   const isHls = url.includes('.m3u8');
   if (!isHls) {
@@ -9143,6 +9175,13 @@ function openFanFeedOverlay(startVideoId) {
     const targetSlide = document.querySelector(`#fanfeed-slides .ff-slide[data-id="${CSS.escape(String(startVideoId))}"]`);
     if (targetSlide) targetSlide.scrollIntoView({ behavior: 'instant', block: 'start' });
   }
+
+  // Start fetching the video the person actually tapped right now, before
+  // the scroll observer gets around to it.
+  const _primeSlide = (startVideoId != null && document.querySelector(`#fanfeed-slides .ff-slide[data-id="${CSS.escape(String(startVideoId))}"]`))
+    || document.querySelector('#fanfeed-slides .ff-slide');
+  const _primeVideo = _primeSlide && _primeSlide.querySelector('video.ff-video');
+  if (_primeVideo && _primeVideo.dataset.videoUrl) _ffAttachVideoSource(_primeVideo, _primeVideo.dataset.videoUrl);
 }
 
 // Hides/restores the bottom nav bar and the floating "+" post button while
@@ -9218,10 +9257,12 @@ function _ffWireNewSlides() {
     _ffAttachSwipeHandlers(slideEl, uid, posterName);
 
     // Set up playback source (HLS via hls.js, or plain mp4 src for legacy posts)
-    const fgVideo = slideEl.querySelector('video.ff-video');
-    const bgVideo = slideEl.querySelector('video.ff-video-bg');
-    if (fgVideo && fgVideo.dataset.videoUrl) _ffAttachVideoSource(fgVideo, fgVideo.dataset.videoUrl);
-    if (bgVideo && bgVideo.dataset.videoUrl) _ffAttachVideoSource(bgVideo, bgVideo.dataset.videoUrl);
+    // Do NOT attach every slide's video here. Doing that made the phone open
+    // two network streams per post (the main video plus its blurred
+    // background copy) all at once, so the video you tapped had to fight
+    // every other post for bandwidth. Loading is now staged instead:
+    // the visible slide first, then its blurred copy, then the next slide.
+    _ffBindSlideVideo(slideEl);
 
     // Re-sync like/comment state onto this (possibly brand-new, from a loop
     // restart) DOM node using whatever's already cached from the listener —
@@ -9454,7 +9495,7 @@ function _ffRenderSlide(v) {
         <video class="ff-video-bg" data-video-url="${_ffGetVideoSrc(v)}" loop playsinline muted preload="metadata"
           disablePictureInPicture disableRemotePlayback controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
           aria-hidden="true" tabindex="-1"></video>
-        <video class="ff-video" data-video-url="${_ffGetVideoSrc(v)}" loop playsinline preload="metadata"
+        <video class="ff-video" data-video-url="${_ffGetVideoSrc(v)}"${_ffPosterAttr(v)} loop playsinline preload="metadata"
           disablePictureInPicture disableRemotePlayback controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
           onclick="_ffHandleVideoTap(this, '${safeId}')"></video>
         <div class="ff-mute-btn" onclick="_ffToggleMute()">${_ffMuted ? '🔇' : '🔊'}</div>
@@ -9611,11 +9652,7 @@ function setupFanFeedObserver() {
         }
         if (idx >= slides.length - 2) _ffExtendFeedLoop();
 
-        const nextSlide = slides[idx + 1];
-        if (nextSlide) {
-          const nextVideo = nextSlide.querySelector('video.ff-video');
-          if (nextVideo && nextVideo.dataset.videoUrl) _ffAttachVideoSource(nextVideo, nextVideo.dataset.videoUrl);
-        }
+        // The next slide is warmed from _ffBindSlideVideo once THIS one is playing.
       } else {
         video._ffPlayToken = (video._ffPlayToken || 0) + 1;
         video.pause();
