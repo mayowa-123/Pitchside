@@ -3567,3 +3567,13 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .highlights-icon-btn, .highlight-action, .latest-highlight-thumb img, .trending-highlight-card { transition: none; }
 }
+
+
+/* ── Highlights: working states ── */
+.highlight-action.active { color: #72e59a; border-color: rgba(74, 215, 119, .48); background: rgba(26, 124, 65, .26); }
+.match-score.no-score strong { display: none; }
+.match-score.no-score span { font-size: 13px; font-weight: 600; letter-spacing: .06em; opacity: .8; }
+.hl-search-wrap { position: relative; margin: 4px 14px 0; flex-shrink: 0; }
+.hl-search-wrap svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text2); pointer-events: none; }
+.hl-search-wrap input { width: 100%; box-sizing: border-box; padding: 10px 14px 10px 38px; border-radius: 12px; border: 1px solid var(--border, rgba(0,0,0,.08)); background: var(--bg2); color: var(--text); font-size: 14px; outline: none; }
+.hl-search-wrap input:focus { border-color: var(--green); }
