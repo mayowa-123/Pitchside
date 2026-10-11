@@ -25,7 +25,7 @@ async function loadSBHighlights(filter) {
   if (activeBtn) { activeBtn.style.background = 'var(--green)'; activeBtn.style.color = '#fff'; }
   const grid = document.getElementById('sb-video-grid');
   grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);"><div style="font-size:28px;">⚽</div><div style="margin-top:8px;font-size:14px;">Loading highlights...</div></div>';
-  let filtered = VIDEOS.filter(v => !v.userPost && !v.playerPost && !_hlIsLive(v));
+  let filtered = VIDEOS.filter(v => (filter === 'saved' || (!v.userPost && !v.playerPost)) && !_hlIsLive(v));
   if (filter === 'saved') {
     await _hlLoadUser();
     filtered = filtered.filter(v => _hl.saves.has(_hlId(v)));
@@ -1718,30 +1718,10 @@ function _saveSelections() {
 ═══════════════════════════════════════════ */
 let savedHighlights = new Set();
 
-function toggleSaveVideo(videoId) {
-  if (savedHighlights.has(videoId)) {
-    savedHighlights.delete(videoId);
-    showToast('Removed from Saved');
-  } else {
-    savedHighlights.add(videoId);
-    showToast('Saved to Highlights ✓');
-  }
-  // Update save label in overlay if it's the current video
-  if (videoId === currentVideoId) {
-    const lbl = document.getElementById('tt-save-label');
-    if (lbl) lbl.textContent = savedHighlights.has(videoId) ? 'Saved ✓' : 'Save';
-  }
-  renderSavedPanel();
-  updateProfileStats();
-  // home removed
-  renderVideos('explore-grid', VIDEOS);
-  renderVideos('dash-grid',    VIDEOS.slice(0, 2));
-}
-
 function renderSavedPanel() {
   const container = document.getElementById('saved-highlights-list');
   if (!container) return;
-  const saved = VIDEOS.filter(v => savedHighlights.has(v.id));
+  const saved = VIDEOS.filter(v => savedHighlights.has(String(v.id)));
   if (saved.length === 0) {
     container.innerHTML = `<div class="empty-state"><div class="empty-icon">🎬</div>No saved highlights yet.<br>Tap the bookmark on any video.</div>`;
   } else {
@@ -1930,7 +1910,7 @@ function renderVideos(containerId, data) {
   }
 
   container.innerHTML = data.map(v => {
-    const isSaved = savedHighlights.has(v.id);
+    const isSaved = savedHighlights.has(String(v.id));
     const hasThumbnail = v.thumbnail && v.thumbnail.length > 10;
     // FEATURE 5: Apply Cloudinary auto-quality to thumbnail URL
     const thumbUrl = applyCloudinaryQuality(v.thumbnail || '');
@@ -2009,7 +1989,7 @@ function renderVideos(containerId, data) {
               <div class="vtitle" style="font-size:13px;line-height:1.35;margin-bottom:0;">${v.title}</div>
             </div>
             <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
-              <span style="font-size:11px;color:var(--text3);"><span ${(v.userPost && v.userId) ? `data-hdl-uid="${_esc(v.userId)}"` : ''}>${v.poster || '@pitchside'}</span> · ${v.date}</span>
+              <span style="font-size:11px;color:var(--text3);"><span ${(v.userPost && v.userId) ? `data-hdl-uid="${_esc(v.userId)}"` : ''}>${(v.userPost && v.userId) ? '@fan' : (v.poster || '@pitchside')}</span> · ${v.date}</span>
               ${sourceBadge}
             </div>
           </div>
@@ -2518,7 +2498,7 @@ function _loadVideoMeta(v) {
   if (handleEl) handleEl.textContent = v.poster || '@pitchside_official';
   if (likeEl)   likeEl.textContent   = formatCount(v.likes || 0);
   if (cmtEl)    cmtEl.textContent    = formatCount((MOCK_COMMENTS[v.id]||[]).length || v.comments || 0);
-  if (saveEl)   saveEl.textContent   = savedHighlights.has(v.id) ? 'Saved ✓' : 'Save';
+  if (saveEl)   saveEl.textContent   = savedHighlights.has(String(v.id)) ? 'Saved ✓' : 'Save';
   if (musicEl)  musicEl.textContent  = v.music ? `🎵 ${v.music}` : `🎵 ${v.competition || 'PitchSide Football'}`;
   if (avatarEl) avatarEl.src         = `https://api.dicebear.com/7.x/avataaars/svg?seed=${v.avatarSeed || v.id}`;
 }
@@ -3062,7 +3042,7 @@ async function saveProfile() {
   if (_cu && doc && setDoc && db) {
     try {
       await setDoc(doc(db, 'users', _cu.uid), {
-        name, email, handle, bio, links,
+        name, handle, bio, links,
       }, { merge: true });
       if (handle) {
         await setDoc(doc(db, 'handles', handle), { uid: _cu.uid }, { merge: true });
@@ -3224,7 +3204,7 @@ function _renderExploreAll() {
 
 /* ── Convert a video object to an explore card HTML string ── */
 function _videoToExploreCard(v) {
-  const isSaved = savedHighlights.has(v.id);
+  const isSaved = savedHighlights.has(String(v.id));
   const hasThumbnail = v.thumbnail && v.thumbnail.length > 10;
   const thumbUrl = applyCloudinaryQuality(v.thumbnail || '');
   const catColors = {
@@ -3287,7 +3267,7 @@ ${isDemoCard
               <div class="vtitle" style="font-size:13px;line-height:1.35;margin-bottom:0;">${v.title}</div>
             </div>
             <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
-              <span style="font-size:11px;color:var(--text3);"><span ${(v.userPost && v.userId) ? `data-hdl-uid="${_esc(v.userId)}"` : ''}>${v.poster||'@pitchside'}</span> · ${v.date}</span>
+              <span style="font-size:11px;color:var(--text3);"><span ${(v.userPost && v.userId) ? `data-hdl-uid="${_esc(v.userId)}"` : ''}>${(v.userPost && v.userId) ? '@fan' : (v.poster||'@pitchside')}</span> · ${v.date}</span>
               ${sourceBadge}
             </div>
           </div>
@@ -5731,6 +5711,17 @@ async function fetchUserStreak(uid) {
 // Applies whatever profile fields exist in the user's Firestore doc onto
 // profileData + the visible UI — avatar, name, email — so a real returning
 // user sees their own info instead of the hardcoded "John Doe" placeholder.
+function _psHealOwnName() {
+  const u = window._psCurrentUser;
+  const n = String(profileData.name || '').trim();
+  if (!n) return;
+  const local = (u && u.email) ? u.email.split('@')[0].toLowerCase() : '';
+  if (!(n.includes('@') || (local && n.toLowerCase() === local))) return;
+  const fixed = profileData.handle ? (profileData.handle.charAt(0).toUpperCase() + profileData.handle.slice(1)) : 'Fan';
+  profileData.name = fixed;
+  const { doc, setDoc, db } = window._psFs || {};
+  if (u && db) setDoc(doc(db, 'users', u.uid), { name: fixed }, { merge: true }).catch(() => {});
+}
 function _applyStoredProfileData(data) {
   if (!data) return;
   if (data.avatarUrl) profileData.avatarUrl = data.avatarUrl;
@@ -5738,7 +5729,6 @@ function _applyStoredProfileData(data) {
   // display name before the real @handle field existed — support both.
   if (data.name)      profileData.name = data.name;
   else if (data.username) profileData.name = data.username;
-  if (data.email)     profileData.email = data.email;
   if (data.handle)    profileData.handle = data.handle;
   if (typeof data.bio === 'string') profileData.bio = data.bio;
   if (Array.isArray(data.links)) profileData.links = data.links;
@@ -5760,6 +5750,7 @@ function _applyStoredProfileData(data) {
     try { renderSelectionList('league-list', ALL_LEAGUES, selectedLeagues); } catch (e) {}
     try { updateProfileStats(); } catch (e) {}
   }
+  _psHealOwnName();
   if (profileData.name) {
     profileData.initials = profileData.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
   }
@@ -8234,7 +8225,12 @@ async function toggleFollowUser(currentUserId, targetUserId) {
       );
     }
 
+    if (!Array.isArray(appState.following)) appState.following = [];
+    appState.following = isFollowing
+      ? appState.following.filter(x => x !== targetUserId)
+      : Array.from(new Set([...appState.following, targetUserId]));
     console.log('✅ Follow toggled');
+    return !isFollowing;
   } catch (error) {
     console.error('Error toggling follow:', error);
   }
@@ -8682,7 +8678,7 @@ function _hlResolveSource(v) {
    Per-user state  → userInteractions/{uid}_{like|save}_{videoId}
    Public counters → highlightStats/{videoId} { likes, views }       */
 let _watchCurrent = null;
-const _hl = { stats: {}, statsAt: 0, likes: new Set(), saves: new Set(), uid: null, loading: null, viewed: new Set(), busy: false };
+const _hl = { stats: {}, statsAt: 0, likes: new Set(), saves: savedHighlights, uid: null, loading: null, viewed: new Set(), busy: false };
 function _hlUid() { const u = window._psCurrentUser; return (u && u.uid) ? u.uid : null; }
 function _hlToast(msg) { if (typeof showToast === 'function') showToast(msg); }
 async function _hlLoadUser() {
@@ -8701,7 +8697,7 @@ async function _hlLoadUser() {
         if (x.type === 'like') likes.add(String(x.targetId));
         if (x.type === 'save') saves.add(String(x.targetId));
       });
-      _hl.likes = likes; _hl.saves = saves;
+      _hl.likes = likes; savedHighlights.clear(); saves.forEach(id => savedHighlights.add(id)); _hl.saves = savedHighlights;
     } catch (e) { console.warn('[Highlights] could not load your likes/saves:', e); _hl.loading = null; }
   })();
   return _hl.loading;
@@ -8769,19 +8765,11 @@ async function _hlToggle(type) {
   } finally { _hl.busy = false; }
 }
 async function _watchShare() {
-  const v = _watchCurrent;
-  if (!v) return;
-  const title = _decodeEntities(v.title || 'Football highlight');
-  const url = `${location.origin}${location.pathname}?highlight=${encodeURIComponent(_hlId(v))}`;
-  if (navigator.share) {
-    try { await navigator.share({ title, text: `${title} on PitchSide`, url }); return; }
-    catch (e) { if (e && e.name === 'AbortError') return; }
-  }
-  try { await navigator.clipboard.writeText(url); _hlToast('Link copied'); }
-  catch (e) { window.prompt('Copy this link', url); }
+  if (_watchCurrent) _psOpenShareSheet(_hlId(_watchCurrent));
 }
 function _hlOpenFromUrl() {
-  const id = new URLSearchParams(location.search).get('highlight');
+  const _qs = new URLSearchParams(location.search);
+  const id = _qs.get('v') || _qs.get('highlight');
   if (!id) return;
   let tries = 0;
   const timer = setInterval(() => {
@@ -8790,7 +8778,7 @@ function _hlOpenFromUrl() {
     if (v && window._psCurrentUser) {
       clearInterval(timer);
       history.replaceState(null, '', location.pathname);
-      openWatchPage(v);
+      if (v.userPost || v.playerPost) openFanFeedOverlay(v.id); else openWatchPage(v);
     } else if (tries > 40) clearInterval(timer);
   }, 600);
 }
@@ -9016,6 +9004,7 @@ function _ffBindSlideVideo(slideEl) {
   ['loadstart', 'waiting', 'stalled'].forEach(ev => fg.addEventListener(ev, spinOn));
   ['playing', 'canplay', 'error'].forEach(ev => fg.addEventListener(ev, spinOff));
   fg.addEventListener('playing', () => {
+    try { fg.playbackRate = _ffRate; } catch (e) {}
     if (slideEl.dataset.nextWarmed === '1') return;
     slideEl.dataset.nextWarmed = '1';
     const next = slideEl.nextElementSibling;
@@ -9142,6 +9131,7 @@ function openFanFeedOverlay(startVideoId) {
   const posts = (typeof VIDEOS !== 'undefined' ? VIDEOS : []).filter(
     v => (v.userPost || v.playerPost) && v.mediaType !== 'image' && _ffGetVideoSrc(v)
       && !(appState.blockedUsers || []).includes(v.userId || v.uid)
+      && !_psHiddenPosts().includes(String(v.id))
   );
 
   if (!posts.length) {
@@ -9180,6 +9170,7 @@ function openFanFeedOverlay(startVideoId) {
     || document.querySelector('#fanfeed-slides .ff-slide');
   const _primeVideo = _primeSlide && _primeSlide.querySelector('video.ff-video');
   if (_primeVideo && _primeVideo.dataset.videoUrl) _ffAttachVideoSource(_primeVideo, _primeVideo.dataset.videoUrl);
+  _hlLoadUser().then(() => document.querySelectorAll('#fanfeed-slides [data-save-btn]').forEach(b => _psSaveUIRefresh(b.dataset.saveBtn)));
 }
 
 // Hides/restores the bottom nav bar and the floating "+" post button while
@@ -9431,7 +9422,12 @@ async function _psHydrateAvatars(root) {
   const hdls = scope.querySelectorAll('[data-hdl-uid]');
   for (const el of hdls) {
     const id = await _psFetchIdentity(el.dataset.hdlUid);
-    if (id && id.handle) el.textContent = '@' + id.handle;
+    if (id) { if (id.handle) el.textContent = '@' + id.handle; else if (id.name) el.textContent = id.name; }
+  }
+  const names = scope.querySelectorAll('[data-name-uid]');
+  for (const el of names) {
+    const id = await _psFetchIdentity(el.dataset.nameUid);
+    if (id && id.name) el.textContent = id.name;
   }
 }
 window._psHydrateAvatars = _psHydrateAvatars;
@@ -9462,8 +9458,9 @@ function _ffRenderSlide(v) {
   // Everyone else's starts as the best snapshot we have and gets live-patched
   // by _resolveFeedIdentity() the moment their real profile loads (see
   // _ffWireNewSlides) — so nothing here is the final word for another poster.
-  const posterHandle = (isMe && profileData.handle) ? ('@' + profileData.handle) : (v.poster || '@pitchside');
-  const posterName = (isMe && profileData.name) ? profileData.name : (v.userName || posterHandle);
+  const _ugc = !!(v.userPost || v.playerPost);
+  const posterHandle = (isMe && profileData.handle) ? ('@' + profileData.handle) : (_ugc ? '@fan' : (v.poster || '@pitchside'));
+  const posterName = (isMe && profileData.name) ? profileData.name : (_ugc ? 'Fan' : (v.userName || posterHandle));
   const posterAvatarUrl = (isMe && profileData.avatarUrl) || v.posterAvatar || '';
   const alreadyFollowing = (typeof appState !== 'undefined' && appState.following) ? appState.following.includes(posterUserId) : false;
 
@@ -9484,7 +9481,7 @@ function _ffRenderSlide(v) {
           <span class="ff-topbar-icon">🔍</span>
           <span class="ff-topbar-text">Find related content</span>
         </div>
-        <div class="ff-topbar" onclick="event.stopPropagation(); _showModerationSheet({contentType:'video', contentId:'${safeId}', targetUserId:'${_esc(posterUserId)}', targetUserName:'${_esc(posterName)}'});" style="margin-left:6px;">
+        <div class="ff-topbar" onclick="event.stopPropagation(); _ffOpenMore('${safeId}');" style="margin-left:6px;">
           <span class="ff-topbar-icon" style="font-weight:800;letter-spacing:1px;">⋯</span>
         </div>
       </div>
@@ -9508,9 +9505,9 @@ function _ffRenderSlide(v) {
           <svg width="24" height="24" fill="#12160F" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"/></svg>
           <span class="ff-rail-count comment-count">${commentCount}</span>
         </div>
-        <div class="ff-rail-btn" onclick="_ffSave('${safeId}', this)">
-          <svg width="22" height="22" fill="${(typeof savedHighlights !== 'undefined' && savedHighlights.has(v.id)) ? '#facc15' : '#12160F'}" viewBox="0 0 24 24"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z"/></svg>
-          <span class="ff-rail-count">Save</span>
+        <div class="ff-rail-btn" data-save-btn="${safeId}" onclick="_ffSave('${safeId}', this)">
+          <svg width="22" height="22" fill="${(typeof savedHighlights !== 'undefined' && savedHighlights.has(String(v.id))) ? '#facc15' : '#12160F'}" viewBox="0 0 24 24"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z"/></svg>
+          <span class="ff-rail-count ff-save-label">${(typeof savedHighlights !== 'undefined' && savedHighlights.has(String(v.id))) ? 'Saved' : 'Save'}</span>
         </div>
         <div class="ff-rail-btn" onclick="_ffShare('${safeId}')">
           <svg width="24" height="24" fill="#12160F" viewBox="0 0 24 24"><path d="M18 8a3 3 0 1 0-2.83-4H15a3 3 0 0 0 .05.61L8.09 8.55a3 3 0 1 0 0 6.9l6.96 3.94A3 3 0 1 0 18 16a2.99 2.99 0 0 0-2.83 2H15l-6.96-3.94a3 3 0 0 0 0-1.12L15 9.6a2.99 2.99 0 0 0 3-1.6z"/></svg>
@@ -9539,7 +9536,7 @@ function _ffOpenReadingMode(videoId) {
 
   const likeCount = (typeof formatCount === 'function') ? formatCount(v.likes || 0) : (v.likes || 0);
   const commentCount = (typeof formatCount === 'function') ? formatCount(v.comments || 0) : (v.comments || 0);
-  const isSaved = (typeof savedHighlights !== 'undefined') && savedHighlights.has(v.id);
+  const isSaved = (typeof savedHighlights !== 'undefined') && savedHighlights.has(String(v.id));
 
   overlay.dataset.videoId = String(videoId);
   body.dataset.videoId = String(videoId);
@@ -9791,20 +9788,265 @@ function _ffComment(videoId) {
   try { if (typeof openComments === 'function') openComments(); } catch (e) {}
 }
 
-function _ffSave(videoId, el) {
-  try { if (typeof toggleSaveVideo === 'function') toggleSaveVideo(videoId); } catch (e) {}
-  const nowSaved = (typeof savedHighlights !== 'undefined') && savedHighlights.has(videoId);
-  const svg = el.querySelector('svg');
-  if (svg) svg.setAttribute('fill', nowSaved ? '#facc15' : '#fff');
-  el.style.transform = 'scale(1.2)';
-  setTimeout(() => { el.style.transform = 'scale(1)'; }, 150);
+/* ═══════════════════════════════════════════
+   BOTTOM SHEETS, SHARE, MORE MENU, SAVE
+═══════════════════════════════════════════ */
+let _psSheetActions = [];
+function _psOpenSheet(rows, title) {
+  let backdrop = document.getElementById('ps-sheet-backdrop');
+  let sheet = document.getElementById('ps-sheet');
+  if (!sheet) {
+    backdrop = document.createElement('div');
+    backdrop.id = 'ps-sheet-backdrop';
+    backdrop.className = 'ps-sheet-backdrop';
+    backdrop.onclick = _psCloseSheet;
+    document.body.appendChild(backdrop);
+    sheet = document.createElement('div');
+    sheet.id = 'ps-sheet';
+    sheet.className = 'ps-sheet';
+    document.body.appendChild(sheet);
+  }
+  _psSheetActions = rows.map(r => r.action || null);
+  sheet.innerHTML =
+    '<div class="ps-sheet-grab"></div>' +
+    (title ? `<div class="ps-sheet-title">${_esc(title)}</div>` : '') +
+    rows.map((r, i) => r.divider
+      ? '<div class="ps-sheet-div"></div>'
+      : `<div class="ps-sheet-row${r.danger ? ' danger' : ''}" onclick="_psSheetRun(${i})"><span class="ps-sheet-ico">${r.icon || ''}</span><span>${_esc(r.label)}${r.hint ? `<small>${_esc(r.hint)}</small>` : ''}</span></div>`
+    ).join('') +
+    '<div class="ps-sheet-row ps-sheet-cancel" onclick="_psCloseSheet()">Cancel</div>';
+  backdrop.classList.add('open');
+  sheet.classList.add('open');
+}
+function _psCloseSheet() {
+  const s = document.getElementById('ps-sheet'), b = document.getElementById('ps-sheet-backdrop');
+  if (s) s.classList.remove('open');
+  if (b) b.classList.remove('open');
+}
+function _psSheetRun(i) {
+  const fn = _psSheetActions[i];
+  _psCloseSheet();
+  if (fn) setTimeout(fn, 0);
+}
+window._psOpenSheet = _psOpenSheet;
+window._psCloseSheet = _psCloseSheet;
+
+function _psVideoById(id) {
+  return (typeof VIDEOS !== 'undefined' ? VIDEOS : []).find(x => String(x.id) === String(id)) || null;
+}
+function _psWho(uid, fallback) {
+  const id = (typeof _identityCache !== 'undefined') ? _identityCache[uid] : null;
+  if (id && id.handle) return '@' + id.handle;
+  if (id && id.name) return id.name;
+  return fallback || 'this user';
+}
+function _psHiddenPosts() {
+  try { return JSON.parse(localStorage.getItem('ps_hidden_posts') || '[]'); } catch (e) { return []; }
+}
+function _psReportFlow(contentType, contentId, targetUserId) {
+  const reasons = ['Spam', 'Abusive or hateful', 'Inappropriate content', 'Something else'];
+  _psOpenSheet(reasons.map(r => ({
+    icon: '🚩', label: r,
+    action: () => _loadModerationModule().then(mod => mod._reportContent(contentType, contentId, targetUserId, r))
+  })), 'Why are you reporting this?');
+}
+function _psBlockFlow(uid, name) {
+  if (!uid) return;
+  if (!window.confirm(`Block ${name || 'this user'}? You won't see their posts or comments.`)) return;
+  _loadModerationModule().then(mod => mod._blockUser(uid, name));
+}
+window._psReportFlow = _psReportFlow;
+window._psBlockFlow = _psBlockFlow;
+
+/* ── Save: persisted per user, shared with the Highlights Saved list ── */
+function _psSaveUIRefresh(videoId) {
+  const id = String(videoId);
+  const saved = savedHighlights.has(id);
+  document.querySelectorAll('[data-save-btn]').forEach(b => {
+    if (b.dataset.saveBtn !== id) return;
+    const svg = b.querySelector('svg');
+    if (svg) svg.setAttribute('fill', saved ? '#facc15' : '#12160F');
+    const l = b.querySelector('.ff-save-label');
+    if (l) l.textContent = saved ? 'Saved' : 'Save';
+  });
+  if (typeof _watchRefreshButtons === 'function') _watchRefreshButtons();
+  const lbl = document.getElementById('tt-save-label');
+  if (lbl && typeof currentVideoId !== 'undefined' && String(currentVideoId) === id) lbl.textContent = saved ? 'Saved ✓' : 'Save';
+  try { renderSavedPanel(); } catch (e) {}
+}
+async function toggleSaveVideo(videoIdRaw) {
+  const videoId = String(videoIdRaw);
+  const uid = window._psCurrentUser && window._psCurrentUser.uid;
+  if (!uid) { showToast('Sign in to save videos'); return false; }
+  const { db, doc, setDoc, deleteDoc, serverTimestamp } = window._psFs || {};
+  if (!db) { showToast('Still connecting. Try again in a moment.'); return false; }
+  try { await _hlLoadUser(); } catch (e) {}
+  const was = savedHighlights.has(String(videoId));
+  if (was) savedHighlights.delete(videoId); else savedHighlights.add(videoId);
+  _psSaveUIRefresh(videoId);
+  try {
+    const ref = doc(db, 'userInteractions', `${uid}_save_${videoId}`);
+    if (was) await deleteDoc(ref);
+    else await setDoc(ref, { userId: uid, type: 'save', targetId: videoId, timestamp: serverTimestamp() });
+    showToast(was ? 'Removed from saved' : 'Saved');
+    return !was;
+  } catch (e) {
+    console.error('[Save] failed:', e);
+    if (was) savedHighlights.add(videoId); else savedHighlights.delete(videoId);
+    _psSaveUIRefresh(videoId);
+    showToast('Could not save. Check your connection and try again.');
+    return was;
+  }
+}
+async function _ffSave(videoId, el) {
+  if (el) { el.style.transform = 'scale(1.2)'; setTimeout(() => { el.style.transform = 'scale(1)'; }, 150); }
+  await toggleSaveVideo(videoId);
 }
 
-function _ffShare(videoId) {
+/* ── Share sheet ── */
+function _psShareUrl(id) { return `${location.origin}${location.pathname}?v=${encodeURIComponent(String(id))}`; }
+async function _psCopy(text, okMsg) {
+  try { await navigator.clipboard.writeText(text); showToast(okMsg || 'Copied'); }
+  catch (e) { window.prompt('Copy this', text); }
+}
+function _psCountShare(id) {
   try {
-    if (typeof shareVideo === 'function') { shareVideo(videoId, 'copy'); return; }
+    const { db, doc, setDoc, increment } = window._psFs || {};
+    if (db && window._psCurrentUser) setDoc(doc(db, 'videoMetrics', String(id)), { shares: increment(1) }, { merge: true }).catch(() => {});
   } catch (e) {}
-  if (typeof showToast === 'function') showToast('Share link copied!');
+}
+function _psOpenShareSheet(videoId) {
+  const v = _psVideoById(videoId);
+  const title = _decodeEntities((v && v.title) || 'Check this out');
+  const url = _psShareUrl(videoId);
+  const text = `${title} on PitchSide`;
+  const enc = encodeURIComponent;
+  const open = (u) => { window.open(u, '_blank', 'noopener'); _psCountShare(videoId); };
+  const rows = [
+    { icon: '🔗', label: 'Copy link', action: () => { _psCopy(url, 'Link copied'); _psCountShare(videoId); } },
+    { icon: '💬', label: 'WhatsApp', action: () => open(`https://wa.me/?text=${enc(text + ' ' + url)}`) },
+    { icon: '📘', label: 'Facebook', action: () => open(`https://www.facebook.com/sharer/sharer.php?u=${enc(url)}`) },
+    { icon: '𝕏', label: 'X', action: () => open(`https://twitter.com/intent/tweet?text=${enc(text)}&url=${enc(url)}`) },
+    { icon: '✈️', label: 'Telegram', action: () => open(`https://t.me/share/url?url=${enc(url)}&text=${enc(text)}`) },
+    { icon: '✉️', label: 'Email', action: () => { location.href = `mailto:?subject=${enc(title)}&body=${enc(text + '\n' + url)}`; _psCountShare(videoId); } },
+    { icon: '📱', label: 'SMS', action: () => { location.href = `sms:?&body=${enc(text + ' ' + url)}`; _psCountShare(videoId); } }
+  ];
+  if (navigator.share) {
+    rows.push({ icon: '⋯', label: 'More options…', action: async () => {
+      try { await navigator.share({ title, text, url }); _psCountShare(videoId); } catch (e) {}
+    } });
+  }
+  _psOpenSheet(rows, 'Share');
+}
+function _ffShare(videoId) { _psOpenShareSheet(videoId); }
+
+/* ── Fan post "more" menu ── */
+let _ffRate = 1;
+function _ffSetSpeed(rate) {
+  _ffRate = rate;
+  document.querySelectorAll('#fanfeed-slides video.ff-video').forEach(v => { try { v.playbackRate = rate; } catch (e) {} });
+  showToast(rate === 1 ? 'Normal speed' : `Speed ${rate}x`);
+}
+function _ffOpenSpeedSheet() {
+  const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  _psOpenSheet(speeds.map(s => ({
+    icon: _ffRate === s ? '✓' : '', label: s === 1 ? 'Normal' : `${s}x`, action: () => _ffSetSpeed(s)
+  })), 'Playback speed');
+}
+function _ffDownloadable(v) {
+  const url = _ffGetVideoSrc(v);
+  return !!url && !url.includes('.m3u8') && v.allowDownload !== false;
+}
+async function _ffDownload(videoId) {
+  const v = _psVideoById(videoId);
+  const url = v && _ffGetVideoSrc(v);
+  if (!url || url.includes('.m3u8')) { showToast('Download is not available for this video'); return; }
+  showToast('Downloading…');
+  try {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `pitchside-${videoId}.mp4`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    showToast('Saved to your device');
+  } catch (e) {
+    console.warn('[Download] direct download failed:', e);
+    window.open(url, '_blank', 'noopener');
+    showToast('Opened the video. Use your browser menu to save it.');
+  }
+}
+function _ffNotInterested(videoId) {
+  const id = String(videoId);
+  try {
+    const list = _psHiddenPosts();
+    if (!list.includes(id)) { list.push(id); localStorage.setItem('ps_hidden_posts', JSON.stringify(list.slice(-300))); }
+  } catch (e) {}
+  const slide = document.querySelector(`#fanfeed-slides .ff-slide[data-id="${CSS.escape(id)}"]`);
+  const next = slide && (slide.nextElementSibling || slide.previousElementSibling);
+  if (slide) {
+    slide.querySelectorAll('video').forEach(vv => { try { vv.pause(); } catch (e) {} _ffReleaseVideoMemory(vv); });
+    slide.remove();
+  }
+  if (next) next.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  else if (typeof closeFanFeedOverlay === 'function') closeFanFeedOverlay();
+  showToast("Got it. We'll show fewer posts like this.");
+}
+async function _ffDeletePost(videoId) {
+  if (!window.confirm('Delete this post? This cannot be undone.')) return;
+  const { db, doc, deleteDoc } = window._psFs || {};
+  if (!db) { showToast('Not connected. Try again.'); return; }
+  try {
+    await deleteDoc(doc(db, 'posts', String(videoId)));
+    const i = VIDEOS.findIndex(x => String(x.id) === String(videoId));
+    if (i > -1) VIDEOS.splice(i, 1);
+    const slide = document.querySelector(`#fanfeed-slides .ff-slide[data-id="${CSS.escape(String(videoId))}"]`);
+    const next = slide && (slide.nextElementSibling || slide.previousElementSibling);
+    if (slide) { slide.querySelectorAll('video').forEach(vv => { try { vv.pause(); } catch (e) {} _ffReleaseVideoMemory(vv); }); slide.remove(); }
+    if (next) next.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else if (typeof closeFanFeedOverlay === 'function') closeFanFeedOverlay();
+    showToast('Post deleted');
+  } catch (e) {
+    console.error('[Delete post] failed:', e);
+    showToast('Could not delete. Check your connection and try again.');
+  }
+}
+async function _ffFollowById(uid) {
+  const myUid = window._psCurrentUser && window._psCurrentUser.uid;
+  if (!myUid) { showToast('Sign in to follow users'); return; }
+  let now = (appState.following || []).includes(uid);
+  try { const r = await toggleFollowUser(myUid, uid); if (typeof r === 'boolean') now = r; } catch (e) { console.warn('[Follow] failed', e); }
+  try { _ffSyncFollowBadges(); } catch (e) {}
+  showToast(now ? `Following ${_psWho(uid, 'user')}` : `Unfollowed ${_psWho(uid, 'user')}`);
+}
+function _ffOpenMore(videoId) {
+  const v = _psVideoById(videoId);
+  if (!v) return;
+  const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
+  const ownerId = v.userId || v.uid || '';
+  const isMe = !!(myUid && ownerId === myUid);
+  const saved = savedHighlights.has(String(videoId));
+  const following = (appState.following || []).includes(ownerId);
+  const who = _psWho(ownerId, 'this user');
+  const rows = [
+    { icon: '🔖', label: saved ? 'Remove from saved' : 'Save', action: () => toggleSaveVideo(videoId) }
+  ];
+  if (!isMe && ownerId) rows.push({ icon: following ? '✓' : '➕', label: following ? `Unfollow ${who}` : `Follow ${who}`, action: () => _ffFollowById(ownerId) });
+  rows.push({ icon: '🔗', label: 'Copy link', action: () => _psCopy(_psShareUrl(videoId), 'Link copied') });
+  rows.push({ icon: '📤', label: 'Share', action: () => _psOpenShareSheet(videoId) });
+  rows.push({ icon: '⏩', label: 'Playback speed', hint: _ffRate === 1 ? 'Normal' : `${_ffRate}x`, action: () => _ffOpenSpeedSheet() });
+  if (_ffDownloadable(v)) rows.push({ icon: '⬇️', label: 'Download video', action: () => _ffDownload(videoId) });
+  rows.push({ divider: true });
+  if (isMe) {
+    rows.push({ icon: '🗑️', label: 'Delete post', danger: true, action: () => _ffDeletePost(videoId) });
+  } else {
+    rows.push({ icon: '🙈', label: 'Not interested', action: () => _ffNotInterested(videoId) });
+    rows.push({ icon: '🚩', label: 'Report', danger: true, action: () => _psReportFlow('video', videoId, ownerId) });
+    if (ownerId) rows.push({ icon: '🚫', label: `Block ${who}`, danger: true, action: () => _psBlockFlow(ownerId, who) });
+  }
+  _psOpenSheet(rows);
 }
 
 /* ── Profile preview overlay (tap avatar/poster, or swipe left on a slide) ──
@@ -9820,7 +10062,7 @@ async function _ffOpenProfile(userId, posterName) {
 
   const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
   const isMe = !!(myUid && userId === myUid);
-  const following = (typeof appState !== 'undefined' && appState.following) ? appState.following.includes(userId) : false;
+  let following = (typeof appState !== 'undefined' && appState.following) ? appState.following.includes(userId) : false;
   const theirVideos = (typeof VIDEOS !== 'undefined' ? VIDEOS : []).filter(v => (v.userId === userId || v.uid === userId));
 
   // ── Real profile fields: mine are already in memory; someone else's need
@@ -9834,14 +10076,26 @@ async function _ffOpenProfile(userId, posterName) {
     } catch (e) { console.warn('[FanFeed] profile fetch failed:', e); }
   }
 
-  const displayName = isMe ? profileData.name : (posterName || (pd && (pd.name || pd.username)) || 'PitchSide User');
+  // Followers/following live in userFollowing/{uid}, NOT on the users doc, which is why
+  // other people's profiles always showed 0 and 0.
+  let followDoc = null;
+  if (!isMe && doc && getDoc && db) {
+    try {
+      const fsnap = await getDoc(doc(db, 'userFollowing', userId));
+      if (fsnap.exists()) followDoc = fsnap.data();
+    } catch (e) { console.warn('[FanFeed] follow counts fetch failed:', e); }
+  }
+  if (!isMe && followDoc && myUid) following = (followDoc.followers || []).includes(myUid);
+
+  // Never fall back to the name frozen on the post (it can be email-derived).
+  const displayName = isMe ? profileData.name : ((pd && (pd.name || pd.username)) || 'PitchSide Fan');
   const handle       = isMe ? profileData.handle : (pd && pd.handle) || '';
   const bio          = isMe ? (profileData.bio || '') : (pd && pd.bio) || '';
   const links        = isMe ? (profileData.links || []) : (pd && pd.links) || [];
   const myTeamsArr    = isMe ? Array.from(selectedTeams) : ((pd && pd.myTeams) || []);
   const myLeaguesArr  = isMe ? Array.from(selectedLeagues) : ((pd && pd.myLeagues) || []);
-  const followersArr = (isMe ? appState.followers : (pd && pd.followers)) || [];
-  const followingArr = (isMe ? appState.following : (pd && pd.following)) || [];
+  const followersArr = (isMe ? appState.followers : ((followDoc && followDoc.followers) || (pd && pd.followers))) || [];
+  const followingArr = (isMe ? appState.following : ((followDoc && followDoc.following) || (pd && pd.following))) || [];
   const pinnedIds    = ((isMe ? profileData.pinnedPostIds : pd && pd.pinnedPostIds) || []).map(String);
   const createdAt    = isMe ? profileData.createdAt : (pd && pd.createdAt);
   const avatarUrl    = isMe ? profileData.avatarUrl : (pd && pd.avatarUrl) || null;
@@ -9874,7 +10128,7 @@ async function _ffOpenProfile(userId, posterName) {
         <div class="ffp-name">${_esc(displayName)}${handle ? ` <span class="ffp-handle">@${_esc(handle)}</span>` : ''}</div>
         <div class="ffp-stats">
           <span><b>${theirVideos.length}</b> posts</span>
-          <span><b>${followersArr.length}</b> followers</span>
+          <span><b id="ffp-followers-count">${followersArr.length}</b> followers</span>
           <span><b>${followingArr.length}</b> following</span>
         </div>
       </div>
@@ -10021,22 +10275,35 @@ function _checkRateLimit(key, cooldownMs, friendlyMessage) {
 async function _ffToggleFollowFromProfile(userId) {
   const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
   if (!myUid) { if (typeof showToast === 'function') showToast('Please sign in to follow users'); return; }
-  try { if (typeof toggleFollowUser === 'function') await toggleFollowUser(myUid, userId); } catch (e) { console.warn('[FanFeed] follow toggle failed', e); }
   const btn = document.getElementById('ffp-follow-btn');
+  const before = !!(btn && btn.classList.contains('following'));
+  let now = before;
+  try {
+    const r = await toggleFollowUser(myUid, userId);
+    if (typeof r === 'boolean') now = r;
+  } catch (e) { console.warn('[FanFeed] follow toggle failed', e); }
   if (btn) {
-    const nowFollowing = !btn.classList.contains('following');
-    btn.classList.toggle('following', nowFollowing);
-    btn.textContent = nowFollowing ? 'Following' : '+ Follow';
+    btn.classList.toggle('following', now);
+    btn.textContent = now ? 'Following' : '+ Follow';
   }
+  if (now !== before) {
+    const c = document.getElementById('ffp-followers-count');
+    if (c) c.textContent = String(Math.max(0, (parseInt(c.textContent, 10) || 0) + (now ? 1 : -1)));
+  }
+  try { _ffSyncFollowBadges(); } catch (e) {}
 }
 
 // Follow badge tapped directly on a video slide (skips opening full profile)
 async function _ffQuickFollow(userId, badgeEl) {
   const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
   if (!myUid) { if (typeof showToast === 'function') showToast('Please sign in to follow users'); return; }
-  try { if (typeof toggleFollowUser === 'function') await toggleFollowUser(myUid, userId); } catch (e) { console.warn('[FanFeed] quick follow failed', e); }
-  const nowFollowing = badgeEl.textContent.trim() !== '✓';
-  badgeEl.textContent = nowFollowing ? '✓' : '+';
+  let now = (appState.following || []).includes(userId);
+  try {
+    const r = await toggleFollowUser(myUid, userId);
+    if (typeof r === 'boolean') now = r;
+  } catch (e) { console.warn('[FanFeed] quick follow failed', e); }
+  badgeEl.textContent = now ? '✓' : '+';
+  try { _ffSyncFollowBadges(); } catch (e) {}
 }
 
 function _ffJumpToSlide(videoId) {
