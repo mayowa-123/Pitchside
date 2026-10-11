@@ -12,7 +12,7 @@ import {
 import { getFirestore, collection, query, where, orderBy, limit,
          getDocs, startAfter, doc, getDoc, updateDoc, addDoc,
          setDoc, deleteDoc, serverTimestamp, onSnapshot,
-         arrayUnion, arrayRemove, increment
+         arrayUnion, arrayRemove, increment, deleteField
        } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ── Config (imports must come before any code) ──
@@ -44,7 +44,7 @@ window._psAuth        = auth;
 window._psFs          = { collection, query, where, orderBy, limit, getDocs,
                           startAfter, doc, getDoc, updateDoc, addDoc,
                           setDoc, deleteDoc, serverTimestamp, onSnapshot, db,
-                          arrayUnion, arrayRemove, increment,
+                          arrayUnion, arrayRemove, increment, deleteField,
                           authUpdateProfile: updateProfile };
 // NOTE: window._psCurrentUser is intentionally left undefined here (not
 // null) until onAuthStateChanged actually reports in below. app.js polls
@@ -72,7 +72,8 @@ function applyUserToApp(user) {
   // This must NEVER be the last word on what your name/photo show, since
   // user.displayName is frozen at whatever you typed at signup and never
   // reflects later edits made in Edit Profile.
-  const displayName = user.displayName || (user.email ? user.email.split('@')[0] : 'Fan');
+  // Never derive a visible name from the email address.
+  const displayName = user.displayName || 'Fan';
   const initials = displayName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
   if (typeof profileData !== 'undefined') {
     profileData = { ...profileData, name: displayName, email: user.email || 'dev@pitchside.app', initials };
@@ -112,6 +113,17 @@ if (DEV_MODE) {
   onAuthStateChanged(auth, user => {
     clearTimeout(authTimeout);
     window._psCurrentUser = user || null;
+    if (user) {
+      // The users/{uid} doc is readable by other signed-in users, so an email must
+      // never live in it. Remove any copy saved by older versions.
+      try {
+        const _k = 'ps_email_scrubbed_' + user.uid;
+        if (!sessionStorage.getItem(_k)) {
+          setDoc(doc(db, 'users', user.uid), { email: deleteField() }, { merge: true })
+            .then(() => sessionStorage.setItem(_k, '1')).catch(() => {});
+        }
+      } catch (e) {}
+    }
     if (user) {
       enterApp(user);
     } else {
@@ -201,7 +213,7 @@ window.doRegister = async function() {
     // _getPosterHandle()/profileData never has to fall back to an
     // email-derived guess even for the very first post this person makes.
     await setDoc(doc(db, 'handles', handle), { uid: user.uid });
-    await setDoc(doc(db, 'users', user.uid), { name, handle, email }, { merge: true });
+    await setDoc(doc(db, 'users', user.uid), { name, handle }, { merge: true });
     if (typeof profileData !== 'undefined') {
       profileData = { ...profileData, name, handle, email };
     }
