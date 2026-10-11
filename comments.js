@@ -37,6 +37,34 @@
 // 💬 COMMENTS SYSTEM - Full Firebase Integration
 // ════════════════════════════════════════════════════════════════
 
+// ── Replies ──
+let _commentReply = null;
+export function _setCommentReply(cm) {
+  _commentReply = { id: cm.id, userId: cm.userId || '', name: cm.user || 'Fan' };
+  const input = document.getElementById('comment-input');
+  if (!input) return;
+  const inputBar = input.closest('.comment-input-bar') || input.parentElement;
+  let bar = document.getElementById('comment-reply-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'comment-reply-bar';
+    bar.className = 'comment-reply-bar';
+    inputBar.parentElement.insertBefore(bar, inputBar);
+  }
+  bar.innerHTML = `<span>Replying to <b data-name-uid="${_esc(cm.userId || '')}">${_esc(cm.user || 'Fan')}</b></span><button type="button" aria-label="Cancel reply" onclick="_clearCommentReply()">✕</button>`;
+  bar.style.display = '';
+  if (window._psHydrateAvatars) window._psHydrateAvatars(bar);
+  input.placeholder = 'Write a reply…';
+  input.focus();
+}
+export function _clearCommentReply() {
+  _commentReply = null;
+  const bar = document.getElementById('comment-reply-bar');
+  if (bar) bar.style.display = 'none';
+  const input = document.getElementById('comment-input');
+  if (input) input.placeholder = 'Add a comment…';
+}
+
 export async function submitComment() {
   try {
     const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
@@ -85,6 +113,7 @@ export async function submitComment() {
       likes: 0,
       likedBy: [],
       createdAt: new Date(),
+      ...(_commentReply ? { replyToId: _commentReply.id, replyToUserId: _commentReply.userId, replyToName: _commentReply.name } : {}),
     });
 
     // Update videoMetrics comment count
@@ -111,6 +140,8 @@ export async function submitComment() {
     // also keeping a local copy, which was causing every comment you posted
     // to show up twice: once from this local array, once from Firestore.
     input.value = '';
+    const _replied = _commentReply;
+    _clearCommentReply();
     renderComments(window.currentVideoId);
     showToast('Comment posted ✓');
 
@@ -125,6 +156,18 @@ export async function submitComment() {
         toUserId: creator,
         videoId: String(window.currentVideoId),
         message: `${myName} commented: "${text.substring(0, 50)}"`,
+        timestamp: new Date(),
+        read: false,
+      }).catch(() => {});
+    }
+    if (_replied && _replied.userId && _replied.userId !== currentUser.uid && _replied.userId !== creator) {
+      fsApi.addDoc(fsApi.collection(db, 'notifications'), {
+        type: 'reply',
+        fromUserId: currentUser.uid,
+        fromUserName: myName,
+        toUserId: _replied.userId,
+        videoId: String(window.currentVideoId),
+        message: `${myName} replied to your comment: "${text.substring(0, 50)}"`,
         timestamp: new Date(),
         read: false,
       }).catch(() => {});
@@ -174,6 +217,8 @@ export async function loadCommentsFromFirebase(videoId, cursorDoc) {
         initials: (data.userName || 'U')[0].toUpperCase(),
         likes: data.likes || 0,
         timestamp: data.timestamp,
+        replyToName: data.replyToName || '',
+        replyToUserId: data.replyToUserId || '',
       });
       lastDoc = doc;
     });
@@ -228,9 +273,13 @@ export function _buildCommentItem(c, videoId, myUid, videoOwnerId) {
   const bubble = document.createElement('div');
   bubble.className = 'comment-bubble';
 
+  const isMine = !!(myUid && c.userId === myUid);
   const user = document.createElement('div');
   user.className = 'comment-user';
-  user.textContent = c.user;
+  // Other people's names are filled in live from their profile; the name saved
+  // on the comment can be stale or email-derived, so it is never shown.
+  user.textContent = isMine ? ((typeof profileData !== 'undefined' && profileData.name) || c.user) : 'Fan';
+  if (!isMine && c.userId) user.dataset.nameUid = c.userId;
 
   const text = document.createElement('div');
   text.className = 'comment-text';
@@ -241,35 +290,50 @@ export function _buildCommentItem(c, videoId, myUid, videoOwnerId) {
   time.textContent = c.time;
 
   bubble.appendChild(user);
+  if (c.replyToName) {
+    const rt = document.createElement('div');
+    rt.className = 'comment-replyto';
+    const rtName = document.createElement('b');
+    rtName.textContent = (myUid && c.replyToUserId === myUid && typeof profileData !== 'undefined' && profileData.name) ? profileData.name : 'a fan';
+    if (c.replyToUserId && !(myUid && c.replyToUserId === myUid)) rtName.dataset.nameUid = c.replyToUserId;
+    rt.append('↩ Replying to ', rtName);
+    bubble.appendChild(rt);
+  }
   bubble.appendChild(text);
   bubble.appendChild(time);
   item.appendChild(avatar);
   item.appendChild(bubble);
+
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'comment-delete comment-more';
+  more.setAttribute('aria-label', 'More options');
+  more.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';
+  more.onclick = (e) => { e.stopPropagation(); _openCommentMenu(c, videoId, myUid, videoOwnerId); };
+  item.appendChild(more);
+
   if (window._psHydrateAvatars) window._psHydrateAvatars(item);
-
-  // Delete: available to the comment's own author, or to the video owner
-  // moderating comments on their own post — nobody else.
-  const canDelete = myUid && (c.userId === myUid || videoOwnerId === myUid);
-  if (canDelete) {
-    const del = document.createElement('div');
-    del.className = 'comment-delete';
-    del.textContent = '🗑️';
-    del.title = 'Delete comment';
-    del.onclick = () => _deleteComment(c.id, videoId);
-    item.appendChild(del);
-  } else if (myUid && c.userId && c.userId !== myUid) {
-    // Not your comment and not your video — the only option is to report it
-    const report = document.createElement('div');
-    report.className = 'comment-delete';
-    report.textContent = '🚩';
-    report.title = 'Report comment';
-    report.onclick = () => _showModerationSheet({
-      contentType: 'comment', contentId: c.id, targetUserId: c.userId, targetUserName: c.user
-    });
-    item.appendChild(report);
-  }
-
   return item;
+}
+
+function _openCommentMenu(c, videoId, myUid, videoOwnerId) {
+  const mine = !!(myUid && c.userId === myUid);
+  const canDelete = !!(myUid && (mine || videoOwnerId === myUid));
+  const who = mine ? 'you' : (window._psWho ? window._psWho(c.userId, 'this user') : 'this user');
+  const rows = [
+    { icon: '↩️', label: 'Reply', action: () => _setCommentReply(c) },
+    { icon: '📋', label: 'Copy comment', action: async () => {
+      try { await navigator.clipboard.writeText(c.text); showToast('Comment copied'); }
+      catch (e) { showToast('Could not copy'); }
+    } }
+  ];
+  if ((!mine && c.userId) || canDelete) rows.push({ divider: true });
+  if (!mine && c.userId) {
+    rows.push({ icon: '🚩', label: 'Report comment', danger: true, action: () => window._psReportFlow('comment', c.id, c.userId) });
+    rows.push({ icon: '🚫', label: `Block ${who}`, danger: true, action: () => window._psBlockFlow(c.userId, who) });
+  }
+  if (canDelete) rows.push({ icon: '🗑️', label: 'Delete comment', danger: true, action: () => { if (window.confirm('Delete this comment?')) _deleteComment(c.id, videoId); } });
+  window._psOpenSheet(rows);
 }
 
 export function _renderCommentLoadMoreBtn(videoId) {
@@ -292,6 +356,7 @@ export async function renderComments(videoId) {
   const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
   const v = window.VIDEOS.find(x => String(x.id) === String(videoId));
   const videoOwnerId = v && (v.userId || v.uid);
+  _clearCommentReply();
 
   const { comments, lastDoc, hasMore, loadError } = await loadCommentsFromFirebase(videoId);
   const visible = comments.filter(c => !(appState.blockedUsers || []).includes(c.userId));
@@ -384,3 +449,5 @@ export async function _deleteComment(commentId, videoId) {
 // HTML exists, this module has already loaded, so direct assignment is
 // safe.
 window._loadMoreComments = _loadMoreComments;
+window._setCommentReply = _setCommentReply;
+window._clearCommentReply = _clearCommentReply;
