@@ -118,7 +118,9 @@ function getStatusShort(statusDescription) {
 // ─────────────────────────────────────────────────────────────
 
 async function fetchTodaysMatches() {
-  const today = new Date().toISOString().slice(0, 10);
+  // Date in Lagos time (the API is queried with timezone=Africa/Lagos), not UTC —
+  // otherwise 00:00–01:00 Lagos still fetches yesterday's fixtures.
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
 
   const url =
     `${CONFIG.BASE_URL}/matches` +
@@ -145,15 +147,11 @@ async function fetchTodaysMatches() {
 
   console.log(`✅ Got ${matches.length} matches`);
 
-  // TEMP DIAGNOSTIC — goals are coming back null for every match, which
-  // means transformMatch()'s guess at where Highlightly puts the score
-  // (m.state.score.home/away) is wrong. Log one full raw match so the
-  // actual field name can be found from the Actions run log, instead of
-  // guessing again and burning another day with blank scores. Remove this
-  // block once the real field is confirmed and transformMatch() is fixed.
-  if (matches.length > 0) {
-    console.log('🔍 DIAGNOSTIC — raw shape of one match:');
-    console.log(JSON.stringify(matches[0], null, 2));
+  // Highlightly paginates. If the response says there are more matches than
+  // we received, warn loudly so missing fixtures are visible in the Actions log.
+  const total = rawData?.pagination?.totalCount;
+  if (typeof total === 'number' && total > matches.length) {
+    console.warn(`⚠️ API reports ${total} matches but only ${matches.length} were returned (pagination) — some fixtures will be missing`);
   }
 
   return matches;
@@ -468,6 +466,11 @@ async function run() {
     console.log('📊 Status breakdown:');
     console.log(statusCounts);
 
+    if (matches.length === 0) {
+      console.warn('⚠️ API returned 0 matches — keeping the existing liveScores/current document');
+      return;
+    }
+
     // 5. Save ONE shared Firestore document
     await db
       .collection('liveScores')
@@ -486,7 +489,7 @@ async function run() {
         timezone: 'Africa/Lagos',
 
         updatedDate:
-          new Date().toISOString().slice(0, 10),
+          new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' }),
       });
 
     console.log(
@@ -506,7 +509,13 @@ async function run() {
     // Clean up War Room chats for matches that are no longer today's —
     // must happen after the write above, since we need today's real
     // match ID list to know what to keep.
-    await cleanupExpiredWarRooms(matches.map(m => m.fixture.id));
+    // Never clean up when the API returned nothing (an empty/failed list would
+    // otherwise delete every live chat room).
+    if (matches.length > 0) {
+      await cleanupExpiredWarRooms(matches.map(m => m.fixture.id));
+    } else {
+      console.log('🧹 Skipping War Room cleanup — no matches in this response');
+    }
 
     // Standings for the app's core leagues — throttled independently
     // (see STANDINGS_REFRESH_HOURS above), uses rawMatches (not the
