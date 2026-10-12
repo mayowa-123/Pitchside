@@ -1,0 +1,9 @@
+{
+  "indexes": [
+    { "collectionGroup": "videoComments", "queryScope": "COLLECTION",
+      "fields": [ { "fieldPath": "videoId", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "notifications", "queryScope": "COLLECTION",
+      "fields": [ { "fieldPath": "toUserId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] }
+  ],
+  "fieldOverrides": []
+}

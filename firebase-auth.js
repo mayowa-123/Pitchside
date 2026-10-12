@@ -1,0 +1,250 @@
+// ══════════════════════════════════════════════
+//  FIREBASE AUTH — all imports MUST come first
+// ══════════════════════════════════════════════
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import {
+  getAuth,
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
+  deleteUser
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, collection, query, where, orderBy, limit,
+         getDocs, startAfter, doc, getDoc, updateDoc, addDoc,
+         setDoc, deleteDoc, serverTimestamp, onSnapshot,
+         arrayUnion, arrayRemove, increment, deleteField,
+         writeBatch, getCountFromServer
+       } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+// ── Config (imports must come before any code) ──
+const DEV_MODE = false; // SET TO true TO SKIP LOGIN DURING TESTING
+
+const firebaseConfig = {
+  apiKey:            "AIzaSyCvK_7_Z4-KI7PACIBl3ahAxw9Xiyh9P1Q",
+  authDomain:        "pitchside-76c5b.firebaseapp.com",
+  projectId:         "pitchside-76c5b",
+  storageBucket:     "pitchside-76c5b.firebasestorage.app",
+  messagingSenderId: "647363119981",
+  appId:             "1:647363119981:web:6c0f1deee92f18266e6864",
+  measurementId:     "G-VMVR4DDLKP"
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+// ── Expose Firestore to app.js ──────────────────
+// arrayUnion, arrayRemove, and increment were missing from here entirely —
+// not just unused, never imported at all. Every feature that needed them
+// (likes, follow, favorites/watchlist, comment counts) was throwing
+// "arrayUnion is not a function" (or increment/arrayRemove equivalents)
+// the moment it tried to actually save anything, silently in most places
+// since the calling code caught and swallowed the error without showing it.
+window._psDb          = db;
+window._psAuth        = auth;
+window._psFs          = { collection, query, where, orderBy, limit, getDocs,
+                          startAfter, doc, getDoc, updateDoc, addDoc,
+                          setDoc, deleteDoc, serverTimestamp, onSnapshot, db,
+                          arrayUnion, arrayRemove, increment, deleteField,
+                          writeBatch, getCountFromServer,
+                          authUpdateProfile: updateProfile };
+
+// Auth header for our own /api/* endpoints (they verify this server-side).
+window._psAuthHeaders = async function () {
+  const u = auth.currentUser;
+  if (!u) return {};
+  try { return { Authorization: 'Bearer ' + await u.getIdToken() }; }
+  catch (e) { return {}; }
+};
+// NOTE: window._psCurrentUser is intentionally left undefined here (not
+// null) until onAuthStateChanged actually reports in below. app.js polls
+// `window._psCurrentUser !== undefined` to know when it's safe to load the
+// real saved profile from Firestore — if this were preset to null, that
+// check would pass instantly on app load (before Firebase confirms who's
+// signed in), so app.js would treat the user as signed out and skip
+// loading their saved name/bio/team/avatar entirely, every single time.
+
+// ── Helpers ─────────────────────────────────────
+function showAuthError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.classList.add('show');
+}
+function clearAuthErrors() {
+  ['login-error','register-error'].forEach(id => {
+    const el = document.getElementById(id);
+    el.textContent = ''; el.classList.remove('show');
+  });
+}
+function applyUserToApp(user) {
+  // Fallback only — shown for an instant before the real saved profile
+  // (name, bio, team, avatar, everything) loads from Firestore a moment
+  // later via app.js's fetchUserStreak() -> _applyStoredProfileData().
+  // This must NEVER be the last word on what your name/photo show, since
+  // user.displayName is frozen at whatever you typed at signup and never
+  // reflects later edits made in Edit Profile.
+  // Never derive a visible name from the email address.
+  const displayName = user.displayName || 'Fan';
+  const initials = displayName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+  if (typeof profileData !== 'undefined') {
+    profileData = { ...profileData, name: displayName, email: user.email || 'dev@pitchside.app', initials };
+  }
+  document.getElementById('profile-name').textContent     = displayName;
+  document.getElementById('profile-email').textContent    = user.email || 'dev@pitchside.app';
+  document.getElementById('profile-initials').textContent = initials;
+  if (user.photoURL) {
+    const img = document.getElementById('profile-avatar-img');
+    img.src = user.photoURL; img.style.display = 'block';
+    document.getElementById('profile-initials').style.display = 'none';
+  }
+}
+function enterApp(user) {
+  applyUserToApp(user);
+  document.getElementById('auth-screen').classList.add('hidden');
+  document.getElementById('auth-loading').classList.add('hidden');
+  if (!DEV_MODE) showToast(`Welcome back, ${user.displayName || 'fan'}! ⚽`);
+}
+
+// ── DEV MODE: skip login ─────────────────────────
+if (DEV_MODE) {
+  document.getElementById('auth-loading').classList.add('hidden');
+  enterApp({ displayName: 'Dev User', email: 'dev@pitchside.app', photoURL: null });
+} else {
+  // ── PRODUCTION: real Firebase auth ──────────────
+  const isLocalFile = location.protocol === 'content:' || location.protocol === 'file:';
+
+  const authTimeout = setTimeout(() => {
+    document.getElementById('auth-loading').classList.add('hidden');
+    document.getElementById('auth-screen').classList.remove('hidden');
+    if (isLocalFile) {
+      showAuthError('login-error', '⚠️ Firebase does not work on local files. Set DEV_MODE=true to skip login.');
+    }
+  }, 4000);
+
+  onAuthStateChanged(auth, user => {
+    clearTimeout(authTimeout);
+    window._psCurrentUser = user || null;
+    // Let app.js reset/reload ALL per-user state for whoever is signed in now
+    // (runs on every login, logout and account switch — not just the first event).
+    try { if (typeof window.psHandleAuthChange === 'function' && !window._psRegistering) window.psHandleAuthChange(user || null); }
+    catch (e) { console.error('[Auth] psHandleAuthChange failed:', e); }
+    if (user) {
+      // The users/{uid} doc is readable by other signed-in users, so an email must
+      // never live in it. Remove any copy saved by older versions.
+      try {
+        const _k = 'ps_email_scrubbed_' + user.uid;
+        if (!sessionStorage.getItem(_k)) {
+          setDoc(doc(db, 'users', user.uid), { email: deleteField() }, { merge: true })
+            .then(() => sessionStorage.setItem(_k, '1')).catch(() => {});
+        }
+      } catch (e) {}
+    }
+    if (user) {
+      enterApp(user);
+    } else {
+      document.getElementById('auth-loading').classList.add('hidden');
+      document.getElementById('auth-screen').classList.remove('hidden');
+    }
+    if (typeof initExplore === 'function') {
+      initExplore();
+    } else if (typeof activateFirebaseListener === 'function') {
+      activateFirebaseListener();
+    }
+  });
+}
+
+// ── Auth tab switch ──────────────────────────────
+window.switchAuthTab = function(tab) {
+  clearAuthErrors();
+  document.querySelectorAll('.auth-tab').forEach((t, i) => {
+    t.classList.toggle('on', (tab === 'login' && i === 0) || (tab === 'register' && i === 1));
+  });
+  document.getElementById('auth-login-form').style.display    = tab === 'login'    ? '' : 'none';
+  document.getElementById('auth-register-form').style.display = tab === 'register' ? '' : 'none';
+};
+
+// ── Email / Password Login ───────────────────────
+window.doEmailLogin = async function() {
+  clearAuthErrors();
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) { showAuthError('login-error', 'Please fill in all fields.'); return; }
+  const btn = document.getElementById('login-btn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Sign In to PitchSide';
+    const msg = ['auth/user-not-found','auth/wrong-password','auth/invalid-credential'].includes(e.code)
+      ? 'Incorrect email or password.' : e.message;
+    showAuthError('login-error', msg);
+  }
+};
+
+// ── Register ────────────────────────────────────
+// Username and Display Name are both collected here now, at signup, instead
+// of being left blank until someone visits Edit Profile — which is exactly
+// how a post could previously get stuck forever showing an email-derived
+// fallback name/handle (see app.js's live-identity-resolution comments).
+// Same normalize/length rule and handles/{username} reservation pattern as
+// saveProfile() in app.js, so there's one consistent way a username ever
+// gets claimed, not two different implementations that could drift apart.
+window.doRegister = async function() {
+  clearAuthErrors();
+  const name       = document.getElementById('reg-name').value.trim();
+  const usernameEl = document.getElementById('reg-username');
+  const usernameRaw = usernameEl ? usernameEl.value.trim() : '';
+  const email      = document.getElementById('reg-email').value.trim();
+  const password   = document.getElementById('reg-password').value;
+  if (!name || !usernameRaw || !email || !password) { showAuthError('register-error', 'Please fill in all fields.'); return; }
+  if (password.length < 6) { showAuthError('register-error', 'Password must be at least 6 characters.'); return; }
+
+  const handle = usernameRaw.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (handle.length < 3 || handle.length > 20) {
+    showAuthError('register-error', 'Username must be 3–20 characters (letters, numbers, underscore only).');
+    return;
+  }
+
+  const btn = document.getElementById('register-btn');
+  btn.disabled = true; btn.textContent = 'Creating account…';
+
+  // Usernames can only be checked once signed in (rules require auth to read
+  // /handles), so: create the account, then claim the handle + profile in ONE
+  // atomic batch. If the name is taken the whole batch is rejected and we roll
+  // the new account back so nobody is left half-registered.
+  window._psRegistering = true;
+  let createdUser = null;
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    createdUser = cred.user;
+    try { await updateProfile(createdUser, { displayName: name }); } catch (e) {}
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'handles', handle), { uid: createdUser.uid });
+      batch.set(doc(db, 'users', createdUser.uid), { name, handle, createdAt: serverTimestamp() }, { merge: true });
+      await batch.commit();
+    } catch (claimErr) {
+      try { await deleteUser(createdUser); } catch (e) { try { await auth.signOut(); } catch (e2) {} }
+      createdUser = null;
+      const taken = claimErr && (claimErr.code === 'permission-denied' || claimErr.code === 'already-exists');
+      throw Object.assign(new Error(taken ? '@' + handle + ' is already taken — try another' : 'Could not finish creating your account. Please try again.'), { _friendly: true });
+    }
+    if (typeof profileData !== 'undefined') {
+      profileData = { ...profileData, name, handle };
+    }
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Create Account';
+    const msg = e._friendly ? e.message
+      : e.code === 'auth/email-already-in-use' ? 'An account with this email already exists.'
+      : e.code === 'auth/invalid-email' ? 'That email address does not look right.'
+      : e.code === 'auth/weak-password' ? 'Password is too weak — use at least 6 characters.'
+      : e.code === 'auth/network-request-failed' ? 'No connection — check your internet and try again.'
+      : 'Could not create your account. Please try again.';
+    window._psRegistering = false;
+    showAuthError('register-error', msg);
+    return;
+  }
+  window._psRegistering = false;
+  // Now that the profile docs exist, load everything for the new user.
+  if (typeof window.psHandleAuthChange === 'function') window.psHandleAuthChange(auth.currentUser);
+};

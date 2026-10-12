@@ -1,0 +1,167 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isOwner(uid) { return request.auth != null && request.auth.uid == uid; }
+
+    // ── Users & handles ─────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create, update: if isOwner(userId)
+        && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 60))
+        && (!('handle' in request.resource.data) || (request.resource.data.handle is string && request.resource.data.handle.size() <= 20))
+        && (!('bio' in request.resource.data) || (request.resource.data.bio is string && request.resource.data.bio.size() <= 300))
+        && (!('avatarUrl' in request.resource.data) || (request.resource.data.avatarUrl is string && request.resource.data.avatarUrl.size() <= 500))
+        && (!('links' in request.resource.data) || (request.resource.data.links is list && request.resource.data.links.size() <= 5));
+      allow delete: if isOwner(userId);
+    }
+
+    // Username reservation. Doc id = the handle. Created atomically with the
+    // users doc (batch) so two people can never hold the same name.
+    match /handles/{handle} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && handle.matches('^[a-z0-9_]{3,20}$')
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // ── Posts ───────────────────────────────────────────────────
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.get('likes', 0) == 0
+        && request.resource.data.get('comments', 0) == 0;
+      // Owner can edit; anyone signed in may only backfill posterAvatar (https url).
+      allow update: if signedIn()
+        && (resource.data.get('userId', resource.data.get('uid', '')) == request.auth.uid
+            || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['posterAvatar'])
+                && request.resource.data.posterAvatar is string
+                && request.resource.data.posterAvatar.size() <= 500
+                && request.resource.data.posterAvatar.matches('^https://.*')));
+      allow delete: if signedIn()
+        && resource.data.get('userId', resource.data.get('uid', '')) == request.auth.uid;
+    }
+
+    // ── Comments ────────────────────────────────────────────────
+    match /videoComments/{commentId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.videoId is string
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 500;
+      allow update: if false;
+      allow delete: if signedIn()
+        && (resource.data.userId == request.auth.uid
+            || resource.data.get('videoOwnerId', '') == request.auth.uid
+            || get(/databases/$(database)/documents/posts/$(resource.data.videoId.replace('^fs_', ''))).data.userId == request.auth.uid);
+    }
+
+    // ── Like / view / comment counters (bounded: one step per write) ──
+    match /videoMetrics/{videoId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly(['videoId','likes','likeCount','views','comments','commentCount','shares','reposts','createdAt','updatedAt'])
+        && stepOk('views') && stepOk('comments') && stepOk('commentCount')
+        && stepOk('shares') && stepOk('reposts')
+        && likesOk();
+      allow delete: if false;
+
+      function oldN(f) { return resource == null ? 0 : resource.data.get(f, 0); }
+      function newN(f) { return request.resource.data.get(f, 0); }
+      function stepOk(f) { return newN(f) is number && math.abs(newN(f) - oldN(f)) <= 1; }
+      function oldL() { return resource == null ? [] : resource.data.get('likes', []); }
+      function newL() { return request.resource.data.get('likes', []); }
+      function likesOk() {
+        return newL() is list
+          && newL().toSet().difference(oldL().toSet()).hasOnly([request.auth.uid])
+          && oldL().toSet().difference(newL().toSet()).hasOnly([request.auth.uid]);
+      }
+    }
+
+    // Highlights page: public counters + each user's own likes/saves.
+    match /highlightStats/{id} {
+      allow read: if true;
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly(['views','likes'])
+        && math.abs(request.resource.data.get('views', 0) - (resource == null ? 0 : resource.data.get('views', 0))) <= 1
+        && math.abs(request.resource.data.get('likes', 0) - (resource == null ? 0 : resource.data.get('likes', 0))) <= 1;
+      allow delete: if false;
+    }
+    match /userInteractions/{id} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.type in ['like', 'save']
+        && id.matches('^' + request.auth.uid + '_.*');
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // ── Per-user private data ───────────────────────────────────
+    match /userProfiles/{userId}  { allow read: if signedIn(); allow write: if isOwner(userId); }
+    match /userSettings/{userId}  { allow read, write: if isOwner(userId); }
+    match /userCollections/{userId} { allow read, write: if isOwner(userId); }
+    match /userBlocks/{userId}    { allow read, write: if isOwner(userId); }
+    // following list is private-write; follower counts are derived by querying
+    // userFollowing where following array-contains <uid>.
+    match /userFollowing/{userId} {
+      allow read: if signedIn();
+      allow write: if isOwner(userId);
+    }
+
+    match /notifications/{id} {
+      allow read: if signedIn() && resource.data.toUserId == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.toUserId is string;
+      allow update: if signedIn() && resource.data.toUserId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if signedIn() && resource.data.toUserId == request.auth.uid;
+    }
+
+    match /reports/{reportId} {
+      allow read, update, delete: if false;
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.contentType in ['video', 'comment', 'user']
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() <= 100;
+    }
+
+    // ── War Room ────────────────────────────────────────────────
+    match /match_chats/{matchId}/messages/{messageId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 500;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+    match /match_chats/{matchId}/presence/{uid} {
+      allow read: if true;
+      allow write: if isOwner(uid);
+    }
+
+    // ── Bot-written, read-only for clients (bots use the Admin SDK) ──
+    match /highlights/{doc}      { allow read: if true; allow write: if false; }
+    match /news/{doc}            { allow read: if true; allow write: if false; }
+    match /players/{doc}         { allow read: if true; allow write: if false; }
+    match /npfl_fixtures/{doc}   { allow read: if true; allow write: if false; }
+    match /npfl_standings/{doc}  { allow read: if true; allow write: if false; }
+    match /npfl_results/{doc}    { allow read: if true; allow write: if false; }
+    match /npfl_meta/{doc}       { allow read: if true; allow write: if false; }
+    match /liveScores/{doc}      { allow read: if true; allow write: if false; }
+    match /standings/{leagueId}  { allow read: if true; allow write: if false; }
+
+    // Everything else (_cache, npfl_ai_cache, matchCache, h2hCache, bot_progress,
+    // *_standings, ...) is server-only: no client access.
+  }
+}
