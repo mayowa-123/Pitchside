@@ -98,7 +98,15 @@ function applyUserToApp(user) {
     document.getElementById('profile-initials').style.display = 'none';
   }
 }
+function enterGuest() {
+  window._psGuest = true;
+  document.body.classList.add('ps-guest');
+  document.getElementById('auth-loading').classList.add('hidden');
+  document.getElementById('auth-screen').classList.add('hidden');
+}
 function enterApp(user) {
+  window._psGuest = false;
+  document.body.classList.remove('ps-guest');
   applyUserToApp(user);
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('auth-loading').classList.add('hidden');
@@ -114,10 +122,12 @@ if (DEV_MODE) {
   const isLocalFile = location.protocol === 'content:' || location.protocol === 'file:';
 
   const authTimeout = setTimeout(() => {
-    document.getElementById('auth-loading').classList.add('hidden');
-    document.getElementById('auth-screen').classList.remove('hidden');
     if (isLocalFile) {
+      document.getElementById('auth-loading').classList.add('hidden');
+      document.getElementById('auth-screen').classList.remove('hidden');
       showAuthError('login-error', '⚠️ Firebase does not work on local files. Set DEV_MODE=true to skip login.');
+    } else {
+      enterGuest();
     }
   }, 4000);
 
@@ -142,8 +152,7 @@ if (DEV_MODE) {
     if (user) {
       enterApp(user);
     } else {
-      document.getElementById('auth-loading').classList.add('hidden');
-      document.getElementById('auth-screen').classList.remove('hidden');
+      enterGuest();
     }
     if (typeof initExplore === 'function') {
       initExplore();
