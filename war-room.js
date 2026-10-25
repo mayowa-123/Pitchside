@@ -352,6 +352,7 @@ export function renderWarRoomMessages(msgs) {
 
 /* ── Sending (shared helper for text / media / sticker) ── */
 export function _wrSendMessage(fields) {
+  if (typeof window.psRequireLogin === 'function' && !window.psRequireLogin('Sign in to join the chat')) return;
   if (!warRoomMatchId) return;
   const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
   if (!currentUser?.uid) { showToast('Sign in to join the chat'); return; }
