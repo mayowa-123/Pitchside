@@ -67,6 +67,7 @@
 <div id="auth-screen" class="hidden">
   <div class="auth-logo">PITCH<span>SIDE</span></div>
   <div class="auth-tagline">The football social app for real fans ⚽</div>
+  <div id="auth-reason" class="auth-reason"></div>
 
   <div class="auth-card">
     <div class="auth-tabs">
@@ -111,6 +112,7 @@
       <div class="auth-error" id="register-error"></div>
     </div>
   </div>
+  <button id="auth-guest-close" onclick="psCloseAuth()">Continue as guest</button>
 </div>
 <div class="ticker">
   <div class="ticker-inner">
@@ -131,6 +133,7 @@
   <div class="hdr">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
       <h1 style="margin:0;">EXPLORE</h1>
+      <button id="guest-signin-btn" onclick="psOpenSignIn()">Sign in</button>
       <button id="pwa-install-btn" style="display:none;align-items:center;gap:6px;background:#10b981;color:#fff;border:none;border-radius:20px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;letter-spacing:.03em;box-shadow:0 2px 8px rgba(16,185,129,0.4);">
         ⬇️ Install App
       </button>
@@ -575,46 +578,130 @@
   </div>
 
   <div class="settings-container">
-    
-    <!-- Visibility & Privacy Section -->
-    <div class="settings-section">
-      <div class="settings-section-title">Privacy & Data</div>
-      
 
-      <div class="settings-item" onclick="openSettingsMenu('blocked')">
+    <div class="settings-section">
+      <div class="settings-section-title">Playback</div>
+      <div class="settings-item">
         <div class="settings-item-left">
-          <div class="settings-item-icon">⛔</div>
+          <div class="settings-item-icon">▶️</div>
           <div>
-            <div class="settings-item-title">Blocked Accounts</div>
-            <div class="settings-item-desc">Manage blocked users</div>
+            <div class="settings-item-title">Autoplay in Explore</div>
+            <div class="settings-item-desc">Highlights play muted as you scroll</div>
+          </div>
+        </div>
+        <select class="ps-select" data-pref-select="autoplayExplore" onchange="psSetPref('autoplayExplore', this.value)" aria-label="Autoplay in Explore">
+          <option value="on">On</option>
+          <option value="wifi">Wi-Fi only</option>
+          <option value="off">Off</option>
+        </select>
+      </div>
+      <div class="settings-item" onclick="psTogglePref('autoSwipe')">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">⏭️</div>
+          <div>
+            <div class="settings-item-title">Auto-swipe in fan videos</div>
+            <div class="settings-item-desc">Go to the next video when one ends</div>
+          </div>
+        </div>
+        <div class="toggle" data-pref-toggle="autoSwipe"><div class="toggle-knob"></div></div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Data</div>
+      <div class="settings-item" onclick="psTogglePref('dataSaver')">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">📶</div>
+          <div>
+            <div class="settings-item-title">Data saver</div>
+            <div class="settings-item-desc">Turns autoplay off to save mobile data</div>
+          </div>
+        </div>
+        <div class="toggle" data-pref-toggle="dataSaver"><div class="toggle-knob"></div></div>
+      </div>
+      <div class="settings-item" onclick="psClearCache()">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">🧹</div>
+          <div>
+            <div class="settings-item-title">Clear cache</div>
+            <div class="settings-item-desc">Free up space used by this app</div>
           </div>
         </div>
         <div class="settings-arrow">›</div>
       </div>
     </div>
 
-
-
-    <!-- Support & Legal Section -->
     <div class="settings-section">
-      <div class="settings-section-title">Support & Legal</div>
-      
-      <div class="settings-item" onclick="openSettingsMenu('privacy-center')">
+      <div class="settings-section-title">Account</div>
+      <div class="settings-item" data-acct="out" onclick="psOpenSignIn()">
         <div class="settings-item-left">
-          <div class="settings-item-icon">🛡️</div>
+          <div class="settings-item-icon">👤</div>
           <div>
-            <div class="settings-item-title">Privacy Center</div>
-            <div class="settings-item-desc">Your data & privacy rights</div>
+            <div class="settings-item-title">Sign in or create account</div>
+            <div class="settings-item-desc">Like, comment, follow and post</div>
           </div>
         </div>
         <div class="settings-arrow">›</div>
       </div>
+      <div class="settings-item" data-acct="in" onclick="switchPage('profile', document.getElementById('nav-more'))">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">✏️</div>
+          <div>
+            <div class="settings-item-title">Edit profile</div>
+            <div class="settings-item-desc">Photo, name and username</div>
+          </div>
+        </div>
+        <div class="settings-arrow">›</div>
+      </div>
+      <div class="settings-item" data-acct="in" onclick="openSettingsMenu('blocked')">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">⛔</div>
+          <div>
+            <div class="settings-item-title">Blocked accounts</div>
+            <div class="settings-item-desc">Manage blocked users</div>
+          </div>
+        </div>
+        <div class="settings-arrow">›</div>
+      </div>
+      <div class="settings-item" data-acct="in" onclick="confirmSignOut()">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">🚪</div>
+          <div>
+            <div class="settings-item-title">Sign out</div>
+            <div class="settings-item-desc">You can still browse as a guest</div>
+          </div>
+        </div>
+        <div class="settings-arrow">›</div>
+      </div>
+    </div>
 
+    <div class="settings-section">
+      <div class="settings-section-title">About and legal</div>
+      <div class="settings-item" onclick="psInstallApp()">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">📲</div>
+          <div>
+            <div class="settings-item-title">Install PitchSide</div>
+            <div class="settings-item-desc">Add the app to your home screen</div>
+          </div>
+        </div>
+        <div class="settings-arrow">›</div>
+      </div>
+      <div class="settings-item" data-acct="in" onclick="openSettingsMenu('privacy-center')">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">🛡️</div>
+          <div>
+            <div class="settings-item-title">Privacy Center</div>
+            <div class="settings-item-desc">Your data and privacy rights</div>
+          </div>
+        </div>
+        <div class="settings-arrow">›</div>
+      </div>
       <div class="settings-item" onclick="openSettingsMenu('legal')">
         <div class="settings-item-left">
           <div class="settings-item-icon">📄</div>
           <div>
-            <div class="settings-item-title">Terms & Policies</div>
+            <div class="settings-item-title">Terms and policies</div>
             <div class="settings-item-desc">Terms of service, privacy policy</div>
           </div>
         </div>
@@ -1262,6 +1349,9 @@
 <div id="fanfeed-container">
   <button id="ff-close-btn" onclick="closeFanFeedOverlay()">
     <svg width="22" height="22" fill="#12160F" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+  </button>
+  <button id="ff-auto-btn" onclick="psToggleAutoSwipe()" aria-pressed="false" aria-label="Toggle auto-swipe">
+    <span class="ff-auto-dot"></span><span class="ff-auto-lbl">Auto-swipe off</span>
   </button>
   <div id="fanfeed-slides"></div>
 </div>
@@ -2174,7 +2264,7 @@
       <div class="highlight-section-heading">
         <h2 id="trending-highlights-title">Trending Highlights</h2>
       </div>
-      <div class="trending-highlights-list" id="watch-trending-grid"></div>
+      <div class="latest-highlights-grid" id="watch-trending-grid"></div>
     </section>
   </main>
 </div>
