@@ -10613,7 +10613,7 @@ window.psRequireLogin = psRequireLogin;
 window.psCloseAuth = psCloseAuth;
 
 /* ── Preferences (kept on this device, so they work for guests too) ── */
-const PS_PREF_DEFAULTS = { autoplayExplore: 'on', autoSwipe: false, dataSaver: false };
+const PS_PREF_DEFAULTS = { autoplayExplore: 'off', autoSwipe: false, dataSaver: false };
 const psPrefs = {
   _c: null,
   _load() {
@@ -10692,7 +10692,7 @@ function _ffAutoAdvance(slideEl) {
 }
 
 /* ── Explore: muted preview autoplay, one card at a time ── */
-let _exAutoObs = null, _exAutoId = null;
+let _exAutoObs = null, _exAutoId = null, _exAutoTimer = null;
 
 function psAutoplayAllowed() {
   if (psPrefs.get('dataSaver')) return false;
@@ -10704,6 +10704,7 @@ function psAutoplayAllowed() {
   return true;
 }
 function _exAutoStop() {
+  clearTimeout(_exAutoTimer);
   if (_exAutoId === null) return;
   const slot = document.getElementById('vcard-embed-' + _exAutoId);
   if (slot) {
@@ -10762,7 +10763,10 @@ function psInitExploreAutoplay() {
     let best = null, bestR = 0.6;
     ratios.forEach((r, el) => { if (r >= bestR) { best = el; bestR = r; } });
     if (!best) { _exAutoStop(); return; }
-    if (String(best.dataset.videoid) !== String(_exAutoId)) _exAutoStart(best);
+    if (String(best.dataset.videoid) !== String(_exAutoId)) {
+      clearTimeout(_exAutoTimer);
+      _exAutoTimer = setTimeout(() => { if (document.body.contains(best)) _exAutoStart(best); }, 900);
+    }
   }, { threshold: [0, 0.6, 0.8, 1] });
   document.querySelectorAll('#explore-grid .vcard[data-videoid]').forEach(c => _exAutoObs.observe(c));
 }
@@ -10773,8 +10777,7 @@ function _fsCard(v) {
   const isVid = /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(t);
   const isHls = /\.m3u8/i.test(t);
   let media = '';
-  if (t && !isVid && !isHls) media = `<img src="${_h(applyCloudinaryQuality(t))}" alt="" loading="lazy" onerror="this.style.display='none'">`;
-  else if (isVid) media = `<video src="${_h(t)}#t=0.1" muted playsinline preload="metadata"></video>`;
+  if (t && !isVid && !isHls) media = `<img src="${_h(applyCloudinaryQuality(t))}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">`;
   const uid = v.userId ? _h(v.userId) : '';
   return `<div class="fs-card" data-videoid="${_h(String(v.id))}" onclick="openHlPlayerById(this.dataset.videoid)">
     <div class="fs-thumb">${media}<span class="fs-play"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span><span class="fs-likes">❤ ${formatCount(v.likes || 0)}</span></div>
@@ -10803,7 +10806,7 @@ function _renderShortsTab(type) {
   const signedIn = !!(window._psCurrentUser && window._psCurrentUser.uid);
   const following = (typeof appState !== 'undefined' && appState.following) || [];
   let html = '';
-  const add = (title, items, min) => { if (items.length >= min) html += _fsRowHtml(title, items.slice(0, 12)); };
+  const add = (title, items, min) => { if (items.length >= min) html += _fsRowHtml(title, items.slice(0, 8)); };
 
   add('Trending', [...pool].filter(v => score(v) > 0).sort((a, b) => score(b) - score(a)), 1);
   add('Latest', [...pool].sort((a, b) => ts(b) - ts(a)), 1);
@@ -10814,7 +10817,7 @@ function _renderShortsTab(type) {
       <div class="fs-empty">Sign in to see videos from people you follow.<button onclick="psRequireLogin('Sign in to see videos from people you follow')">Sign in</button></div></div>`;
   } else {
     const mine = [...pool].filter(v => v.userId && following.includes(v.userId)).sort((a, b) => ts(b) - ts(a));
-    if (mine.length) html += _fsRowHtml('Following', mine.slice(0, 12));
+    if (mine.length) html += _fsRowHtml('Following', mine.slice(0, 8));
     else html += `<div class="fs-section" style="grid-column:1/-1;"><div class="fs-head"><span>Following</span></div><div class="fs-empty">Follow fans to see their videos here.</div></div>`;
   }
 
