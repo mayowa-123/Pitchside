@@ -1765,7 +1765,10 @@ function renderSavedPanel() {
 let currentPage = 'explore';
 
 function switchPage(pageId, navEl) {
+  if (pageId === 'profile' && !psRequireLogin('Sign in to see your profile')) return;
   currentPage = pageId;
+  if (pageId !== 'explore') { try { _exAutoStop(); } catch (e) {} }
+  if (pageId === 'settings') { try { psSyncSettingsUI(); } catch (e) {} }
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + pageId).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -2016,7 +2019,7 @@ function renderVideos(containerId, data) {
               ${sourceBadge}
             </div>
           </div>
-          <div onclick="event.stopPropagation();toggleSaveVideo(${v.id},this)"
+          <div data-vid="${_h(String(v.id))}" onclick="event.stopPropagation();toggleSaveVideo(this.dataset.vid,this)"
                style="font-size:16px;cursor:pointer;flex-shrink:0;padding:2px;color:${isSaved?'#10b981':'var(--text3)'};"
                title="${isSaved?'Saved':'Save'}">🔖</div>
         </div>
@@ -2134,6 +2137,7 @@ function _startScrollObserver() {
     window._videoObserver.disconnect();
     window._videoObserver = null;
   }
+  try { psInitExploreAutoplay(); } catch (e) {}
 }
 
 function _playInCard(videoId) {
@@ -2551,7 +2555,7 @@ async function handleTTLike(btn, videoId) {
   try {
     const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
     if (!currentUser?.uid) {
-      showToast('Please log in to like videos');
+      psRequireLogin('Sign in to like videos');
       return;
     }
 
@@ -2617,7 +2621,7 @@ async function repostVideo() {
   try {
     const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
     if (!currentUser?.uid) {
-      showToast('Please log in to repost');
+      psRequireLogin('Sign in to repost');
       return;
     }
 
@@ -2931,7 +2935,7 @@ async function handleAvatarUpload(e) {
 
   const _cu = window._psCurrentUser;
   if (!_cu) {
-    showToast('⚠️ Please sign in to save your profile photo');
+    psRequireLogin('Sign in to save your profile photo');
     return;
   }
 
@@ -3178,9 +3182,9 @@ function _exploreNewsCard(n) {
     return map[(cat||'').toLowerCase()] || '#10b981';
   })(n.category);
   const hasImg = n.imageUrl && n.imageUrl.length > 10;
-  const safeId = n.id.replace(/'/g, "\\'");
+  window._newsLookup = window._newsLookup || {}; window._newsLookup[n.id] = n;
   return `
-    <div class="vcard" style="cursor:pointer;" onclick="openNewsReader(window._newsLookup && window._newsLookup['${safeId}'] ? window._newsLookup['${safeId}'] : ${JSON.stringify(n).replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/&/g,'\\u0026')})">
+    <div class="vcard" style="cursor:pointer;" data-newsid="${_h(String(n.id))}" onclick="_openNewsById(this.dataset.newsid)">
       <div class="vthumb" style="position:relative;background:linear-gradient(135deg,#0f172a,#1e293b);">
         ${hasImg
           ? `<img src="${_h(n.imageUrl)}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.style.display='none'">`
@@ -3260,16 +3264,30 @@ function _renderExploreAll() {
       </div>`;
   });
 
-  const firebaseItems = allVideos.filter(v => !v.isScorebat).map(v => _videoToExploreCard(v));
+  const firebaseItems = allVideos.filter(v => !v.isScorebat && !v.userPost && !v.playerPost).map(v => _videoToExploreCard(v));
   const newsItems = news.map(n => _exploreNewsCard(n));
 
-  // Merge all and shuffle randomly
+  // Official cards + news, shuffled
   const allItems = [...sbItems, ...firebaseItems, ...newsItems];
   for (let i = allItems.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [allItems[i], allItems[j]] = [allItems[j], allItems[i]];
   }
-  allItems.forEach(item => { html += item; });
+  // Fan + player posts become tall "shorts": one swipeable rail after every 7 official cards
+  const fanPool = allVideos.filter(v => v.userPost || v.playerPost)
+    .sort((a, b) => ((b.likes || 0) * 3 + (b.comments || 0) * 4) - ((a.likes || 0) * 3 + (a.comments || 0) * 4) || (b._ts || 0) - (a._ts || 0));
+  const EVERY = 7, RAIL = 8;
+  let railNo = 0;
+  allItems.forEach((item, i) => {
+    html += item;
+    if ((i + 1) % EVERY === 0 && fanPool.length) {
+      const start = (railNo * RAIL) % fanPool.length;
+      const slice = fanPool.slice(start, start + RAIL);
+      if (slice.length) html += _fsRowHtml(railNo === 0 ? 'Fan shorts' : 'More from fans', slice);
+      railNo++;
+    }
+  });
+  if (!railNo && fanPool.length) html += _fsRowHtml('Fan shorts', fanPool.slice(0, RAIL));
 
   if (!html) { showFirebaseFetchingState(); return; }
   container.innerHTML = html;
@@ -3345,7 +3363,7 @@ ${isDemoCard
               ${sourceBadge}
             </div>
           </div>
-          <div onclick="event.stopPropagation();toggleSaveVideo(${v.id},this)"
+          <div data-vid="${_h(String(v.id))}" onclick="event.stopPropagation();toggleSaveVideo(this.dataset.vid,this)"
                style="font-size:16px;cursor:pointer;flex-shrink:0;padding:2px;color:${isSaved?'#10b981':'var(--text3)'};"
                title="${isSaved?'Saved':'Save'}">🔖</div>
         </div>
@@ -3451,18 +3469,8 @@ function selExpType(btn, type) {
     return;
   }
 
-  let filtered;
-  if (type === 'fan') {
-    filtered = VIDEOS.filter(v => v.userPost && !v.playerPost);
-  } else if (type === 'player') {
-    filtered = VIDEOS.filter(v => v.playerPost === true);
-  } else {
-    filtered = VIDEOS;
-  }
-
-  container.innerHTML = filtered.length
-    ? filtered.map(_videoToExploreCard).join('')
-    : `<div style="text-align:center;padding:40px;color:var(--text3);"><div style="font-size:40px;margin-bottom:12px;">${type==='fan'?'👥':'⭐'}</div>No ${type} posts yet.<br><span style="font-size:12px;margin-top:6px;display:block;">Be the first to post!</span></div>`;
+  if (type === 'fan' || type === 'player') { _renderShortsTab(type); return; }
+  container.innerHTML = VIDEOS.map(_videoToExploreCard).join('');
   requestAnimationFrame(() => _startScrollObserver());
 }
 
@@ -3708,6 +3716,7 @@ let trimLeft = 0, trimRight = 100;
 
 /* ── Init Studio ── */
 function openStudio() {
+  if (!psRequireLogin('Sign in to post')) return;
   buildStudioUI();
   // Reset state
   studioSelectedMedia = [];
@@ -4452,7 +4461,7 @@ function _renderNewsFiltered(cat) {
     const hasImg    = n.imageUrl && n.imageUrl.length > 10;
     const safeId    = n.id.replace(/'/g, "\\'");
     return `
-      <div class="news-card" onclick="openNewsReader(window._newsLookup['${safeId}'])">
+      <div class="news-card" data-newsid="${_h(String(n.id))}" onclick="_openNewsById(this.dataset.newsid)">
         <div class="news-img">
           ${hasImg
             ? `<img src="${_h(n.imageUrl)}" alt="${_h(n.title)}" loading="lazy"
@@ -6258,6 +6267,7 @@ let _pcMusic       = '';
 let _pcTaggedMatch = ''; // FEATURE 4: match tagging
 
 function openQuickPost() {
+  if (!psRequireLogin('Sign in to post')) return;
   const ts = document.getElementById('pc-type-selector');
   const fp = document.getElementById('pc-file-picker');
   if (ts) ts.style.display = 'block';
@@ -8055,6 +8065,7 @@ async function likeVideo(videoId, userId) {
 }
 
 async function addVideoComment(videoId, userId, text) {
+  if (!psRequireLogin('Sign in to comment')) return;
   const fsApi = window._psFs;
   const db = window._psDb;
   
@@ -8836,7 +8847,7 @@ async function _hlCountView(id) {
 async function _hlToggle(type) {
   if (!_watchCurrent || _hl.busy) return;
   const uid = _hlUid();
-  if (!uid) { _hlToast('Sign in to ' + (type === 'like' ? 'like' : 'save') + ' highlights'); return; }
+  if (!uid) { psRequireLogin('Sign in to ' + (type === 'like' ? 'like' : 'save') + ' highlights'); return; }
   const { db, doc, setDoc, deleteDoc, increment, serverTimestamp } = window._psFs || {};
   if (!db) { _hlToast('Still connecting. Try again in a moment.'); return; }
   const id = _hlId(_watchCurrent);
@@ -8921,20 +8932,24 @@ function _renderHighlightCard(video, variant) {
   const title = _decodeEntities(video.title || 'Football highlight');
   const channel = _hlLabel(video) || 'PitchSide';
   const meta = _highlightDate(video.matchDate || video.publishedMs || video.publishedAt) || (variant === 'trending' ? 'Trending' : 'Latest');
-  const payload = _highlightPayload(video);
   const thumb = _highlightThumb(video);
-  if (variant === 'trending') {
-    return `<button class="trending-highlight-card" onclick='swapWatchVideo(${payload})'>
-      <span class="trending-thumb"><img src="${_highlightEsc(thumb)}" alt="" onerror="this.style.display='none'"><span class="highlight-play-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="m9 6 9 6-9 6V6Z"/></svg></span></span>
-      <span class="trending-card-copy"><strong>${_highlightEsc(title)}</strong><span>${_highlightEsc(channel)} <i>•</i> ${_highlightEsc(meta)}</span></span>
-      <svg class="trending-chevron" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
-    </button>`;
-  }
-  return `<button class="latest-highlight-card" onclick='swapWatchVideo(${payload})'>
-    <span class="latest-highlight-thumb"><img src="${_highlightEsc(thumb)}" alt="" onerror="this.style.display='none'"><span class="highlight-play-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="m9 6 9 6-9 6V6Z"/></svg></span></span>
+  const key = String(_hlId(video));
+  window._wpMap = window._wpMap || {};
+  window._wpMap[key] = video;
+  const flag = variant === 'trending' ? '<span class="hl-card-flag">Trending</span>' : '';
+  return `<button class="latest-highlight-card" data-wpid="${_highlightEsc(key)}" onclick="swapWatchVideoById(this.dataset.wpid)">
+    <span class="latest-highlight-thumb"><img src="${_highlightEsc(thumb)}" alt="" loading="lazy" onerror="this.style.display='none'">${flag}<span class="highlight-play-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></span>
     <span class="latest-card-title">${_highlightEsc(title)}</span>
-    <span class="latest-card-meta">${_highlightEsc(meta)}</span>
+    <span class="latest-card-meta">${_highlightEsc(channel)} · ${_highlightEsc(meta)}</span>
   </button>`;
+}
+function swapWatchVideoById(id) {
+  const v = window._wpMap && window._wpMap[id];
+  if (v) swapWatchVideo(v);
+}
+function _openNewsById(id) {
+  const n = window._newsLookup && window._newsLookup[id];
+  if (n) openNewsReader(n); else showToast('Article not available');
 }
 function openWatchPage(videoData) {
   if (!videoData) return;
@@ -9040,6 +9055,7 @@ window.openMyVideoPlayer = function(idx) {
 // Single decision point: fan/player post → TikTok swipe feed. Everything else
 // (official highlights, news, bot content) → the existing YouTube-style page.
 function _ffRouteToPlayer(v) {
+  try { _exAutoStop(); } catch (e) {}
   if (v && (v.userPost || v.playerPost)) {
     openFanFeedOverlay(v.id);
   } else {
@@ -9100,6 +9116,11 @@ function _ffBindSlideVideo(slideEl) {
   const spinOff = () => { if (frame) frame.classList.remove('ff-buffering'); };
   ['loadstart', 'waiting', 'stalled'].forEach(ev => fg.addEventListener(ev, spinOn));
   ['playing', 'canplay', 'error'].forEach(ev => fg.addEventListener(ev, spinOff));
+  // Auto-swipe: when ON the clip plays once, then the feed moves to the next video
+  const _syncLoop = () => { fg.loop = !psPrefs.get('autoSwipe'); };
+  _syncLoop();
+  fg.addEventListener('play', _syncLoop);
+  fg.addEventListener('ended', () => { if (psPrefs.get('autoSwipe')) _ffAutoAdvance(slideEl); });
   fg.addEventListener('playing', () => {
     try { fg.playbackRate = _ffRate; } catch (e) {}
     if (slideEl.dataset.nextWarmed === '1') return;
@@ -9974,7 +9995,7 @@ function _psSaveUIRefresh(videoId) {
 async function toggleSaveVideo(videoIdRaw) {
   const videoId = String(videoIdRaw);
   const uid = window._psCurrentUser && window._psCurrentUser.uid;
-  if (!uid) { showToast('Sign in to save videos'); return false; }
+  if (!uid) { psRequireLogin('Sign in to save videos'); return false; }
   const { db, doc, setDoc, deleteDoc, serverTimestamp } = window._psFs || {};
   if (!db) { showToast('Still connecting. Try again in a moment.'); return false; }
   try { await _hlLoadUser(); } catch (e) {}
@@ -10116,7 +10137,7 @@ async function _ffDeletePost(videoId) {
 }
 async function _ffFollowById(uid) {
   const myUid = window._psCurrentUser && window._psCurrentUser.uid;
-  if (!myUid) { showToast('Sign in to follow users'); return; }
+  if (!myUid) { psRequireLogin('Sign in to follow users'); return; }
   let now = (appState.following || []).includes(uid);
   try { const r = await toggleFollowUser(myUid, uid); if (typeof r === 'boolean') now = r; } catch (e) { console.warn('[Follow] failed', e); }
   try { _ffSyncFollowBadges(); } catch (e) {}
@@ -10336,7 +10357,7 @@ function _ffSwitchProfileTab(tab) {
 // Instagram-style highlight reels since this app doesn't have Stories yet.
 async function _ffTogglePin(videoId) {
   const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
-  if (!myUid) { showToast('Sign in to pin highlights'); return; }
+  if (!myUid) { psRequireLogin('Sign in to pin highlights'); return; }
   const { doc, setDoc, db, arrayUnion, arrayRemove } = window._psFs || {};
   const id = String(videoId);
   const pinned = (profileData.pinnedPostIds || []).includes(id);
@@ -10402,7 +10423,7 @@ function _checkRateLimit(key, cooldownMs, friendlyMessage) {
 
 async function _ffToggleFollowFromProfile(userId) {
   const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
-  if (!myUid) { if (typeof showToast === 'function') showToast('Please sign in to follow users'); return; }
+  if (!myUid) { psRequireLogin('Sign in to follow users'); return; }
   const btn = document.getElementById('ffp-follow-btn');
   const before = !!(btn && btn.classList.contains('following'));
   let now = before;
@@ -10424,7 +10445,7 @@ async function _ffToggleFollowFromProfile(userId) {
 // Follow badge tapped directly on a video slide (skips opening full profile)
 async function _ffQuickFollow(userId, badgeEl) {
   const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
-  if (!myUid) { if (typeof showToast === 'function') showToast('Please sign in to follow users'); return; }
+  if (!myUid) { psRequireLogin('Sign in to follow users'); return; }
   let now = (appState.following || []).includes(userId);
   try {
     const r = await toggleFollowUser(myUid, userId);
@@ -10563,3 +10584,245 @@ function _ffSetupPreciseVerticalSwipe() {
 
 window.openFanFeedOverlay = openFanFeedOverlay;
 window.closeFanFeedOverlay = closeFanFeedOverlay;
+
+
+/* ═══════════════════════════════════════════════════════════════
+   GUEST MODE · PREFERENCES · FAN SHORTS · EXPLORE AUTOPLAY · AUTO-SWIPE
+   (added after the main app code so it can use everything above)
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Guest mode: browse freely, sign in only when an action needs an account ── */
+function psRequireLogin(reason) {
+  const u = window._psCurrentUser || (window._psAuth && window._psAuth.currentUser);
+  if (u && u.uid) return true;
+  if (window._psCurrentUser === undefined && !window._psGuest) {
+    showToast('Just a moment…');
+    return false;
+  }
+  const scr = document.getElementById('auth-screen');
+  const why = document.getElementById('auth-reason');
+  if (why) why.textContent = reason || 'Sign in to continue';
+  if (scr) scr.classList.remove('hidden');
+  return false;
+}
+function psCloseAuth() {
+  const scr = document.getElementById('auth-screen');
+  if (scr) scr.classList.add('hidden');
+}
+window.psRequireLogin = psRequireLogin;
+window.psCloseAuth = psCloseAuth;
+
+/* ── Preferences (kept on this device, so they work for guests too) ── */
+const PS_PREF_DEFAULTS = { autoplayExplore: 'on', autoSwipe: false, dataSaver: false };
+const psPrefs = {
+  _c: null,
+  _load() {
+    if (this._c) return this._c;
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem('ps_prefs_v1') || '{}') || {}; } catch (e) {}
+    this._c = Object.assign({}, PS_PREF_DEFAULTS, saved);
+    return this._c;
+  },
+  get(k) { return this._load()[k]; },
+  set(k, v) {
+    const c = this._load();
+    c[k] = v;
+    try { localStorage.setItem('ps_prefs_v1', JSON.stringify(c)); } catch (e) {}
+    psApplyPrefs();
+  }
+};
+window.psPrefs = psPrefs;
+
+function psApplyPrefs() {
+  // autoplay rules changed → restart or stop the Explore preview
+  try { psInitExploreAutoplay(); } catch (e) {}
+  // auto-swipe changed → clips in the feed loop or play once
+  document.querySelectorAll('#fanfeed-slides video.ff-video').forEach(v => { v.loop = !psPrefs.get('autoSwipe'); });
+  const btn = document.getElementById('ff-auto-btn');
+  if (btn) {
+    const on = !!psPrefs.get('autoSwipe');
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    const lbl = btn.querySelector('.ff-auto-lbl');
+    if (lbl) lbl.textContent = on ? 'Auto-swipe on' : 'Auto-swipe off';
+  }
+  try { psSyncSettingsUI(); } catch (e) {}
+}
+function psTogglePref(key) { psPrefs.set(key, !psPrefs.get(key)); }
+function psSetPref(key, val) { psPrefs.set(key, val); }
+function psToggleAutoSwipe() {
+  psTogglePref('autoSwipe');
+  showToast(psPrefs.get('autoSwipe') ? 'Auto-swipe on' : 'Auto-swipe off');
+}
+
+function psSyncSettingsUI() {
+  document.querySelectorAll('[data-pref-toggle]').forEach(el => {
+    el.classList.toggle('on', !!psPrefs.get(el.dataset.prefToggle));
+  });
+  document.querySelectorAll('[data-pref-select]').forEach(el => {
+    el.value = psPrefs.get(el.dataset.prefSelect);
+  });
+  const signedIn = !!(window._psCurrentUser && window._psCurrentUser.uid);
+  document.querySelectorAll('[data-acct="in"]').forEach(el => { el.style.display = signedIn ? '' : 'none'; });
+  document.querySelectorAll('[data-acct="out"]').forEach(el => { el.style.display = signedIn ? 'none' : ''; });
+  const dataSaver = !!psPrefs.get('dataSaver');
+  const sel = document.querySelector('[data-pref-select="autoplayExplore"]');
+  if (sel) sel.disabled = dataSaver;
+}
+async function psClearCache() {
+  try {
+    if (window.caches && caches.keys) { const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k))); }
+    sessionStorage.clear();
+    showToast('Cache cleared');
+  } catch (e) { showToast('Could not clear cache'); }
+}
+function psInstallApp() {
+  const b = document.getElementById('pwa-install-btn');
+  if (b && getComputedStyle(b).display !== 'none') b.click();
+  else showToast('To install, open your browser menu and choose Add to Home screen');
+}
+function psOpenSignIn() { psRequireLogin('Sign in to PitchSide'); }
+window.addEventListener('load', () => { try { psApplyPrefs(); } catch (e) {} });
+
+/* ── Auto-swipe: move the Fan Feed to the next video ── */
+function _ffAutoAdvance(slideEl) {
+  const next = slideEl && slideEl.nextElementSibling;
+  const box = document.getElementById('fanfeed-slides');
+  if (next && box) box.scrollTo({ top: next.offsetTop, behavior: 'smooth' });
+}
+
+/* ── Explore: muted preview autoplay, one card at a time ── */
+let _exAutoObs = null, _exAutoId = null;
+
+function psAutoplayAllowed() {
+  if (psPrefs.get('dataSaver')) return false;
+  const mode = psPrefs.get('autoplayExplore');
+  if (mode === 'off') return false;
+  const c = navigator.connection || {};
+  if (c.saveData) return false;
+  if (mode === 'wifi') return c.type === 'wifi' || c.type === 'ethernet';
+  return true;
+}
+function _exAutoStop() {
+  if (_exAutoId === null) return;
+  const slot = document.getElementById('vcard-embed-' + _exAutoId);
+  if (slot) {
+    const vid = slot.querySelector('video');
+    if (vid) { try { vid.pause(); } catch (e) {} }
+    slot.innerHTML = '';
+    slot.style.display = 'none';
+  }
+  _exAutoId = null;
+}
+function _exAutoStart(card) {
+  _exAutoStop();
+  const id = card.dataset.videoid;
+  const v = (window.VIDEOS || []).find(x => String(x.id) === String(id));
+  const slot = document.getElementById('vcard-embed-' + id);
+  if (!v || !slot || v.userPost || v.playerPost) return;
+  const r = (typeof _hlResolveSource === 'function') ? _hlResolveSource(v) : null;
+  if (!r || !r.src) return;
+  const style = 'display:block;position:absolute;inset:0;width:100%;height:100%;background:#000;overflow:hidden;pointer-events:none;z-index:2;';
+  if (r.isNative) {
+    if (/\.m3u8/i.test(r.src) && !document.createElement('video').canPlayType('application/vnd.apple.mpegurl')) return;
+    slot.style.cssText = style;
+    slot.innerHTML = '<video muted loop playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;"></video>';
+    const vid = slot.firstChild;
+    vid.muted = true;
+    vid.src = r.src;
+    const p = vid.play(); if (p && p.catch) p.catch(() => {});
+  } else {
+    let src = r.src;
+    try {
+      const u = new URL(src, location.href);
+      if (!/youtube\.com|youtube-nocookie\.com/.test(u.hostname)) return;
+      u.hostname = 'www.youtube-nocookie.com';
+      u.searchParams.set('autoplay', '1'); u.searchParams.set('mute', '1');
+      u.searchParams.set('controls', '0'); u.searchParams.set('playsinline', '1');
+      u.searchParams.set('rel', '0'); u.searchParams.set('modestbranding', '1');
+      src = u.toString();
+    } catch (e) { return; }
+    slot.style.cssText = style;
+    const f = document.createElement('iframe');
+    f.src = src; f.setAttribute('allow', 'autoplay; encrypted-media'); f.tabIndex = -1;
+    f.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:0;';
+    slot.innerHTML = ''; slot.appendChild(f);
+  }
+  _exAutoId = String(id);
+}
+function psInitExploreAutoplay() {
+  if (_exAutoObs) { _exAutoObs.disconnect(); _exAutoObs = null; }
+  _exAutoStop();
+  if (!psAutoplayAllowed() || !('IntersectionObserver' in window)) return;
+  const page = document.getElementById('page-explore');
+  if (!page || !page.classList.contains('active')) return;
+  const ratios = new Map();
+  _exAutoObs = new IntersectionObserver(entries => {
+    entries.forEach(e => ratios.set(e.target, e.isIntersecting ? e.intersectionRatio : 0));
+    let best = null, bestR = 0.6;
+    ratios.forEach((r, el) => { if (r >= bestR) { best = el; bestR = r; } });
+    if (!best) { _exAutoStop(); return; }
+    if (String(best.dataset.videoid) !== String(_exAutoId)) _exAutoStart(best);
+  }, { threshold: [0, 0.6, 0.8, 1] });
+  document.querySelectorAll('#explore-grid .vcard[data-videoid]').forEach(c => _exAutoObs.observe(c));
+}
+
+/* ── Fan shorts: tall swipe-left cards for fan + player posts ── */
+function _fsCard(v) {
+  const t = v.thumbnail || '';
+  const isVid = /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(t);
+  const isHls = /\.m3u8/i.test(t);
+  let media = '';
+  if (t && !isVid && !isHls) media = `<img src="${_h(applyCloudinaryQuality(t))}" alt="" loading="lazy" onerror="this.style.display='none'">`;
+  else if (isVid) media = `<video src="${_h(t)}#t=0.1" muted playsinline preload="metadata"></video>`;
+  const uid = v.userId ? _h(v.userId) : '';
+  return `<div class="fs-card" data-videoid="${_h(String(v.id))}" onclick="openHlPlayerById(this.dataset.videoid)">
+    <div class="fs-thumb">${media}<span class="fs-play"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span><span class="fs-likes">❤ ${formatCount(v.likes || 0)}</span></div>
+    <div class="fs-cap">${_h(v.title)}</div>
+    <div class="fs-by"><span class="fs-av" ${uid ? `data-av-uid="${uid}"` : ''}>${_h(_ffAvatarInitial(v.userName || v.poster))}</span><span class="fs-handle" ${uid ? `data-hdl-uid="${uid}"` : ''}>${uid ? '@fan' : _h(v.poster || '@fan')}</span></div>
+  </div>`;
+}
+function _fsRowHtml(title, items) {
+  return `<div class="fs-section" style="grid-column:1/-1;">
+    <div class="fs-head"><span>${_h(title)}</span><span class="fs-hint">Swipe ›</span></div>
+    <div class="fs-rail">${items.map(_fsCard).join('')}</div>
+  </div>`;
+}
+function _renderShortsTab(type) {
+  const container = document.getElementById('explore-grid');
+  if (!container) return;
+  const pool = VIDEOS.filter(v => type === 'player' ? v.playerPost === true : (v.userPost && !v.playerPost));
+  if (!pool.length) {
+    container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text3);"><div style="font-size:40px;margin-bottom:12px;">${type === 'fan' ? '👥' : '⭐'}</div>No ${type} posts yet.</div>`;
+    return;
+  }
+  const ts = v => v._ts || 0;
+  const score = v => (v.likes || 0) * 3 + (v.comments || 0) * 4 + (v.views || 0);
+  const text = v => String(v.title || '') + ' ' + String(v.cat || '') + ' ' + String(v.competition || '');
+  const has = re => v => re.test(text(v));
+  const signedIn = !!(window._psCurrentUser && window._psCurrentUser.uid);
+  const following = (typeof appState !== 'undefined' && appState.following) || [];
+  let html = '';
+  const add = (title, items, min) => { if (items.length >= min) html += _fsRowHtml(title, items.slice(0, 12)); };
+
+  add('Trending', [...pool].filter(v => score(v) > 0).sort((a, b) => score(b) - score(a)), 1);
+  add('Latest', [...pool].sort((a, b) => ts(b) - ts(a)), 1);
+
+  // Following — personal row, needs an account
+  if (!signedIn) {
+    html += `<div class="fs-section" style="grid-column:1/-1;"><div class="fs-head"><span>Following</span></div>
+      <div class="fs-empty">Sign in to see videos from people you follow.<button onclick="psRequireLogin('Sign in to see videos from people you follow')">Sign in</button></div></div>`;
+  } else {
+    const mine = [...pool].filter(v => v.userId && following.includes(v.userId)).sort((a, b) => ts(b) - ts(a));
+    if (mine.length) html += _fsRowHtml('Following', mine.slice(0, 12));
+    else html += `<div class="fs-section" style="grid-column:1/-1;"><div class="fs-head"><span>Following</span></div><div class="fs-empty">Follow fans to see their videos here.</div></div>`;
+  }
+
+  add('Goals', pool.filter(has(/goal|screamer|banger|strike|volley|free.?kick|penalt|header/i)), 5);
+  add('Skills', pool.filter(has(/skill|trick|dribbl|nutmeg|juggl|freestyle|flick|rabona/i)), 5);
+  add('Match day', pool.filter(v => v.taggedMatch || has(/match ?day|stadium|derby|ultra|atmosphere|chant|fixture|kick.?off/i)(v)), 5);
+  add('Nigeria', pool.filter(has(/nigeria|npfl|naija|super eagles|lagos|abuja|enyimba|kano|rivers united|remo|plateau/i)), 5);
+
+  container.innerHTML = html;
+  requestAnimationFrame(() => _startScrollObserver());
+}
