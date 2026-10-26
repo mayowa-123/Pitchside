@@ -2030,7 +2030,7 @@ function renderVideos(containerId, data) {
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm0 5v6m0 2v2"/></svg>
             AI Analysis
           </button>
-          <span style="font-size:11px;color:var(--text3);margin-left:auto;">❤️ ${formatCount(v.likes||0)}</span>
+          <span style="font-size:11px;color:var(--text3);margin-left:auto;">❤️ <span data-likes-for="${_h(String(v.id))}">${formatCount(psLikeCount(v))}</span></span>
           <span style="font-size:11px;color:var(--text3);">💬 ${formatCount(v.comments||0)}</span>
         </div>
       </div>
@@ -2138,6 +2138,7 @@ function _startScrollObserver() {
     window._videoObserver = null;
   }
   try { psInitExploreAutoplay(); } catch (e) {}
+  try { psHydrateLikeCounts(); } catch (e) {}
 }
 
 function _playInCard(videoId) {
@@ -3043,7 +3044,15 @@ function closeEditProfile() {
 }
 
 async function saveProfile() {
-  const prevHandle = profileData.handle || '';
+  let prevHandle = profileData.handle || '';
+  // If the handle is missing from memory, look at what's really stored before
+  // saving — otherwise an empty value could overwrite your real username.
+  if (!prevHandle && window._psCurrentUser && window._psFs && window._psFs.db) {
+    try {
+      const sd = await window._psFs.getDoc(window._psFs.doc(window._psFs.db, 'users', window._psCurrentUser.uid));
+      if (sd.exists() && sd.data().handle) { prevHandle = sd.data().handle; profileData.handle = prevHandle; }
+    } catch (e) {}
+  }
   const usernameRaw = document.getElementById('edit-username').value.trim();
   const name  = document.getElementById('edit-name').value.trim()  || profileData.name;
   const email = profileData.email; // sign-in email is read-only here
@@ -3107,7 +3116,11 @@ async function saveProfile() {
       const { writeBatch, getDoc: _gd } = window._psFs;
       const batch = writeBatch(db);
       if (handle && handle !== prevHandle) {
-        batch.set(doc(db, 'handles', handle), { uid: _cu.uid });
+        // A name that is already reserved FOR YOU can't be re-created (rules forbid
+        // updates), so only claim it if it doesn't exist yet.
+        let mine = false;
+        try { const hs = await _gd(doc(db, 'handles', handle)); mine = hs.exists() && hs.data().uid === _cu.uid; } catch (e) {}
+        if (!mine) batch.set(doc(db, 'handles', handle), { uid: _cu.uid });
         if (prevHandle) {
           try {
             const old = await _gd(doc(db, 'handles', prevHandle));
@@ -3115,7 +3128,9 @@ async function saveProfile() {
           } catch (e) {}
         }
       }
-      batch.set(doc(db, 'users', _cu.uid), { name, handle, bio, links }, { merge: true });
+      const _payload = { name, bio, links };
+      if (handle) _payload.handle = handle;   // never write an empty username over a real one
+      batch.set(doc(db, 'users', _cu.uid), _payload, { merge: true });
       await batch.commit();
       // Keep Firebase Auth's own displayName in sync too — several places
       // (including the initial post-login flash before Firestore data
@@ -3362,7 +3377,7 @@ ${isDemoCard
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm0 5v6m0 2v2"/></svg>
             AI Analysis
           </button>
-          <span style="font-size:11px;color:var(--text3);margin-left:auto;">❤️ ${formatCount(v.likes||0)}</span>
+          <span style="font-size:11px;color:var(--text3);margin-left:auto;">❤️ <span data-likes-for="${_h(String(v.id))}">${formatCount(psLikeCount(v))}</span></span>
           <span style="font-size:11px;color:var(--text3);">💬 ${formatCount(v.comments||0)}</span>
         </div>
       </div>
@@ -5815,6 +5830,7 @@ async function fetchUserStreak(uid) {
       fanStreak   = data.streakCount || 0;
       lastCheckIn = data.lastLogin ? new Date(data.lastLogin.toDate()).toDateString() : '';
       _applyStoredProfileData(data);
+      if (!data.handle) _psRecoverHandle(uid);
     } else {
       const u = window._psCurrentUser;
       await setDoc(userDocRef, {
@@ -10783,7 +10799,7 @@ function _fsCard(v) {
   if (t && !isVid && !isHls) media = `<img src="${_h(applyCloudinaryQuality(t))}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">`;
   const uid = v.userId ? _h(v.userId) : '';
   return `<div class="fs-card" data-videoid="${_h(String(v.id))}" onclick="openHlPlayerById(this.dataset.videoid)">
-    <div class="fs-thumb">${media}<span class="fs-play"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span><span class="fs-likes">❤ ${formatCount(v.likes || 0)}</span></div>
+    <div class="fs-thumb">${media}<span class="fs-likes">❤ <span data-likes-for="${_h(String(v.id))}">${formatCount(psLikeCount(v))}</span></span></div>
     <div class="fs-cap">${_h(v.title)}</div>
     <div class="fs-by"><span class="fs-av" ${uid ? `data-av-uid="${uid}"` : ''}>${_h(_ffAvatarInitial(v.userName || v.poster))}</span><span class="fs-handle" ${uid ? `data-hdl-uid="${uid}"` : ''}>${uid ? '@fan' : _h(v.poster || '@fan')}</span></div>
   </div>`;
@@ -10909,3 +10925,50 @@ function _exFooterHtml() {
     </div>
   </div>`;
 }
+
+
+/* ── Username recovery: if your reserved @name exists but your profile lost it, put it back ── */
+async function _psRecoverHandle(uid) {
+  try {
+    const { collection, query, where, limit, getDocs, doc, setDoc, db } = window._psFs || {};
+    if (!db || !getDocs) return;
+    const snap = await getDocs(query(collection(db, 'handles'), where('uid', '==', uid), limit(1)));
+    if (snap.empty) return;
+    const h = snap.docs[0].id;
+    profileData.handle = h;
+    const el = document.getElementById('profile-username');
+    if (el) el.textContent = '@' + h;
+    await setDoc(doc(db, 'users', uid), { handle: h }, { merge: true });
+  } catch (e) { console.warn('[Profile] handle recovery failed:', e); }
+}
+
+/* ── Real like counts on Explore cards (they live in videoMetrics, not on the post) ── */
+function psLikeCount(v) {
+  const m = (typeof appState !== 'undefined' && appState.videoMetrics) ? appState.videoMetrics[String(v.id)] : null;
+  if (m && Array.isArray(m.likes)) return m.likes.length;
+  if (m && typeof m.likeCount === 'number') return m.likeCount;
+  return v.likes || 0;
+}
+async function psHydrateLikeCounts() {
+  try {
+    const fs = window._psFs; if (!fs || !fs.db) return;
+    const els = [...document.querySelectorAll('#explore-grid [data-likes-for]')];
+    for (const el of els) {
+      const id = el.dataset.likesFor;
+      if (!id.startsWith('fs_')) continue;               // fan posts only
+      let m = appState.videoMetrics[id];
+      if (!m) {
+        try {
+          const snap = await fs.getDoc(fs.doc(fs.db, 'videoMetrics', id));
+          if (snap.exists()) { m = appState.videoMetrics[id] = { id, ...snap.data() }; }
+          else { appState.videoMetrics[id] = { id, likes: [] }; m = appState.videoMetrics[id]; }
+        } catch (e) { continue; }
+      }
+      const n = Array.isArray(m.likes) ? m.likes.length : (m.likeCount || 0);
+      el.textContent = (el.dataset.prefix || '') + formatCount(n);
+    }
+  } catch (e) {}
+}
+
+// Tapping a creator name on an official highlight used to throw an error (the function didn't exist). Official channels have no profile page, so this is intentionally a no-op.
+function openCreatorProfile() {}
