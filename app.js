@@ -10602,8 +10602,8 @@ window.psRequireLogin = psRequireLogin;
 window.psCloseAuth = psCloseAuth;
 
 /* ── Preferences (kept on this device, so they work for guests too) ── */
-const PS_PREF_DEFAULTS = { autoplayExplore: 'off', autoSwipe: false, dataSaver: false };
-const psPrefs = {
+var PS_PREF_DEFAULTS = { autoplayExplore: 'off', autoSwipe: false, dataSaver: false };
+var psPrefs = {
   _c: null,
   _load() {
     if (this._c) return this._c;
@@ -10681,7 +10681,7 @@ function _ffAutoAdvance(slideEl) {
 }
 
 /* ── Explore: muted preview autoplay, one card at a time ── */
-let _exAutoObs = null, _exAutoId = null, _exAutoTimer = null;
+var _exAutoObs = null, _exAutoId = null, _exAutoTimer = null;
 
 function psAutoplayAllowed() {
   if (psPrefs.get('dataSaver')) return false;
@@ -10694,7 +10694,7 @@ function psAutoplayAllowed() {
 }
 function _exAutoStop() {
   clearTimeout(_exAutoTimer);
-  if (_exAutoId === null) return;
+  if (_exAutoId == null) return;
   const slot = document.getElementById('vcard-embed-' + _exAutoId);
   if (slot) {
     const vid = slot.querySelector('video');
@@ -10821,10 +10821,9 @@ function _renderShortsTab(type) {
 
 
 /* ═══ Explore pagination + footer ═══ */
-const EX_PAGE_SIZE = 10;   // cards per page
-const EX_RAIL_EVERY = 7;   // one Fan shorts rail after every 7 official cards
-
 function _exBuildPage(items, fanPool) {
+  const EX_PAGE_SIZE = 10;   // cards per page
+  const EX_RAIL_EVERY = 7;   // one Fan shorts rail after every 7 official cards
   const total = items.length;
   const pages = Math.max(1, Math.ceil(total / EX_PAGE_SIZE));
   let page = Math.min(Math.max(1, window._exPage || 1), pages);
