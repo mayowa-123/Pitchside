@@ -1367,7 +1367,7 @@ function activateFirebaseListener() {
         ..._firebaseHighlights,
         ..._firebasePosts,
         ...localOnly
-      ];
+      ].filter(v => !(v && v.playerPost));   // player posts are switched off
       window.VIDEOS = VIDEOS; // mirror for lazy-loaded modules (see match-detail.js header comment)
 
       console.log('[PitchSide] VIDEOS merged:', VIDEOS.length,
@@ -6259,8 +6259,10 @@ function openQuickPost() {
   if (!psRequireLogin('Sign in to post')) return;
   const ts = document.getElementById('pc-type-selector');
   const fp = document.getElementById('pc-file-picker');
-  if (ts) ts.style.display = 'block';
-  if (fp) fp.style.display = 'none';
+  if (ts) ts.style.display = 'none';        // player option removed — everyone posts as a fan
+  if (fp) fp.style.display = 'block';
+  const _banner = document.getElementById('pc-limit-banner');
+  if (_banner) _banner.textContent = '👥 Fan Clip — Max 60 seconds';
 
   const _fanBtn    = document.getElementById('pc-type-fan');
   const _playerBtn = document.getElementById('pc-type-player');
@@ -9236,7 +9238,8 @@ function openFanFeedOverlay(startVideoId) {
   }
 
   const posts = (typeof VIDEOS !== 'undefined' ? VIDEOS : []).filter(
-    v => (v.userPost || v.playerPost) && v.mediaType !== 'image' && _ffGetVideoSrc(v)
+    v => v.userPost && !v.playerPost
+      && ((v.mediaType === 'image' || v.isImage) ? !!(v.src || v.thumbnail || v.embedUrl) : !!_ffGetVideoSrc(v))
       && !(appState.blockedUsers || []).includes(v.userId || v.uid)
       && !_psHiddenPosts().includes(String(v.id))
   );
@@ -9557,6 +9560,7 @@ function _ffRenderSlide(v) {
   const likeCount = (typeof formatCount === 'function') ? formatCount(v.likes || 0) : (v.likes || 0);
   const commentCount = (typeof formatCount === 'function') ? formatCount(v.comments || 0) : (v.comments || 0);
   const safeId = _h(String(v.id));
+  const _isImg = (v.mediaType === 'image' || v.isImage === true);
   const posterUserId = v.userId || '';
   const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
   const isMe = myUid && posterUserId === myUid;
@@ -9593,7 +9597,7 @@ function _ffRenderSlide(v) {
         </div>
       </div>
 
-      <div class="ff-video-frame">
+      ${_isImg ? `<div class="ff-video-frame"><img class="ff-image" src="${_h(v.src || v.thumbnail || v.embedUrl || '')}" alt="" decoding="async"></div>` : `      <div class="ff-video-frame">
         <video class="ff-video-bg"${_ffPosterAttr(v)} loop playsinline muted preload="none"
           disablePictureInPicture disableRemotePlayback controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
           aria-hidden="true" tabindex="-1"></video>
@@ -9601,7 +9605,7 @@ function _ffRenderSlide(v) {
           disablePictureInPicture disableRemotePlayback controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
           onclick="_ffHandleVideoTap(this, '${safeId}')"></video>
         <div class="ff-mute-btn" onclick="_ffToggleMute()">${_ffMuted ? '🔇' : '🔊'}</div>
-      </div>
+      </div>`}
 
       <div class="ff-rail">
         <div class="ff-rail-btn" onclick="_ffLike('${safeId}', this)">
@@ -9717,7 +9721,17 @@ function setupFanFeedObserver() {
     entries.forEach(entry => {
       const video = entry.target.querySelector('video.ff-video');
       const videoBg = entry.target.querySelector('video.ff-video-bg');
-      if (!video) return;
+      if (!video) {
+        // photo post: nothing to play — just track position, and move on after 5s if auto-swipe is on
+        clearTimeout(entry.target._ffImgT);
+        if (entry.target.querySelector('img.ff-image') && entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+          const pidx = slides.indexOf(entry.target);
+          _ffCurrentVisibleIdx = pidx;
+          if (psPrefs.get('autoSwipe')) entry.target._ffImgT = setTimeout(() => _ffAutoAdvance(entry.target), 5000);
+          if (pidx >= slides.length - 2) _ffExtendFeedLoop();
+        }
+        return;
+      }
       const idx = slides.indexOf(entry.target);
 
       if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
@@ -10783,6 +10797,16 @@ function _fsRowHtml(title, items) {
 function _renderShortsTab(type) {
   const container = document.getElementById('explore-grid');
   if (!container) return;
+  if (type === 'fan') {
+    const fans = VIDEOS.filter(v => v.userPost && !v.playerPost).sort((a, b) => (b._ts || 0) - (a._ts || 0));
+    if (!fans.length) {
+      container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text3);"><div style="font-size:40px;margin-bottom:12px;">👥</div>No fan posts yet. Be the first to post!</div>' + _exFooterHtml();
+    } else {
+      container.innerHTML = _exBuildPage(fans.map(_videoToExploreCard), []);
+    }
+    requestAnimationFrame(() => _startScrollObserver());
+    return;
+  }
   const pool = VIDEOS.filter(v => type === 'player' ? v.playerPost === true : (v.userPost && !v.playerPost));
   if (!pool.length) {
     container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text3);"><div style="font-size:40px;margin-bottom:12px;">${type === 'fan' ? '👥' : '⭐'}</div>No ${type} posts yet.</div>`;
