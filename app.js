@@ -10822,7 +10822,7 @@ function _renderShortsTab(type) {
 
 /* ═══ Explore pagination + footer ═══ */
 function _exBuildPage(items, fanPool) {
-  const EX_PAGE_SIZE = 10;   // cards per page
+  const EX_PAGE_SIZE = 50;   // cards per page
   const EX_RAIL_EVERY = 7;   // one Fan shorts rail after every 7 official cards
   const total = items.length;
   const pages = Math.max(1, Math.ceil(total / EX_PAGE_SIZE));
