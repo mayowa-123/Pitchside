@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>try{var __p=JSON.parse(localStorage.getItem('ps_prefs_v1')||'{}');var __t=__p.theme||'light';var __d=__t==='dark'||(__t==='system'&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',__d?'dark':'light');}catch(e){}</script>
   <!-- Sentry — loaded first, before anything else, so it can catch errors
        from the very start of page load, not just ones that happen after
        the rest of the app finishes initializing. -->
@@ -603,6 +604,24 @@
           </div>
         </div>
         <div class="toggle" data-pref-toggle="autoSwipe"><div class="toggle-knob"></div></div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Appearance</div>
+      <div class="settings-item">
+        <div class="settings-item-left">
+          <div class="settings-item-icon">🌙</div>
+          <div>
+            <div class="settings-item-title">Theme</div>
+            <div class="settings-item-desc">Light, dark (black and green), or match your phone</div>
+          </div>
+        </div>
+        <select class="ps-select" data-pref-select="theme" onchange="psSetPref('theme', this.value)" aria-label="Theme">
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+          <option value="system">Match phone</option>
+        </select>
       </div>
     </div>
 
