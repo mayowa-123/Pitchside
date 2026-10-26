@@ -3276,18 +3276,7 @@ function _renderExploreAll() {
   // Fan + player posts become tall "shorts": one swipeable rail after every 7 official cards
   const fanPool = allVideos.filter(v => v.userPost || v.playerPost)
     .sort((a, b) => ((b.likes || 0) * 3 + (b.comments || 0) * 4) - ((a.likes || 0) * 3 + (a.comments || 0) * 4) || (b._ts || 0) - (a._ts || 0));
-  const EVERY = 7, RAIL = 8;
-  let railNo = 0;
-  allItems.forEach((item, i) => {
-    html += item;
-    if ((i + 1) % EVERY === 0 && fanPool.length) {
-      const start = (railNo * RAIL) % fanPool.length;
-      const slice = fanPool.slice(start, start + RAIL);
-      if (slice.length) html += _fsRowHtml(railNo === 0 ? 'Fan shorts' : 'More from fans', slice);
-      railNo++;
-    }
-  });
-  if (!railNo && fanPool.length) html += _fsRowHtml('Fan shorts', fanPool.slice(0, RAIL));
+  html = _exBuildPage(allItems, fanPool);
 
   if (!html) { showFirebaseFetchingState(); return; }
   container.innerHTML = html;
@@ -3445,6 +3434,7 @@ function selExpCat(el, cat) {
 
 /* ── Filter explore by source type: all / official / fan / player ── */
 function selExpType(btn, type) {
+  window._exPage = 1;
   document.querySelectorAll('#page-explore .pill').forEach(p => p.classList.remove('on'));
   btn.classList.add('on');
   const container = document.getElementById('explore-grid');
@@ -3462,9 +3452,8 @@ function selExpType(btn, type) {
     const newsLookup = {};
     (_newsAllDocs||[]).forEach(n => { newsLookup[n.id] = n; });
     window._newsLookup = { ...window._newsLookup, ...newsLookup };
-    let html = officialVids.map(_videoToExploreCard).join('') +
-               (_newsAllDocs||[]).map(_exploreNewsCard).join('');
-    container.innerHTML = html || '<div style="text-align:center;padding:40px;color:var(--text3);">No official content yet</div>';
+    const _offItems = [...officialVids.map(_videoToExploreCard), ...(_newsAllDocs||[]).map(_exploreNewsCard)];
+    container.innerHTML = _offItems.length ? _exBuildPage(_offItems, []) : '<div style="text-align:center;padding:40px;color:var(--text3);">No official content yet</div>';
     requestAnimationFrame(() => _startScrollObserver());
     return;
   }
@@ -10826,6 +10815,74 @@ function _renderShortsTab(type) {
   add('Match day', pool.filter(v => v.taggedMatch || has(/match ?day|stadium|derby|ultra|atmosphere|chant|fixture|kick.?off/i)(v)), 5);
   add('Nigeria', pool.filter(has(/nigeria|npfl|naija|super eagles|lagos|abuja|enyimba|kano|rivers united|remo|plateau/i)), 5);
 
-  container.innerHTML = html;
+  container.innerHTML = html + _exFooterHtml();
   requestAnimationFrame(() => _startScrollObserver());
+}
+
+
+/* ═══ Explore pagination + footer ═══ */
+const EX_PAGE_SIZE = 10;   // cards per page
+const EX_RAIL_EVERY = 7;   // one Fan shorts rail after every 7 official cards
+
+function _exBuildPage(items, fanPool) {
+  const total = items.length;
+  const pages = Math.max(1, Math.ceil(total / EX_PAGE_SIZE));
+  let page = Math.min(Math.max(1, window._exPage || 1), pages);
+  window._exPage = page;
+  window._exItems = items; window._exFan = fanPool;
+  const slice = items.slice((page - 1) * EX_PAGE_SIZE, page * EX_PAGE_SIZE);
+  const RAIL = 8;
+  let html = '', railNo = 0;
+  slice.forEach((item, i) => {
+    html += item;
+    if ((i + 1) % EX_RAIL_EVERY === 0 && fanPool.length) {
+      // different fan clips on each page
+      const start = (((page - 1) * 3 + railNo) * RAIL) % fanPool.length;
+      const part = fanPool.slice(start, start + RAIL);
+      if (part.length) html += _fsRowHtml(railNo === 0 && page === 1 ? 'Fan shorts' : 'More from fans', part);
+      railNo++;
+    }
+  });
+  if (!railNo && fanPool.length && page === 1) html += _fsRowHtml('Fan shorts', fanPool.slice(0, RAIL));
+  return html + _exPagerHtml(page, pages) + _exFooterHtml();
+}
+
+function _exPagerHtml(page, pages) {
+  if (pages <= 1) return '';
+  const nums = [];
+  for (let n = 1; n <= pages; n++) {
+    if (n === 1 || n === pages || Math.abs(n - page) <= 1) nums.push(n);
+    else if (nums[nums.length - 1] !== '…') nums.push('…');
+  }
+  const btn = (label, target, cls, aria) =>
+    `<button class="ex-pg ${cls || ''}" ${target ? `onclick="psExploreGoto(${target})"` : 'disabled'} ${aria ? `aria-label="${aria}"` : ''}>${label}</button>`;
+  return `<div class="ex-pager" style="grid-column:1/-1;">
+    ${btn('‹', page > 1 ? page - 1 : 0, 'ex-pg-arrow', 'Previous page')}
+    ${nums.map(n => n === '…' ? '<span class="ex-pg-gap">…</span>' : btn(n, n === page ? 0 : n, n === page ? 'on' : '', 'Page ' + n)).join('')}
+    ${btn('›', page < pages ? page + 1 : 0, 'ex-pg-arrow', 'Next page')}
+  </div>`;
+}
+
+function psExploreGoto(n) {
+  window._exPage = n;
+  const container = document.getElementById('explore-grid');
+  if (!container || !window._exItems) return;
+  container.innerHTML = _exBuildPage(window._exItems, window._exFan || []);
+  requestAnimationFrame(() => _startScrollObserver());
+  const pills = document.querySelector('#page-explore .pill');
+  if (pills && pills.scrollIntoView) pills.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
+function _exFooterHtml() {
+  return `<div class="ex-footer" style="grid-column:1/-1;">
+    <div class="ex-footer-title">PitchSide ⚽ Football, live</div>
+    <p>PitchSide is a football social app for real fans. Follow live scores, watch match highlights, keep up with the NPFL and the top leagues, chat in the War Room on match day, and share your own goals, skills and stadium moments as fan shorts.</p>
+    <p>Fan videos are posted by the PitchSide community. Official highlights and football news are added throughout the week. Browsing is free and you don't need an account. Sign in when you want to like, comment, follow or post.</p>
+    <div class="ex-footer-tags">Live scores · Match highlights · NPFL · Fan shorts · War Room · PitchSide AI · Football news</div>
+    <div class="ex-footer-links">
+      <a onclick="openSettingsMenu('legal')">Terms and policies</a>
+      <a onclick="psInstallApp()">Install PitchSide</a>
+      <a onclick="switchPage('settings', document.getElementById('nav-more'))">Settings</a>
+    </div>
+  </div>`;
 }
