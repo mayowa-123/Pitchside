@@ -3697,3 +3697,7 @@ body.ps-guest #guest-signin-btn { display:inline-flex; }
 /* Player posts are switched off */
 #pc-type-selector, #pc-type-player, #post-type-player, #post-type-fan { display:none !important; }
 img.ff-image { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#000; }
+
+
+/* No green play buttons on video cards */
+.play-btn, .fs-play, .highlight-play-badge, .hlcard-play-btn { display:none !important; }
