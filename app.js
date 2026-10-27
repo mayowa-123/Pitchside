@@ -3630,7 +3630,7 @@ function openComments() {
   const panel = document.getElementById('comment-panel');
   panel.classList.add('active');
   renderComments(currentVideoId);
-  setTimeout(() => document.getElementById('comment-input').focus(), 300);
+  if (window._psCurrentUser && window._psCurrentUser.uid) setTimeout(() => document.getElementById('comment-input').focus(), 300);
 }
 
 function closeComments() {
@@ -8045,6 +8045,7 @@ async function loadVideoMetrics(videoId) {
 }
 
 async function likeVideo(videoId, userId) {
+  if (!userId || userId === 'anon') { psRequireLogin('Sign in to like videos'); return; }
   const fsApi = window._psFs;
   const db = window._psDb;
   
@@ -8627,6 +8628,7 @@ async function updateShareCount(videoId) {
     const fsApi = window._psFs;
     
     if (!db || !fsApi) return;
+    if (!(window._psCurrentUser && window._psCurrentUser.uid)) return;   // guests can share; only signed-in shares are counted
 
     const metricsRef = fsApi.doc(db, 'videoMetrics', String(videoId));
     await fsApi.updateDoc(metricsRef, {
@@ -9893,7 +9895,8 @@ function _ffToggleMute() {
 }
 
 async function _ffLike(videoId, el) {
-  const uid = (window._psCurrentUser && window._psCurrentUser.uid) || 'anon';
+  if (!psRequireLogin('Sign in to like videos')) return;
+  const uid = window._psCurrentUser.uid;
   _ffMarkLiked(videoId, el); // optimistic — reverted below if the save actually fails
   try {
     await likeVideo(videoId, uid);
@@ -9903,14 +9906,7 @@ async function _ffLike(videoId, el) {
       const svg = el.querySelector('svg');
       if (svg) svg.setAttribute('fill', '#9CA79E');
     }
-    if (typeof showToast === 'function') {
-      const code = e?.code || 'no-code';
-      const msg = e?.message || 'no message';
-      const friendly = code.includes('permission-denied')
-        ? '⚠️ Firebase blocked this save — check your Firestore security rules'
-        : `⚠️ [${code}] ${msg}`.slice(0, 120);
-      showToast(friendly);
-    }
+    if (typeof showToast === 'function') showToast("Couldn't save your like. Please try again.");
   }
 }
 
@@ -10500,16 +10496,13 @@ function _ffHandleVideoTap(el, videoId) {
   const now = Date.now();
   const last = el.dataset.lastTap ? parseInt(el.dataset.lastTap, 10) : 0;
   if (now - last < 300) {
+    if (!psRequireLogin('Sign in to like videos')) { el.dataset.lastTap = '0'; return; }
     _ffSpawnHeartBurst(el.parentElement);
-    const uid = (window._psCurrentUser && window._psCurrentUser.uid) || 'anon';
+    const uid = window._psCurrentUser.uid;
     _ffMarkLiked(videoId, null); // optimistic — reverted below if the save actually fails
     likeVideo(videoId, uid).catch((e) => {
       console.error('[FanFeed] double-tap like failed:', e);
-      if (typeof showToast === 'function') {
-        const code = e?.code || 'no-code';
-        const msg = e?.message || 'no message';
-        showToast(`⚠️ [${code}] ${msg}`.slice(0, 120));
-      }
+      if (typeof showToast === 'function') showToast("Couldn't save your like. Please try again.");
     });
     el.dataset.lastTap = '0';
   } else {
