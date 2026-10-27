@@ -2970,6 +2970,7 @@ async function handleAvatarUpload(e) {
     const { doc, setDoc, db } = window._psFs || {};
     if (doc && db) {
       await setDoc(doc(db, 'users', _cu.uid), { avatarUrl: hostedUrl }, { merge: true });
+      try { profileData.avatarUrl = hostedUrl; psRefreshMyIdentity(); } catch (e) {}
     }
 
     showToast('Profile photo updated ✓');
@@ -3128,6 +3129,13 @@ async function saveProfile() {
           } catch (e) {}
         }
       }
+      if (handle) {
+        try {
+          const { collection: _col, query: _qry, where: _whr, getDocs: _gds } = window._psFs;
+          const owned = await _gds(_qry(_col(db, 'handles'), _whr('uid', '==', _cu.uid)));
+          owned.docs.forEach(d => { if (d.id !== handle) batch.delete(d.ref); });   // old names get freed
+        } catch (e) {}
+      }
       const _payload = { name, bio, links };
       if (handle) _payload.handle = handle;   // never write an empty username over a real one
       batch.set(doc(db, 'users', _cu.uid), _payload, { merge: true });
@@ -3141,6 +3149,7 @@ async function saveProfile() {
         catch (e) { console.warn('[Profile] Auth displayName sync failed:', e); }
       }
       showToast('Profile updated ✓');
+      psRefreshMyIdentity();
     } catch (e) {
       console.warn('[Profile] Firestore save failed:', e);
       if (e && e.code === 'permission-denied' && handle !== prevHandle) {
@@ -10225,11 +10234,17 @@ async function _ffOpenProfile(userId, posterName) {
   // a Firestore read of their users/{uid} doc. ──
   let pd = null;
   const { doc, getDoc, db } = window._psFs || {};
-  if (!isMe && doc && getDoc && db) {
+  if (doc && getDoc && db) {
     try {
       const snap = await getDoc(doc(db, 'users', userId));
       if (snap.exists()) pd = snap.data();
     } catch (e) { console.warn('[FanFeed] profile fetch failed:', e); }
+  }
+  if (isMe && pd) {   // keep my in-memory profile in step with what is saved
+    if (pd.handle) profileData.handle = pd.handle;
+    if (pd.avatarUrl) profileData.avatarUrl = pd.avatarUrl;
+    if (pd.name) profileData.name = pd.name;
+    if (typeof pd.bio === 'string') profileData.bio = pd.bio;
   }
 
   // Followers/following live in userFollowing/{uid}, NOT on the users doc, which is why
@@ -10632,7 +10647,7 @@ window.psRequireLogin = psRequireLogin;
 window.psCloseAuth = psCloseAuth;
 
 /* ── Preferences (kept on this device, so they work for guests too) ── */
-var PS_PREF_DEFAULTS = { autoplayExplore: 'off', autoSwipe: false, dataSaver: false };
+var PS_PREF_DEFAULTS = { autoplayExplore: 'off', autoSwipe: false, dataSaver: false, theme: 'light' };
 var psPrefs = {
   _c: null,
   _load() {
@@ -10653,6 +10668,7 @@ var psPrefs = {
 window.psPrefs = psPrefs;
 
 function psApplyPrefs() {
+  try { psApplyTheme(); } catch (e) {}
   // autoplay rules changed → restart or stop the Explore preview
   try { psInitExploreAutoplay(); } catch (e) {}
   // auto-swipe changed → clips in the feed loop or play once
@@ -10932,8 +10948,8 @@ async function _psRecoverHandle(uid) {
   try {
     const { collection, query, where, limit, getDocs, doc, setDoc, db } = window._psFs || {};
     if (!db || !getDocs) return;
-    const snap = await getDocs(query(collection(db, 'handles'), where('uid', '==', uid), limit(1)));
-    if (snap.empty) return;
+    const snap = await getDocs(query(collection(db, 'handles'), where('uid', '==', uid), limit(2)));
+    if (snap.size !== 1) return;   // none, or several (can't tell which is current) — leave it alone
     const h = snap.docs[0].id;
     profileData.handle = h;
     const el = document.getElementById('profile-username');
@@ -10972,3 +10988,45 @@ async function psHydrateLikeCounts() {
 
 // Tapping a creator name on an official highlight used to throw an error (the function didn't exist). Official channels have no profile page, so this is intentionally a no-op.
 function openCreatorProfile() {}
+
+
+/* ── One call that makes my new username / photo show up everywhere ── */
+function psRefreshMyIdentity() {
+  try {
+    const me = window._psCurrentUser && window._psCurrentUser.uid;
+    if (!me) return;
+    if (typeof _identityCache !== 'undefined') delete _identityCache[me];
+    // my own profile header
+    const un = document.getElementById('profile-username');
+    if (un) un.textContent = profileData.handle ? '@' + profileData.handle : '';
+    const pn = document.getElementById('profile-name');
+    if (pn && profileData.name) pn.textContent = profileData.name;
+    if (profileData.avatarUrl) {
+      const img = document.getElementById('profile-avatar-img');
+      if (img) { img.src = profileData.avatarUrl; img.style.display = 'block'; }
+      const ini = document.getElementById('profile-initials');
+      if (ini) ini.style.display = 'none';
+    }
+    // every avatar / handle already drawn (cards, comments, feed headers)
+    _psHydrateAvatars(document);
+    document.querySelectorAll('.ff-slide').forEach(sl => {
+      const uid = sl.dataset.userId || sl.getAttribute('data-uid');
+      if (uid === me && profileData) {
+        _applyIdentityToSlide(sl, { name: profileData.name, handle: profileData.handle, avatarUrl: profileData.avatarUrl });
+      }
+    });
+  } catch (e) { console.warn('[Profile] identity refresh failed:', e); }
+}
+
+
+/* ── Theme: light / dark (black and green) / match phone ── */
+function psApplyTheme() {
+  const t = psPrefs.get('theme') || 'light';
+  const dark = t === 'dark' || (t === 'system' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', dark ? '#070a08' : '#10b981');
+}
+if (window.matchMedia) {
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (psPrefs.get('theme') === 'system') psApplyTheme(); }); } catch (e) {}
+}
