@@ -69,7 +69,7 @@ export async function submitComment() {
   try {
     const currentUser = window._psCurrentUser || window._psAuth?.currentUser;
     if (!currentUser?.uid) {
-      showToast('Please log in to comment');
+      (window.psRequireLogin ? window.psRequireLogin('Sign in to comment') : showToast('Please sign in to comment'));
       return;
     }
 
