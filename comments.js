@@ -354,9 +354,21 @@ export function _renderCommentLoadMoreBtn(videoId) {
 // which pulled every comment on a post in one shot every time it opened —
 // fine at 10 comments, a real cost and a real wait once anything gets
 // popular.
+// Counter so a slow, older request can never overwrite a newer one.
+let _commentRenderSeq = 0;
+
 export async function renderComments(videoId) {
   const list = document.getElementById('comment-list');
   if (!list) return;
+
+  // Clear the previous video's comments right away and remember which video
+  // this list belongs to. Without this, the old video's comments stay on
+  // screen until the new fetch finishes (slow on weak connections).
+  const seq = ++_commentRenderSeq;
+  list.dataset.videoId = String(videoId);
+  list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text3);font-size:13px;">Loading comments…</div>';
+  const _cc = document.getElementById('comment-count');
+  if (_cc) _cc.textContent = '';
 
   const myUid = (window._psCurrentUser && window._psCurrentUser.uid) || null;
   const v = window.VIDEOS.find(x => String(x.id) === String(videoId));
@@ -364,6 +376,9 @@ export async function renderComments(videoId) {
   _clearCommentReply();
 
   const { comments, lastDoc, hasMore, loadError } = await loadCommentsFromFirebase(videoId);
+  // A newer renderComments() started while we were waiting (user switched
+  // video) — drop this stale result.
+  if (seq !== _commentRenderSeq) return;
   const visible = comments.filter(c => !(appState.blockedUsers || []).includes(c.userId));
 
   _commentPagination[videoId] = { lastDoc, hasMore };
@@ -412,6 +427,8 @@ export async function _loadMoreComments(videoId) {
   if (oldBtn) oldBtn.remove();
 
   const { comments, lastDoc, hasMore } = await loadCommentsFromFirebase(videoId, state.lastDoc);
+  // The panel may have moved to another video while this page was loading.
+  if (list && list.dataset.videoId !== String(videoId)) return;
   const visible = comments.filter(c => !(appState.blockedUsers || []).includes(c.userId));
 
   _commentPagination[videoId] = { lastDoc, hasMore };
